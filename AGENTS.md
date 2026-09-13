@@ -76,6 +76,7 @@ Game-data update (`scripts/update-data.ts`) 调用官方热更管线 `scripts/of
 - 新增寻访池规则类型须显式适配 gacha 策略表（未知类型会报错，不再静默回退 NORMAL）；保底概率计算收敛在 `game/modules/gacha/gacha.ts#resolveGachaRank` 纯函数（见 design-spec §35.4）。
 - 基建新技能优先以 Buff 模板类声明（`game/modules/building/buffs/`，继承 BaseBuffTpl），value 与 buff-parse 引擎一致（见 design-spec §35.6）。
 - 新路由先落 contract：POST 路由必须经 `validateBody(zodSchema)`（守卫 tests/unit/architecture/schema-first-guard.test.ts 强制，multipart 端点豁免）。
+- **跨层能力一律走端口注册（2026-09-13）**：core 不得依赖 game/ops（R1）、kernel 不得依赖 modules（R2）。需要上层能力时，在 core/kernel 定义端口 + 注册函数，由**实现侧构造时自注册**或**组合根 `app/server.ts` 注入**；禁止在 core/kernel 里缺省绑定上层单例。已落地四处：`@core/capture/port`（组合根注入 recorder）、`@core/auth/account-port`（`AccountManager` 自注册）、`@core/logs/log-service` 的 `AuditLogSource`（`AdminService` 自注册）、`@core/config/asset-hooks`（组合根注册 `@ops/assets/asset-hooks`）。模块间一律经对方 `public.ts`（`account/public.ts`、`social/public.ts` …）。登记表现存 5 条豁免，R1/R2 已清零并由 `module-boundary.test.ts` 固化。
 - JSDoc on all classes/methods (design-spec §3); private fields prefixed `_`.
 - Commit messages: conventional prefixes with Chinese descriptions, e.g. `feat(offline): 完全离线模式数据校验`.
 
