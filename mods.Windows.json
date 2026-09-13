@@ -1,28 +1,28 @@
 {
     "file": {
-        "D:\\develop\\DoctorateTs\\mods\\windows\\anon_6edf14bbd79243eb61e288ff28e446c3.dat": {
-            "size": 1119831,
-            "crc32": 116918538
+        "D:\\develop\\DoctorateTs\\mods\\anon_3ea52f7d41a320d200aa7e61735f0819.dat": {
+            "size": 1153002,
+            "crc32": 794962701
         }
     },
     "mod": {
         "mods": [
             {
-                "name": "anon/6edf14bbd79243eb61e288ff28e446c3.bin",
-                "hash": "067516664d01207a9e1f82d397faa4c0",
-                "md5": "067516664d01207a9e1f82d397faa4c0",
-                "totalSize": 1119831,
-                "abSize": 1122548
+                "name": "anon/3ea52f7d41a320d200aa7e61735f0819.bin",
+                "hash": "63d9a32cc856a540c1ee3623e5997d98",
+                "md5": "63d9a32cc856a540c1ee3623e5997d98",
+                "totalSize": 1153002,
+                "abSize": 1162564
             }
         ],
         "name": [
-            "anon/6edf14bbd79243eb61e288ff28e446c3.bin"
+            "anon/3ea52f7d41a320d200aa7e61735f0819.bin"
         ],
         "path": [
-            "windows\\anon_6edf14bbd79243eb61e288ff28e446c3.dat"
+            "anon_3ea52f7d41a320d200aa7e61735f0819.dat"
         ],
         "download": [
-            "anon_6edf14bbd79243eb61e288ff28e446c3.dat"
+            "anon_3ea52f7d41a320d200aa7e61735f0819.dat"
         ]
     }
 }

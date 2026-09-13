@@ -92,6 +92,8 @@
 
 ### 2.3 OpenBachelorG（APK 重打包，免 root 注入）
 
+> 逐文件/逐 patch 的深度分析（含红线判定与可借鉴清单）见 `docs/obs-G-analysis-2026-09-13.md`。
+
 `main.py` 全流程：`clear_last_build` → `apktool d` 解包 → 把 `frida-gadget-17.9.1-android-arm64.so.xz` 解成 `lib/arm64-v8a/libflorida.so` + 写 `libflorida.config.so`（JSON）→ `git apply` 三个 patch（对每个 `smali*` 分包目录把补丁里 `/ak/smali/` 替换成真实目录再应用，`main.py:130-162`）→ 改 `AndroidManifest.xml` → `apktool b` → `uber-apk-signer` 签名到 `ak-g-apk/`。
 - gadget 两种模式（`main.py:105-127`）：`listen 127.0.0.1:10443`（`on_load=wait`，配合 C 的 `gadget_port` + adb forward 27042）或 `script-directory /sdcard/openbachelor`（独立注入，配合 C 的 `standalone_helper.py` 推 `rel/*.js` + 同名 `.config`，参数走 `parameters`）。
 - `smali.patch`：在 `com/u8/sdk/U8UnityContext.<clinit>` 注入 `System.loadLibrary("florida")` —— gadget 随 SDK 静态构造加载；`smali_mumu.patch` 额外先加载 `il2cpp`。

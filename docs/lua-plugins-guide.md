@@ -82,6 +82,49 @@ pnpm run apk:audit -- --json                           # 同时输出 JSON 原�
 - **C 暗桩/埋点**：EventLogSDK 事件上报、CrashSight 崩溃上报、OneChannel/Webview、硬编码外联域名
   （结论：官服域名不硬编码，全部配置驱动——正是 `overrideRouterUrl` 引导可行性的基础）。
 
+### 2.0.3 APK 本体改造：注入版 bundle 回灌 + 重签名（apk:mod / apk:patch / apk:sign）
+
+**为什么需要**：`apk:lua` 产出的注入版 bundle 平时靠私服热更下发，但客户端**首次启动**时还没连上私服、
+拿不到热更清单，插件自然加载不了（鸡生蛋）。把注入版 bundle 直接回灌进 APK 本体的内置 bundle 槽位，
+客户端首启即走内置 Lua 管线 → `NetworkRedirectPlugin` 立即接管网络路由。
+
+```powershell
+# 0) 一次性准备工具链（便携 JRE + uber-apk-signer，落在 tmp/tools/，gitignored）
+pnpm run apk:sign -- --fetch-tools
+
+# 一条命令版：抓最新 APK → 注入 → 回灌 → 重签（自动定位 tmp/apk 下最新 APK 与对应 mods/anon_<hash>.dat）
+pnpm run apk:lua
+pnpm run apk:mod          # → tmp/apk-out/arknights-hg-<版本>-mod-signed.apk
+
+# 分步版（需要自定义路径时）
+pnpm run apk:patch -- --in tmp/apk/2.7.71/arknights-hg-2771.apk `
+  --lua-bundle mods/anon_3ea52f7d41a320d200aa7e61735f0819.dat `
+  --entry assets/AB/Android/anon/3ea52f7d41a320d200aa7e61735f0819.bin `
+  --out tmp/apk-out/arknights-hg-2771-mod.apk --sign
+```
+
+- **两条下发路径（重要）**：`mods/<平台>/*.dat` 是**服务端热更**路径，只能覆盖客户端愿意从
+  `files/Bundles/` 持久目录读取的资产；而 **Lua 引导 bundle 走 APK 内路径**
+  （`jar:file://…base.apk!/assets/AB/Android/anon/<当前 resVersion 的 hash>.bin`，见
+  `docs/apk-mod-2771-2026-09-13.md` §8.1）——要用改包方式生效，必须把注入版 bundle
+  用 `apk:patch --add` **新增**到 APK 内该条目（且 bundle 名跟随热更版本，不是 APK 内置旧名）。
+- **插件内联（Android 实测推荐）**：客户端清单（`*.idx`）按 pathId 寻址，**新增插件资产无法被解析**；
+  `repack:lua --inline-plugins` 把插件源码内联为 `package.preload["Plugin/<X>"]` 追加进 `entry.lua`
+  （Lua `require` 先查 preload，绕过资产查找），资产集保持官方 344 条不变（见 `docs/apk-mod-2771-2026-09-13.md` §8.5）。
+- **重打包不变量**（缺一即 Unity 报 `Failed to load asset` 或 `libunity.so` 崩溃）：保留官方
+  AssetBundle(142) 容器 key、**64 位 pathId**（> 2^53，禁止 Number 转换）、官方类型表
+  （`enableTypeTree=true`）、对象数据 **8 字节对齐**；细节与实证见 `docs/apk-mod-2771-2026-09-13.md` §8.2。
+- **zip 级重写**：逐条目原样搬运压缩字节，只替换目标条目；数据描述符（bit3）改为本地头直写尺寸；
+  STORED 条目按 4 字节（`.so` 按 4096 字节）重对齐（等价 zipalign）；抹掉旧 V1
+  （`META-INF/*.SF|RSA|MF`）与 APK Signing Block，再交给 `apk:sign` 重签（V1+V2+V3）。
+- **自检**：`apk:patch` 落盘后重扫中央目录，逐条校验 CRC、STORED 布局、对齐、条目区间不重叠，
+  任一不过即非 0 退出（漏写 extra、偏移错位这类问题只有结构自检能查出来）。
+- **其它用法**：`--list` 概览（条目数 / V1 / 签名块）；`--dry-run` 预演不落盘；
+  `--replace <zip条目>=<本地文件>`（可重复）做任意资源替换；自定义密钥
+  `pnpm run apk:sign -- --in <apk> --keystore my.jks --alias k --store-pass *** --key-pass ***`。
+- **注意**：改包会破坏官方签名，**必须重签名**才能安装（Android 7+ 认 V2 方案）；debug 密钥仅自用/内测，
+  勿分发；反作弊/校验绕过不在本仓范围（红线见 `docs/no-root-injection-chain-2026-09-13.md` §7）。
+
 ```powershell
 # 1) 从已装客户端提取内置 bundle（ArkUnpacker 解包后定位该 .bin，或直接取 .dat）
 #    得到 <内置bundle>.dat 或 .bin

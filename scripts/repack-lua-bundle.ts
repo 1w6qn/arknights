@@ -26,8 +26,8 @@ import * as fs from "fs";
 import * as path from "path";
 import { createHash } from "crypto";
 import JSZip from "jszip";
-import { packLuaBundle, type LuaAsset } from "./pack-lua-bundle";
-import { extractTextAssets } from "./vendor/unityfs";
+import { packLuaBundle, type ContainerSpec, type LuaAsset, type PackOptions } from "./pack-lua-bundle";
+import { extractBundleWithMeta, type AssetBundleMeta } from "./vendor/unityfs";
 import { decryptLuaScript, encryptLuaScript, isLuaEncrypted } from "./vendor/lua-crypt";
 
 /** 内置 Lua 主 bundle 名（zip 条目名 = 客户端资源名）。以客户端真实引导 Lua 的 bundle 为准：
@@ -200,6 +200,64 @@ export function patchDefinedFix(script: string, entries: string[] = PLUGIN_HOTFI
 }
 
 /**
+ * 生成插件内联 prelude：把 lua/plugin/*.lua 注册进 `package.preload["Plugin/<X>"]`。
+ *
+ * 为什么内联：引擎热修管线 `HotfixProcesser.Do(fixes)` 用 **Lua require** 加载 DefinedFix 清单里的
+ * `Plugin/PluginBootHotfixer`；而 Lua 的 require 会**先查 package.preload**，再走 XLua 的
+ * CustomLoader（资产查找）。客户端清单里没有新增插件资产的条目（资产按清单 pathId 寻址），
+ * 因此把插件源码内联进 `entry.lua`（清单已知资产）可完全绕开资产查找。
+ *
+ * @param pluginDir - 插件源码目录（lua/plugin）
+ * @returns 追加到 entry.lua 末尾的 Lua 代码
+ */
+export function buildInlinePluginPrelude(pluginDir: string, trace: boolean = true): string {
+  const files = fs
+    .readdirSync(pluginDir)
+    .filter((f) => f.endsWith(".lua"))
+    .sort();
+  const parts: string[] = ["--[[ DoctorateTs: inline plugin preload（绕过资产查找，require 直接命中） ]]"];
+  if (trace) {
+    // 落盘埋点：证明 entry.lua 执行到本 prelude、以及热修管线确实 require 了插件引导
+    parts.push(
+      [
+        "local function _dtTrace(msg)",
+        "  -- 双通道：Debug.LogError（logcat 可见，必不被过滤）+ 落盘（best-effort）",
+        "  pcall(function() CS.UnityEngine.Debug.LogError('[DoctorateTs] ' .. msg) end)",
+        "  pcall(function()",
+        '    local base = CS.UnityEngine.Application.persistentDataPath',
+        '    CS.System.IO.File.AppendAllText(base .. "/plugin_boot_trace.txt", msg .. "\\n")',
+        "  end)",
+        "end",
+        '_dtTrace("preload registered, modules=" .. tostring(' + files.length + "))",
+      ].join("\n"),
+    );
+  }
+  for (const f of files) {
+    const mod = "Plugin/" + f.replace(/\.lua$/i, "");
+    const body = fs.readFileSync(path.join(pluginDir, f), "utf-8");
+    parts.push(`package.preload[${JSON.stringify(mod)}] = function(...)\n${body}\nend`);
+  }
+  if (trace) {
+    // 包装插件引导模块：被 require 时再补一条埋点
+    parts.push(
+      [
+        'local _dtBoot = package.preload["Plugin/PluginBootHotfixer"]',
+        'if _dtBoot ~= nil then',
+        '  package.preload["Plugin/PluginBootHotfixer"] = function(...)',
+        "    _dtTrace(\"PluginBootHotfixer required\")",
+        "    local a, b = pcall(_dtBoot, ...)",
+        '    _dtTrace("PluginBootHotfixer returned ok=" .. tostring(a))',
+        "    if not a then error(b) end",
+        "    return b",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+  }
+  return parts.join("\n\n") + "\n";
+}
+
+/**
  * 合并内置 Lua 资产与插件资产，并 patch DefinedFix 以引导插件加载。
  * 自动适配两种平台格式：
  *   - Windows（明文，gamedata/[uc]lua/ 前缀）：保持现有行为；
@@ -213,7 +271,12 @@ export function patchDefinedFix(script: string, entries: string[] = PLUGIN_HOTFI
  *                       客户端 PRODUCTION 模式按 cryptType 解密加载，明文资产会解密失败）
  * @returns 合并后的资产列表（含补丁后的 DefinedFix；格式与内置一致）
  */
-export function mergeAndPatch(builtin: LuaAsset[], pluginDir: string, forceEncrypt: boolean = false): LuaAsset[] {
+export function mergeAndPatch(
+  builtin: LuaAsset[],
+  pluginDir: string,
+  forceEncrypt: boolean = false,
+  inlinePlugins: boolean = false,
+): LuaAsset[] {
   // 输入是否加密（决定是否先解密）；输出是否加密（forceEncrypt 或输入加密——Android 客户端
   // PRODUCTION 模式按 cryptType 解密加载，--from-ref 明文输入也必须加密输出）
   const isEncInput = builtin.some((a) => /definedfix\.lua$/i.test(a.name) && isLuaEncrypted(a.script));
@@ -239,7 +302,13 @@ export function mergeAndPatch(builtin: LuaAsset[], pluginDir: string, forceEncry
   if (!patched) {
     throw new Error("内置 bundle 中未找到 DefinedFix.lua，无法引导插件");
   }
-  const combined = [...plugins, ...merged];
+  if (inlinePlugins) {
+    // 内联模式：插件不进资产列表（也无需容器条目），只把源码挂到 entry.lua 的 package.preload
+    const host = merged.find((a) => /(^|\/)entry\.lua$/i.test(a.name));
+    if (!host) throw new Error("内联插件失败：内置 bundle 中未找到 entry.lua");
+    host.script = Buffer.concat([host.script, Buffer.from("\n" + buildInlinePluginPrelude(pluginDir), "utf8")]);
+  }
+  const combined = inlinePlugins ? merged : [...plugins, ...merged];
   // 4. 重新加密（输入为加密格式或 forceEncrypt 时；插件资产同样加密，客户端统一解密）
   if (needEncrypt) {
     return combined.map((a) => ({ ...a, script: encryptLuaScript(a.script) }));
@@ -262,14 +331,25 @@ export async function repackBuiltinLua(
   outModsDir: string,
   bundleName: string = BUILTIN_BUNDLE_NAME,
   hashName: boolean = false,
+  inlinePlugins: boolean = false,
 ): Promise<{ dat: string; bundle: Uint8Array; assetCount: number }> {
   const builtinBytes = await readBuiltinBundle(builtinPath);
-  const builtin = extractTextAssets(builtinBytes);
+  // 官方 bundle 的 AssetBundle 容器与 pathId 必须继承（客户端按容器 key / 清单 pathId 取 Lua 资产）
+  const { assets: builtin, assetPathIds, assetBundle, assetBundlePathId, typeTable } =
+    extractBundleWithMeta(builtinBytes);
   if (builtin.length === 0) {
     throw new Error(`内置 bundle 未解析出任何 Lua 资产: ${builtinPath}`);
   }
-  const merged = mergeAndPatch(builtin, pluginDir);
-  return writeModDat(merged, outModsDir, bundleName, hashName);
+  const pathIdByName = new Map(builtin.map((a, i) => [a.name, assetPathIds[i] ?? 0n]));
+  const merged = mergeAndPatch(builtin, pluginDir, false, inlinePlugins);
+  return writeModDat(merged, outModsDir, bundleName, hashName, {
+    container: buildContainer(merged, assetBundle),
+    assetBundleName: assetBundle?.name,
+    tail: assetBundle?.tail,
+    pathIds: merged.map((a) => pathIdByName.get(a.name) ?? 0n),
+    assetBundlePathId: assetBundlePathId,
+    typeTable,
+  });
 }
 
 /**
@@ -324,6 +404,48 @@ function collectReferenceLuaBare(refDir: string): LuaAsset[] {
 }
 
 /**
+ * 由官方容器 key 推导 basename（`dyn/gamedata/[uc]lua/base/foo.lua.bytes` → `foo.lua`）。
+ * @param key - 容器 key
+ * @returns 小写 basename（含 .lua）
+ */
+function containerKeyToBasename(key: string): string {
+  const last = key.split("/").pop() ?? key;
+  return last.replace(/\.bytes$/i, "").toLowerCase();
+}
+
+/**
+ * 构建重打包用的 AssetBundle 容器（客户端按容器 key 取 Lua 资产，缺容器即加载失败）。
+ *
+ * 官方资产的 key **不携带目录信息于 m_Name 中**（m_Name 为 basename，key 含相对目录 + 全小写 +
+ * `.bytes`），只能从官方 bundle 原样继承；新增插件资产按同一命名法派生
+ * （`Plugin/<X>` → `dyn/gamedata/[uc]lua/plugin/<x>.lua.bytes`）。
+ *
+ * @param merged - 合并后的资产列表（顺序即 pathId 顺序，下标 i ↔ pathId i+1）
+ * @param meta   - 官方 bundle 的 AssetBundle 元数据（无官方 bundle 时传 null）
+ * @returns 容器条目（无法对应到资产的官方 key 会被剔除）
+ */
+export function buildContainer(merged: LuaAsset[], meta: AssetBundleMeta | null): ContainerSpec[] {
+  if (!meta) return [];
+  const indexByBasename = new Map<string, number>();
+  merged.forEach((a, i) => indexByBasename.set((a.name.split("/").pop() ?? a.name).toLowerCase(), i));
+  const used = new Set<number>();
+  const container: ContainerSpec[] = [];
+  for (const entry of meta.container) {
+    const idx = indexByBasename.get(containerKeyToBasename(entry.key));
+    if (idx === undefined) continue;
+    container.push({ key: entry.key, assetIndex: idx });
+    used.add(idx);
+  }
+  // 新增资产（插件）：客户端 require("Plugin/X") → 资源路径 gamedata/[uc]lua/Plugin/X.lua
+  merged.forEach((a, i) => {
+    if (used.has(i)) return;
+    const base = (a.name.split("/").pop() ?? a.name).toLowerCase();
+    container.push({ key: `dyn/gamedata/[uc]lua/plugin/${base}.bytes`, assetIndex: i });
+  });
+  return container;
+}
+
+/**
  * 将合并后的资产列表打包为 UnityFS bundle 并写为覆盖 mod（.dat）。
  * @param merged   - 合并后的资产列表
  * @param outModsDir - 输出 mods 目录
@@ -339,8 +461,9 @@ async function writeModDat(
   outModsDir: string,
   bundleName: string = BUILTIN_BUNDLE_NAME,
   hashName: boolean = false,
+  packOpts?: PackOptions,
 ): Promise<{ dat: string; bundle: Uint8Array; assetCount: number }> {
-  const uf = packLuaBundle(merged);
+  const uf = packLuaBundle(merged, packOpts);
   let entryName = bundleName;
   if (hashName) {
     // 内容 hash 命名：确定性（LUA_ZIP_DATE 固定时间戳 → 同内容同字节 → 同名）
@@ -367,11 +490,13 @@ async function main(): Promise<void> {
   const bundleNameIdx = args.indexOf("--bundle-name");
   const encryptIdx = args.indexOf("--encrypt");
   const officialIdx = args.indexOf("--official");
+  const inlineIdx = args.indexOf("--inline-plugins");
   const builtinPath = bundleIdx >= 0 ? args[bundleIdx + 1] : "";
   const bundleName = bundleNameIdx >= 0 ? args[bundleNameIdx + 1] : BUILTIN_BUNDLE_NAME;
   const encrypt = encryptIdx >= 0;
   const hashName = officialIdx >= 0;
   const fromRef = refIdx >= 0;
+  const inlinePlugins = inlineIdx >= 0;
   const platform = platformIdx >= 0 ? (args[platformIdx + 1] ?? "").toLowerCase() : "";
   let outModsDir = outIdx >= 0 ? args[outIdx + 1] : path.join(__dirname, "..", "mods");
   if (outIdx < 0 && (platform === "windows" || platform === "android")) {
@@ -384,11 +509,11 @@ async function main(): Promise<void> {
     console.log(`从官方明文 Lua 参考目录重建内置 bundle…${encrypt ? "（Android 加密格式）" : ""}${hashName ? "（官方 hash 命名）" : ""}`);
     result = await repackBuiltinFromRef(REF_LUA_DIR, PLUGIN_DIR, outModsDir, bundleName, encrypt, hashName);
   } else if (builtinPath) {
-    result = await repackBuiltinLua(builtinPath, PLUGIN_DIR, outModsDir, bundleName, hashName);
+    result = await repackBuiltinLua(builtinPath, PLUGIN_DIR, outModsDir, bundleName, hashName, inlinePlugins);
   } else {
     console.error(
       "用法: pnpm run repack:lua -- --from-ref [--encrypt] [--official] [--bundle-name <客户端资源名>] [--platform <windows|android>] [--out <mods目录>]\n" +
-        "  或: pnpm run repack:lua -- --bundle <内置bundle.dat|.bin> [--official] [--bundle-name <客户端资源名>] [--platform <windows|android>] [--out <mods目录>]",
+        "  或: pnpm run repack:lua -- --bundle <内置bundle.dat|.bin> [--official] [--inline-plugins] [--bundle-name <客户端资源名>] [--platform <windows|android>] [--out <mods目录>]",
     );
     process.exit(1);
   }

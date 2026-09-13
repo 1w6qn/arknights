@@ -28,8 +28,7 @@ const LUA_ASSET_PREFIX = "gamedata/[uc]lua/";
 /** zip 条目固定时间戳：内容不变时产物字节一致（md5 稳定，避免客户端重复全量下载） */
 const LUA_ZIP_DATE = new Date("2024-01-01T00:00:00.000Z");
 
-/** 字节写入器（小端为主，UnityFS 头例外用大端字段） */
-class ByteWriter {
+/** 字节写入器（小端为主，UnityFS 头例外用大端字段） */class ByteWriter {
   /** 底层缓冲（buildSerializedFile 需直接按偏移写入，保持公开） */
   buf: Buffer;
 
@@ -72,6 +71,17 @@ class ByteWriter {
     return off + 8;
   }
 
+  /**
+   * 写 i64 小端（bigint，pathId 可能超出 Number 精度）。
+   * @param off - 写入偏移
+   * @param v   - 64 位无符号值
+   * @returns 新偏移
+   */
+  i64leBig(off: number, v: bigint): number {
+    this.buf.writeBigUInt64LE(v, off);
+    return off + 8;
+  }
+
   /** 写 u32 大端 */
   u32be(off: number, v: number): number {
     this.buf.writeUInt32BE(v >>> 0, off);
@@ -101,21 +111,95 @@ export interface LuaAsset {
   script: Uint8Array;
 }
 
+/** AssetBundle 容器条目：客户端资源路径 → assets 数组下标 */
+export interface ContainerSpec {
+  /** 容器 key（客户端 `AssetBundle.LoadAsset` 用的路径，如 `dyn/gamedata/[uc]lua/base/foo.lua.bytes`） */
+  key: string;
+  /** 对应 `assets` 数组下标 */
+  assetIndex: number;
+}
+
+/** 打包附加项（保留官方 AssetBundle 容器） */
+export interface PackOptions {
+  /** 容器条目；缺省不写 AssetBundle(142) 对象（旧行为，客户端无法按名解析） */
+  container?: ContainerSpec[];
+  /** AssetBundle.m_Name（缺省官方实测值 `init/gamedata/[uc]lua.ab`） */
+  assetBundleName?: string;
+  /** AssetBundle 对象 m_Container 之后的原始字节（从官方 bundle 复制，保留 m_Dependencies 等字段） */
+  tail?: Uint8Array;
+  /** 各资产的 pathId（与 assets 同序；0n 表示自动分配）。客户端清单按 pathId 寻址，重打包须保留官方值 */
+  pathIds?: bigint[];
+  /** AssetBundle 对象的 pathId（官方实测 1） */
+  assetBundlePathId?: bigint;
+  /** 官方类型表原始字节（含类型树）；提供时 enableTypeTree=true 并原样写入 */
+  typeTable?: Uint8Array;
+}
+
+/**
+ * 计算 AssetBundle(142) 对象的数据长度（与 buildSerializedFile 的写入逻辑同构）。
+ * @param abNameBytes - m_Name 字节数
+ * @param keys        - m_Container 的 key 列表
+ * @param assetCount  - TextAsset 数量（m_PreloadTable 每条 12 字节）
+ * @param tailLen     - m_Container 之后的尾部字节数
+ * @returns 对象数据字节数
+ */
+function measureAssetBundleObject(abNameBytes: number, keys: string[], assetCount: number, tailLen: number): number {
+  let o = 4 + abNameBytes;
+  while (o % 4 !== 0) o++;
+  o += 4 + assetCount * 12; // m_PreloadTable
+  o += 4; // m_Container count
+  for (const key of keys) {
+    o += 4 + Buffer.byteLength(key, "utf8");
+    while (o % 4 !== 0) o++;
+    o += 4 + 4 + 4 + 8; // preloadIndex + preloadSize + PPtr.fileID + PPtr.pathID
+  }
+  return o + tailLen;
+}
+
 /**
  * 构造 SerializedFile v22（N 条 TextAsset 对象，enableTypeTree=false）。
  *
  * 布局（小端，对齐官方 unityfs.ts 的解包顺序）：
  *   头 16B（version=22 在偏移 8）→ endian+reserved 4B → v22 扩展头(metadataSize/fileSize/dataOffset/unknown)
  *   → unityVersion cstr → targetPlatform i32 → enableTypeTree u8 → typeCount i32
- *   → 类型表(1 条 TextAsset/49) → objectCount → object 表 → 数据区
+ *   → 类型表(TextAsset/49 [+ AssetBundle/142]) → objectCount → object 表 → 数据区
+ *
+ * 客户端按**容器路径**取 Lua 资产：不带 `opts.container` 时产出的 bundle 无法按名加载
+ * （实测 `Failed to load asset: gamedata/[uc]lua/entry.lua`），因此重打包一律应传容器。
  *
  * @param assets - 多条 Lua 资产（≥1），object 表按序排列，数据区依次写各 m_Name+m_Script
+ * @param opts   - 打包附加项（容器 / bundle 名 / 尾部字节）
  * @returns SerializedFile 字节
  */
-export function buildSerializedFile(assets: LuaAsset[]): Uint8Array {
+export function buildSerializedFile(assets: LuaAsset[], opts?: PackOptions): Uint8Array {
   if (assets.length === 0) {
     throw new Error("至少需要 1 条 Lua 资产");
   }
+  const container = opts?.container ?? [];
+  const hasAssetBundle = container.length > 0;
+  // pathId：优先用传入值（保留官方），0/缺省者顺序分配（避开已用值）
+  const provided = opts?.pathIds ?? [];
+  const used = new Set<string>(provided.filter((v) => v > 0n).map((v) => v.toString()));
+  // AssetBundle 对象的 pathId 先占位，避免新资产与它撞号
+  const requestedAbPathId = opts?.assetBundlePathId && opts.assetBundlePathId > 0n ? opts.assetBundlePathId : 0n;
+  if (requestedAbPathId > 0n) used.add(requestedAbPathId.toString());
+  let nextFree = 1n;
+  const pathIds = assets.map((_, i) => {
+    const v = provided[i];
+    if (v !== undefined && v > 0n) return v;
+    while (used.has(nextFree.toString())) nextFree += 1n;
+    const assigned = nextFree;
+    used.add(assigned.toString());
+    nextFree += 1n;
+    return assigned;
+  });
+  const abPathId = requestedAbPathId > 0n
+    ? requestedAbPathId
+    : (() => {
+        let v = 1n;
+        while (used.has(v.toString())) v += 1n;
+        return v;
+      })();
   // 计算每个 TextAsset 对象数据长度（m_Name AlignedString + m_Script ByteArray）
   const infos = assets.map((asset) => {
     const nameBytes = Buffer.byteLength(asset.name, "utf8");
@@ -123,15 +207,28 @@ export function buildSerializedFile(assets: LuaAsset[]): Uint8Array {
     const scriptLen = asset.script.length;
     return { asset, nameBytes, namePadded, scriptLen, objSize: namePadded + 4 + scriptLen };
   });
-  const totalObjData = infos.reduce((a, o) => a + o.objSize, 0);
 
-  // 各对象在数据区内的 byteStart（相对 dataOffset）
+  // AssetBundle(142) 对象数据：m_Name + m_PreloadTable + m_Container + tail
+  const abName = opts?.assetBundleName ?? "init/gamedata/[uc]lua.ab";
+  const abNameBytes = Buffer.byteLength(abName, "utf8");
+  const abTail = hasAssetBundle ? (opts?.tail ?? new Uint8Array(0)) : new Uint8Array(0);
+  const abObjSize = hasAssetBundle
+    ? measureAssetBundleObject(abNameBytes, container.map((c) => c.key), assets.length, abTail.length)
+    : 0;
+
+  const totalObjData = infos.reduce((a, o) => a + o.objSize, 0) + abObjSize;
+
+  // 各对象在数据区内的 byteStart（相对 dataOffset）：**对象起点对齐 8 字节**
+  // （官方 bundle 实测：345 个对象起点全部 8 字节对齐，对象之间以零填充补齐；
+  //  不对齐会让 Unity 在读资产时越界/崩溃——实测 libunity.so SIGSEGV）
+  const starts: number[] = [];
   let cursor = 0;
-  const starts = infos.map((o) => {
-    const s = cursor;
-    cursor += o.objSize;
-    return s;
-  });
+  for (const o of infos) {
+    starts.push(cursor);
+    cursor = (cursor + o.objSize + 7) & ~7;
+  }
+  const abStart = cursor;
+  const alignedObjData = abStart + ((abObjSize + 7) & ~7);
 
   const unityVerStr = "2021.3.39f1"; // 与官方 SerializedFile 内部 unityVersion 一致（官方实测值）
 
@@ -141,14 +238,18 @@ export function buildSerializedFile(assets: LuaAsset[]): Uint8Array {
     return 4 + 1 + 2 + 16 + 4;
   })();
   const objEntry = 8 + 8 + 4 + 4; // pathId i64 + byteStart i64 + size u32 + typeId i32
+  const typeCount = hasAssetBundle ? 2 : 1;
+  const objectCount = assets.length + (hasAssetBundle ? 1 : 0);
+  const rawTypeTable = opts?.typeTable;
+  const useTypeTable = rawTypeTable !== undefined && rawTypeTable.length > 0;
   const metaContentLen =
     Buffer.byteLength(unityVerStr, "utf8") + 1 + // unityVersion cstr
     4 + // targetPlatform
     1 + // enableTypeTree u8
     4 + // typeCount
-    typeEntry +
+    (useTypeTable ? rawTypeTable.length : typeEntry * typeCount) +
     4 + // objectCount
-    objEntry * assets.length;
+    objEntry * objectCount;
   // objectCount 后需 align_stream(4)（从 metadata 起点对齐到 4）
   const metaContentAligned = ((metaContentLen + 3) & ~3);
 
@@ -158,7 +259,7 @@ export function buildSerializedFile(assets: LuaAsset[]): Uint8Array {
   // 硬编码 4096 在多资产（几百条 object 表）时会与 metadata 重叠，导致对象数据被覆盖。
   const DATA_OFFSET = Math.max(4096, Math.ceil((48 + metaContentAligned) / 4096) * 4096);
 
-  const fileSize = DATA_OFFSET + totalObjData;
+  const fileSize = DATA_OFFSET + alignedObjData;
 
   const w = new ByteWriter(fileSize);
 
@@ -178,27 +279,51 @@ export function buildSerializedFile(assets: LuaAsset[]): Uint8Array {
   // ---- metadata 内容 ----
   o = w.cstr(o, unityVerStr); // unityVersion（offset 48 起）
   o = w.i32le(o, 13); // targetPlatform=13 (Android)
-  w.buf[o] = 0; // enableTypeTree u8 = false
-  o += 1;
-  o = w.i32le(o, 1); // typeCount = 1
-  // 类型条目：classId=49（TextAsset）
-  o = w.i32le(o, 49);
-  w.buf[o] = 0; // isStrippedType u8
-  o += 1;
-  o = w.u16le(o, 0); // scriptTypeIndex i16
-  o = w.bytes(o, Buffer.alloc(16)); // oldTypeHash 16B
-  o = w.i32le(o, 0); // depCount i32（version>=21）
+  if (useTypeTable) {
+    // 原样保留官方类型表（含类型树）：AssetBundle(142) 的容器字段序依赖类型树，
+    // 缺类型树时 Unity 以内置类型解析会读错容器 → LoadAsset 全部失败
+    w.buf[o] = 1; // enableTypeTree = true
+    o += 1;
+    o = w.i32le(o, typeCount);
+    o = w.bytes(o, Buffer.from(rawTypeTable));
+  } else {
+    w.buf[o] = 0; // enableTypeTree u8 = false
+    o += 1;
+    o = w.i32le(o, typeCount);
+    // 类型条目 0：classId=49（TextAsset）
+    o = w.i32le(o, 49);
+    w.buf[o] = 0; // isStrippedType u8
+    o += 1;
+    o = w.u16le(o, 0); // scriptTypeIndex i16
+    o = w.bytes(o, Buffer.alloc(16)); // oldTypeHash 16B
+    o = w.i32le(o, 0); // depCount i32（version>=21）
+    if (hasAssetBundle) {
+      // 类型条目 1：classId=142（AssetBundle，Unity 内置类型树）
+      o = w.i32le(o, 142);
+      w.buf[o] = 0;
+      o += 1;
+      o = w.u16le(o, 0);
+      o = w.bytes(o, Buffer.alloc(16));
+      o = w.i32le(o, 0);
+    }
+  }
   // objectCount
-  o = w.i32le(o, assets.length);
+  o = w.i32le(o, objectCount);
   // align_stream(4)：使 object 表从 metadata 起点对齐到 4
   const metaStartAbs = 48;
   while ((o - metaStartAbs) % 4 !== 0) o++;
   // object 表：pathId / byteStart(相对数据区) / size / typeId
   for (let i = 0; i < assets.length; i++) {
-    o = w.i64le(o, i + 1); // pathId
+    o = w.i64leBig(o, pathIds[i]); // pathId（保留官方值）
     o = w.i64le(o, starts[i]); // byteStart（相对数据区）
     o = w.u32le(o, infos[i].objSize);
-    o = w.i32le(o, 0); // typeId=0
+    o = w.i32le(o, 0); // typeId=0（TextAsset）
+  }
+  if (hasAssetBundle) {
+    o = w.i64leBig(o, abPathId); // AssetBundle 对象 pathId
+    o = w.i64le(o, abStart);
+    o = w.u32le(o, abObjSize);
+    o = w.i32le(o, 1); // typeId=1（AssetBundle）
   }
   if (o - metaStartAbs !== metaContentAligned) {
     throw new Error(`metadata 长度不匹配: 实际 ${o - metaStartAbs}, 期望 ${metaContentAligned}`);
@@ -214,6 +339,34 @@ export function buildSerializedFile(assets: LuaAsset[]): Uint8Array {
     while ((dof - objStart) % 4 !== 0) dof++; // m_Name 对齐 4（相对对象起点）
     dof = w.u32le(dof, info.scriptLen); // m_Script 长度
     dof = w.bytes(dof, info.asset.script);
+    while ((dof - DATA_OFFSET - starts[i]) % 8 !== 0) dof++; // 对象起点 8 字节对齐（零填充）
+  }
+
+  if (hasAssetBundle) {
+    const objStart = dof;
+    dof = w.u32le(dof, abNameBytes); // m_Name 长度
+    dof = w.bytes(dof, Buffer.from(abName, "utf8"));
+    while ((dof - objStart) % 4 !== 0) dof++;
+    dof = w.i32le(dof, assets.length); // m_PreloadTable count
+    for (let i = 0; i < assets.length; i++) {
+      dof = w.i32le(dof, 0); // PPtr.fileID
+      dof = w.i64leBig(dof, pathIds[i]); // PPtr.pathID = 对应 TextAsset
+    }
+    dof = w.i32le(dof, container.length); // m_Container count
+    for (const c of container) {
+      const keyLen = Buffer.byteLength(c.key, "utf8");
+      dof = w.u32le(dof, keyLen);
+      dof = w.bytes(dof, Buffer.from(c.key, "utf8"));
+      while ((dof - objStart) % 4 !== 0) dof++;
+      dof = w.i32le(dof, c.assetIndex); // AssetInfo.preloadIndex
+      dof = w.i32le(dof, 1); // AssetInfo.preloadSize
+      dof = w.i32le(dof, 0); // AssetInfo.asset.m_FileID
+      dof = w.i64leBig(dof, pathIds[c.assetIndex]); // AssetInfo.asset.m_PathID
+    }
+    if (abTail.length > 0) dof = w.bytes(dof, Buffer.from(abTail));
+    if (dof - objStart !== abObjSize) {
+      throw new Error(`AssetBundle 对象长度不匹配: 实际 ${dof - objStart}, 期望 ${abObjSize}`);
+    }
   }
 
   return w.buffer();
@@ -222,10 +375,11 @@ export function buildSerializedFile(assets: LuaAsset[]): Uint8Array {
 /**
  * 将多条明文 Lua 资产打包为 UnityFS bundle（客户端可加载）。
  * @param assets - Lua 资产列表（m_Name 为客户端资源名，如 plugin/PluginManager.lua）
+ * @param opts   - 打包附加项（容器 / bundle 名 / 尾部字节）
  * @returns UnityFS bundle 字节
  */
-export function packLuaBundle(assets: LuaAsset[]): Uint8Array {
-  const sf = buildSerializedFile(assets);
+export function packLuaBundle(assets: LuaAsset[], opts?: PackOptions): Uint8Array {
+  const sf = buildSerializedFile(assets, opts);
   return buildUnityFS(sf);
 }
 

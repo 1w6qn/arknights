@@ -128,6 +128,15 @@ export function extractTextAsset(unityfs: Uint8Array): TextAssetData | null {
  * @param unityfs - 解包后的 UnityFS bundle 字节
  */
 export function extractTextAssets(unityfs: Uint8Array): TextAssetData[] {
+  return parseSerializedFiles(unityFsToSerializedFile(unityfs));
+}
+
+/**
+ * 解包 UnityFS → 取 SerializedFile 字节（含 TextAsset 与 AssetBundle 元数据解析入口）。
+ * @param unityfs - UnityFS bundle 字节
+ * @returns SerializedFile 字节
+ */
+export function unityFsToSerializedFile(unityfs: Uint8Array): Uint8Array {
   // ---- UnityFS 头（大端）----
   let off = 0;
   const sig = cstr(unityfs, off);
@@ -200,11 +209,28 @@ export function extractTextAssets(unityfs: Uint8Array): TextAssetData[] {
     }
   }
   const cab = concatBytes(parts);
-  if (nodes.length === 0) return [];
+  if (nodes.length === 0) throw new Error("UnityFS 无节点（nodes 为空）");
 
   const node = nodes[0];
   const sf = cab.subarray(node.offset, node.offset + node.size);
-  return parseSerializedFiles(sf);
+  return sf;
+}
+
+/**
+ * 解析 UnityFS bundle → TextAsset 列表 + AssetBundle(142) 容器（重打包需保留容器）。
+ * @param unityfs - UnityFS bundle 字节
+ * @returns TextAsset 列表与 AssetBundle 元数据
+ */
+export function extractBundleWithMeta(unityfs: Uint8Array): {
+  assets: TextAssetData[];
+  assetPathIds: bigint[];
+  assetBundle: AssetBundleMeta | null;
+  assetBundlePathId: bigint;
+  typeTable: Uint8Array;
+  enableTypeTree: boolean;
+  typeCount: number;
+} {
+  return parseSerializedFileFull(unityFsToSerializedFile(unityfs));
 }
 
 function concatBytes(parts: Uint8Array[]): Uint8Array {
@@ -223,6 +249,43 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
  * 对象数据布局（TextAsset 固定字段序）：m_Name(AlignedString) → m_Script(ByteArray) → m_PathName。
  */
 function parseSerializedFiles(sf: Uint8Array): TextAssetData[] {
+  return parseSerializedFileFull(sf).assets;
+}
+
+/** AssetBundle(142) 对象的容器信息 */
+export interface AssetBundleMeta {
+  /** m_Name（官方实测为 `init/gamedata/[uc]lua.ab`） */
+  name: string;
+  /** m_Container 条目：key = 客户端资源路径（`dyn/gamedata/[uc]lua/<小写相对路径>.lua.bytes`） */
+  container: { key: string; pathId: bigint }[];
+  /** m_Container 之后的原始字节（m_MainAsset / m_Dependencies 等字段，重打包时原样保留） */
+  tail: Uint8Array;
+}
+
+/**
+ * 解析 SerializedFile：TextAsset 列表 + AssetBundle 容器。
+ *
+ * 客户端按**容器路径**（`AssetBundle.LoadAsset(容器 key)`）解析 Lua 资产，重打包必须保留容器；
+ * 容器 key 与 TextAsset 的 m_Name 不是同一字符串（key 含相对目录、全小写、带 `.bytes` 后缀），
+ * 因此重打包需从**官方 bundle** 读取 key 并按 basename 与对象一一对应。
+ *
+ * @param sf - SerializedFile 字节
+ * @returns TextAsset 列表与（可选的）AssetBundle 容器
+ */
+export function parseSerializedFileFull(sf: Uint8Array): {
+  assets: TextAssetData[];
+  /** 各 TextAsset 的 pathId（与 assets 同序；客户端清单按 pathId 寻址，重打包须保留） */
+  assetPathIds: bigint[];
+  assetBundle: AssetBundleMeta | null;
+  /** AssetBundle(142) 对象的 pathId（官方实测为 1） */
+  assetBundlePathId: bigint;
+  /** 类型表原始字节（含类型树） */
+  typeTable: Uint8Array;
+  /** 原文件是否带类型树（enableTypeTree） */
+  enableTypeTree: boolean;
+  /** 类型表条目数 */
+  typeCount: number;
+} {
   // 头（大端）：初始 4 u32（v22 后按 64 位重读）+ endian u8 + reserved 3
   let o = 0;
   const version = u32be(sf, 8); // 初始头的 version 字段
@@ -240,6 +303,7 @@ function parseSerializedFiles(sf: Uint8Array): TextAssetData[] {
   o += 4; // targetPlatform
   const enableTypeTree = sf[o] !== 0; o += 1;
   const typeCount = i32le(sf, o); o += 4;
+  const typeEntriesStart = o;
   // 收集类型 classId（对象表的 typeId 是类型数组下标）
   const classIds: number[] = [];
   // 跳过类型定义（v22：classId + 可选字段 + 类型树 blob + 依赖）
@@ -265,11 +329,15 @@ function parseSerializedFiles(sf: Uint8Array): TextAssetData[] {
     }
   }
   if (version >= 7 && version < 14) o += 4; // bigIdEnabled
+  /** 类型表原始字节（含类型树；重打包原样保留——缺失类型树会让 Unity 用内置类型读 AssetBundle(142) 失败） */
+  const typeTable = sf.slice(typeEntriesStart, o);
 
   // 对象信息表（v22）：align 4 → pathId i64 → byteStart i64 → byteSize u32 → typeId i32
   const objectCount = i32le(sf, o); o += 4;
   while (o % 4 !== 0) o++; // align_stream(4)
-  const objs: { pathId: number; start: number; size: number; typeId: number }[] = [];
+  // pathId 必须保持 bigint：官方 pathId 为 64 位散列（> 2^53），转 Number 会丢精度 →
+  // 重建后的 pathId 与客户端清单不一致 → 资产全部查找失败（实测症状：Failed to load asset）
+  const objs: { pathId: bigint; start: number; size: number; typeId: number }[] = [];
   for (let i = 0; i < objectCount; i++) {
     const pathId = version >= 14 ? readI64(sf, o) : BigInt(i32le(sf, o));
     o += version >= 14 ? 8 : 4;
@@ -281,19 +349,53 @@ function parseSerializedFiles(sf: Uint8Array): TextAssetData[] {
     }
     const size = i32le(sf, o); o += 4;
     const typeId = i32le(sf, o); o += 4;
-    objs.push({ pathId: Number(pathId), start, size, typeId });
+    objs.push({ pathId, start, size, typeId });
   }
 
   // TextAsset ClassID = 49；对象 typeId 是类型数组下标
   const taTypeIdx = classIds.indexOf(49);
-  if (taTypeIdx < 0) return [];
-  const textAssets = objs.filter((x) => x.typeId === taTypeIdx);
-  if (textAssets.length === 0) return [];
-
-  // 对象数据在 SF 内的 byteStart（相对 sf 起点）
-  return textAssets
+  const textAssets = taTypeIdx < 0 ? [] : objs.filter((x) => x.typeId === taTypeIdx);
+  const assetPathIds = textAssets.map((x) => x.pathId);
+  const assets = textAssets
     .map((ta) => parseTextAsset(sf.subarray(ta.start, ta.start + ta.size)))
     .filter((x): x is TextAssetData => x !== null);
+
+  // AssetBundle ClassID = 142
+  const abTypeIdx = classIds.indexOf(142);
+  let assetBundle: AssetBundleMeta | null = null;
+  const abObj = abTypeIdx < 0 ? undefined : objs.find((x) => x.typeId === abTypeIdx);
+  if (abObj) {
+    const obj = sf.subarray(abObj.start, abObj.start + abObj.size);
+    let p = 0;
+    const abNameLen = i32le(obj, p); p += 4;
+    const abName = new TextDecoder().decode(obj.subarray(p, p + abNameLen)); p += abNameLen;
+    while (p % 4 !== 0) p++;
+    const preCount = i32le(obj, p); p += 4;
+    p += preCount * 12; // m_PreloadTable：fileID i32 + pathID i64
+    const contCount = i32le(obj, p); p += 4;
+    const container: { key: string; pathId: bigint }[] = [];
+    for (let i = 0; i < contCount; i++) {
+      const keyLen = i32le(obj, p); p += 4;
+      const key = new TextDecoder().decode(obj.subarray(p, p + keyLen)); p += keyLen;
+      while (p % 4 !== 0) p++;
+      p += 4; // preloadIndex
+      p += 4; // preloadSize
+      p += 4; // asset.m_FileID
+      const pathId = readI64(obj, p); p += 8;
+      container.push({ key, pathId });
+    }
+    assetBundle = { name: abName, container, tail: obj.subarray(p).slice() };
+  }
+
+  return {
+    assets,
+    assetPathIds,
+    assetBundle,
+    assetBundlePathId: abObj ? abObj.pathId : 0n,
+    typeTable,
+    enableTypeTree,
+    typeCount,
+  };
 }
 
 function readI64(buf: Uint8Array, off: number): bigint {
