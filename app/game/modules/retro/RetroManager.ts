@@ -47,11 +47,7 @@ export class RetroManager {
    * @returns 本次实际发放的结晶数量（0 = 未发放）
    */
   async ensureWeeklySupplement(): Promise<number> {
-    const table = this._player.excel.RetroTable as unknown as {
-      initRetroCoin?: number;
-      retroCoinPerWeek?: number;
-      retroCoinMaxOfLevels?: Record<string, number>;
-    };
+    const table = this._player.excel.RetroTable;
     const base = Math.max(0, Number(table?.initRetroCoin ?? 2));
     const highGrant = Math.max(0, Number(table?.retroCoinPerWeek ?? base));
     const level = Number(this._player._playerdata.status?.level ?? 0);

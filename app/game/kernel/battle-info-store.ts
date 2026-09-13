@@ -110,9 +110,11 @@ export interface BattleRecord {
 export interface BattleInfoStore {
   /**
    * 获取战斗结算信息
-   * 调用方约定：传入的 battleId 必须已存在（AccountManager 内部以 `as BattleInfo` 强转非 undefined）。
+   *
+   * 无对应记录（battleStart 未写入 / 进程重启 / 直接重放 battleFinish）时返回 undefined，
+   * 调用方必须显式处理——此前声明为恒有值，逼出实现侧 `as BattleInfo` 与调用侧 `!` 两处断言。
    */
-  getBattleInfo(uid: string, battleId: string): Promise<BattleInfo>;
+  getBattleInfo(uid: string, battleId: string): Promise<BattleInfo | undefined>;
   /** 保存战斗结算信息 */
   saveBattleInfo(uid: string, battleId: string, info: BattleInfo): Promise<void>;
   /** 留存战斗结束记录（battle_records 表，供未来分析） */

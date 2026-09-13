@@ -1,4 +1,5 @@
 import { PlayerSquad, SquadFriendData } from "./model";
+import type { JsonValue } from "@excel/json-value";
 
 type ListCounterPool<T> = { Key: T; Value: number }[];
 export interface BattleData {
@@ -27,15 +28,22 @@ export interface BattleStats {
   enemyStats: ListCounterPool<BattleStats.EnemyStatKey>;
   skillTrigStats: ListCounterPool<BattleStats.SkillTrigStatsKey>;
   charAdvancedStats: { [charId: string]: BattleStats.CharAdvancedStats };
-  enemyAdvancedStats: object;
-  runeAdvancedStats: object[];
-  rlBuffAdvancedStats: object[];
-  extraBattleInfoStats: object;
-  extraBattleInfoSubStats: object[];
-  charList: object;
+  /**
+   * 客户端上报的高级统计（逐项形状未在客户端模型中声明）
+   *
+   * 这些字段是**未经校验的客户端 JSON**：此前声明为 TS `object`（既不可索引也不可取属性，
+   * 调用方唯一出路是 `as any`）。按 docs/type-system-audit.md §2.2/§3.1 改用严格 JSON 域
+   * 类型 {@link JsonValue}——仍是严格类型，取值必须显式收窄。
+   */
+  enemyAdvancedStats: JsonValue;
+  runeAdvancedStats: JsonValue[];
+  rlBuffAdvancedStats: JsonValue[];
+  extraBattleInfoStats: JsonValue;
+  extraBattleInfoSubStats: JsonValue[];
+  charList: JsonValue;
   enemyList: { [key: string]: number[][] };
-  runeList: object[];
-  rlBuffList: object[];
+  runeList: JsonValue[];
+  rlBuffList: JsonValue[];
   beginTs: number;
   endTs: number;
   access: string;
@@ -48,8 +56,8 @@ export interface BattleStats {
   fixedPlayTime: number;
   extraInfo: { [key: string]: string };
   extraBattleInfo: { [key: string]: number };
-  clientAntiCheatLog: object;
-  idList: object[];
+  clientAntiCheatLog: JsonValue;
+  idList: JsonValue[];
   packedRuneDataList: null;
   autoReplayCancelled: number;
 }

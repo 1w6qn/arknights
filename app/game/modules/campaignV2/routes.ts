@@ -32,6 +32,7 @@ import { logger } from "@utils/logger";
 import {
   campaignMaxKills,
   campaignWeeklyBudget,
+  campaignsV2View,
   claimCampaignBreakRewards,
   claimCampaignMissionReward,
 } from "./public";
@@ -112,14 +113,14 @@ router.post("/campaignV2/battleSweep", validateBody(campaignV2BattleSweepSchema)
       ]
     : undefined;
   const maxKills = campaignMaxKills(
-    (player._playerdata as unknown as { campaignsV2?: never }).campaignsV2,
+    campaignsV2View(player._playerdata).campaignsV2,
     stageId,
   );
 
   /** 空奖励响应（不消耗、不发奖） */
   const emptyResponse = () => {
     const { before, remaining } = campaignWeeklyBudget(
-      player._playerdata as unknown as { campaignsV2?: never },
+      campaignsV2View(player._playerdata),
       now(),
     );
     res.send({
@@ -158,7 +159,7 @@ router.post("/campaignV2/battleSweep", validateBody(campaignV2BattleSweepSchema)
       id: body.itemId,
       count: 1,
       instId: body.instId,
-    } as unknown as ItemBundle)
+    })
     .use();
   // 理智消耗（与直接作战一致）
   const apCost = stage.apCost ?? 0;
@@ -172,10 +173,7 @@ router.post("/campaignV2/battleSweep", validateBody(campaignV2BattleSweepSchema)
   let currentFeeAfter = 0;
   let gained = 0;
   await player.update(async (draft) => {
-    const before = campaignWeeklyBudget(
-      draft as unknown as { campaignsV2?: never },
-      now(),
-    );
+    const before = campaignWeeklyBudget(campaignsV2View(draft), now());
     const grant = Math.min(maxKills, before.remaining);
     currentFeeBefore = before.before;
     gained = grant;
@@ -230,7 +228,8 @@ router.post("/campaignV2/getBreakReward", validateBody(campaignV2GetBreakRewardS
           breakLadders?: {
             killCnt: number;
             breakFeeAdd?: number;
-            rewards?: { id: string; count: number; type: string }[];
+            // 与 accrue.ts#BreakLadder.rewards 同源：形状即物品条目（type 为类型枚举字符串）
+            rewards?: ItemBundle[];
           }[];
         }
       >;
@@ -240,13 +239,13 @@ router.post("/campaignV2/getBreakReward", validateBody(campaignV2GetBreakRewardS
   let allClaimed = false;
   await player.update(async (draft) => {
     const result = claimCampaignBreakRewards(
-      draft as unknown as { campaignsV2?: never },
+      campaignsV2View(draft),
       stageId,
       indexList,
       ladders,
       now(),
     );
-    items = result.items as unknown as ItemBundle[];
+    items = result.items;
     feeAdd = result.feeGain;
     allClaimed = result.allClaimed;
   });
@@ -263,7 +262,7 @@ router.post("/campaignV2/getBreakReward", validateBody(campaignV2GetBreakRewardS
     // 「获得全部进度奖励」任务（guide_60）与剿灭蚀刻章
     await player._trigger.emit("CompleteBreakReward", []);
     await player._trigger.emit("CampaignsComplete", [
-      (player._playerdata as unknown as { campaignsV2?: unknown }).campaignsV2 ?? {},
+      campaignsV2View(player._playerdata).campaignsV2 ?? {},
     ]);
   }
   res.send({
@@ -298,7 +297,7 @@ router.post("/campaignV2/getExMissionReward", validateBody(campaignV2GetExMissio
   let ok = false;
   await player.update(async (draft) => {
     const result = claimCampaignMissionReward(
-      draft as unknown as { campaignsV2?: never },
+      campaignsV2View(draft),
       missionId,
       missionCfg,
       now(),

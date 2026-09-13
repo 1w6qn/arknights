@@ -9,6 +9,7 @@ import { mkdir, readdir, readFile, writeFile, rename, stat } from "fs/promises";
 import config from "../../core/config";
 import { exists, size } from "@utils/file";
 import { logger } from "@utils/logger";
+import { isJsonObject, type JsonValue } from "@excel/json-value";
 import { backfillFile } from "./asset-backfill";
 import { assetRegistry } from "@asset/asset-service";
 import {
@@ -188,7 +189,8 @@ router.get(
 );
 
 interface ModsList {
-  mods: object[];
+  /** mod 元数据（mods.<平台>.json 缓存内容；未建模 JSON，取值须显式收窄） */
+  mods: JsonValue[];
   name: string[];
   path: string[];
   download: string[];
@@ -503,7 +505,8 @@ async function exportFile(
         (hotUpdateList.packInfos ?? []) as { cid?: number }[],
       );
       for (let i = 0; i < mods!.mods.length; i++) {
-        newAbInfos.push({ ...(mods!.mods[i] as object), cid: baseCid + i });
+        const mod = mods!.mods[i];
+        newAbInfos.push({ ...(isJsonObject(mod) ? mod : {}), cid: baseCid + i });
       }
     }
 

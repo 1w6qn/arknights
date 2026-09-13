@@ -10,8 +10,10 @@
  * 而 CAMPAIGN 战斗结算只发任务事件——剿灭既无产出又可脚本无限刷合成玉。
  */
 import { checkNew } from "@utils/time";
+import type { ItemBundle } from "@excel/excel";
 
 import type { Draft } from "mutative";
+import type { PlayerDataModel } from "../../kernel/playerdata";
 
 /** 每周上限缺省值（官服存档 campaignTotalFee=1800） */
 const DEFAULT_CAMPAIGN_TOTAL_FEE = 1800;
@@ -23,6 +25,28 @@ export interface CampaignsV2State {
   lastRefreshTs?: number;
   instances?: {
     [stageId: string]: { maxKills?: number; rewardStatus?: number[] } | undefined;
+  };
+  /** 委托任务状态（missionId → 0 未达成 / 1 待领 / 2 已领） */
+  missions?: Record<string, number>;
+}
+
+/**
+ * 读取服务端存档中生成模型未覆盖的 `campaignsV2` 字段
+ *
+ * `PlayerDataModel` 由 CS 反编译源生成，不含服务端独有的 `campaignsV2`
+ * （登记缺口见 docs/type-system-audit.md §4.2 轮 A / PROGRESS #28）。
+ * 本函数是本模块**唯一**的「模型 → 服务端独有字段」断言点：入参接受玩家存档根对象
+ * 或其 mutative 草稿，断言目标写成 `入参类型 & { campaignsV2?: … }`（交叉类型与入参
+ * 必然重叠，故不需要 `as unknown as`），调用点直接取字段，
+ * 不再各自写 `as unknown as { campaignsV2?: never }`。
+ * @param root - 玩家存档根对象（`PlayerDataModel`）或其 mutative 草稿
+ * @returns `{ campaignsV2 }` 视图（键可缺省：存档惰性建键）
+ */
+export function campaignsV2View(
+  root: PlayerDataModel | Draft<PlayerDataModel>,
+): { campaignsV2?: CampaignsV2State } {
+  return root as (PlayerDataModel | Draft<PlayerDataModel>) & {
+    campaignsV2?: CampaignsV2State;
   };
 }
 
@@ -103,11 +127,17 @@ export function campaignMaxKills(
 ): number {
   return data?.instances?.[stageId]?.maxKills ?? 0;
 }
-/** 突破奖励档位（campaign_table.campaigns[stageId].breakLadders） */
+/**
+ * 突破奖励档位（campaign_table.campaigns[stageId].breakLadders）
+ *
+ * `rewards` 直接来自 campaign_table，形状即客户端物品条目（`type` 为物品类型枚举字符串）——
+ * 用 {@link ItemBundle} 而非就地宽化的 `{ id; count; type: string }`，使领取结果的 items
+ * 可以直接进玩家资源管道 / 应答，调用点不再需要 `as unknown as ItemBundle[]`。
+ */
 export interface BreakLadder {
   killCnt: number;
   breakFeeAdd?: number;
-  rewards?: { id: string; count: number; type: string }[];
+  rewards?: ItemBundle[];
 }
 
 /**
@@ -134,7 +164,7 @@ export function claimCampaignBreakRewards(
   ladders: BreakLadder[],
   ts: number,
 ): {
-  items: { id: string; count: number; type: string }[];
+  items: ItemBundle[];
   feeGain: number;
   claimed: number[];
   allClaimed: boolean;
@@ -156,7 +186,7 @@ export function claimCampaignBreakRewards(
       : ladders
           .map((_, i) => i)
           .filter((i) => maxKills >= (ladders[i]?.killCnt ?? 0));
-  const items: { id: string; count: number; type: string }[] = [];
+  const items: ItemBundle[] = [];
   const claimed: number[] = [];
   let feeGain = 0;
   for (const idx of wanted) {
@@ -212,8 +242,7 @@ export function refreshCampaignMissions(
   ts: number,
 ): string[] {
   const root = ensureCampaignsV2State(draft, ts);
-  const state = ((root as unknown as { missions?: Record<string, number> }).missions ??=
-    {});
+  const state = (root.missions ??= {});
   const instances = root.instances ?? {};
   // 历史最高单次歼灭数（跨全部委托取最大值）
   const maxKills = Object.values(instances).reduce(
@@ -251,8 +280,7 @@ export function claimCampaignMissionReward(
   const cfg = missions[missionId];
   if (!cfg) return { ok: false, feeGain: 0 };
   const root = ensureCampaignsV2State(draft, ts);
-  const state = ((root as unknown as { missions?: Record<string, number> }).missions ??=
-    {});
+  const state = (root.missions ??= {});
   if ((state[missionId] ?? 0) !== 1) return { ok: false, feeGain: 0 };
   state[missionId] = 2; // 已领取
   const fee = cfg.breakFeeAdd ?? 0;

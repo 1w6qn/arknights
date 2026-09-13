@@ -32,6 +32,26 @@ export interface PipelineItem extends ItemBundle {
   instId?: number;
 }
 
+/**
+ * 管道入参物品条目（服务端输入形状）
+ *
+ * 生成类型 `ItemBundle.type` 必填（客户端报文契约），但服务端合法存在「入队时不带 type、
+ * 由库存层按 `item_table` 推导后就地回填」的输入（`Excel.makeItem` 的缺省语义，
+ * 客户端上报的裸 `{ id, count }`、multipart 上传的 `{ id, count, instId }`）。
+ * `GainItemPipeline.add` 以此类型接入参，调用点不再写 `as unknown as ItemBundle`；
+ * 队列元素仍是 {@link PipelineItem}，与入参是同一对象引用。
+ */
+export interface ItemBundleInput {
+  /** 物品 id */
+  id: string;
+  /** 数量（正=获得，负=消耗） */
+  count: number;
+  /** 物品类型（缺省由库存层按 `item_table` 推导后就地回填） */
+  type?: ItemType;
+  /** consumable 实例 id（仅实例化物品使用） */
+  instId?: number;
+}
+
 export class GainItemPipeline {
   private _targets: PipelineItem[] = [];
 
@@ -69,10 +89,12 @@ export class GainItemPipeline {
 
   /**
    * 追加一个已组装的物品（fluent）
-   * @param bundle - 物品（ItemBundle 形状）
+   * @param bundle - 物品（{@link ItemBundleInput} 形状：type 可缺省，由库存层推导回填）
    */
-  add(bundle: ItemBundle): this {
-    this._targets.push(bundle);
+  add(bundle: ItemBundleInput): this {
+    // 入队时 type 缺省是合法语义（inventory 按 item_table 推导后就地回填），而
+    // PipelineItem 沿用 ItemBundle 的 type 必填声明——此处是两者之间唯一的收窄点。
+    this._targets.push(bundle as PipelineItem);
     return this;
   }
 

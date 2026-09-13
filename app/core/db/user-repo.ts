@@ -136,7 +136,7 @@ export async function migrateUsersFromJsonFile(
   if ((await repo.count()) > 0) return 0;
   let json: { [uid: string]: UserConfig };
   try {
-    json = await readJson("./data/user/users.json");
+    json = await readJson<{ [uid: string]: UserConfig }>("./data/user/users.json");
   } catch {
     return 0;
   }

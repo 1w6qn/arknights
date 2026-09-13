@@ -160,7 +160,7 @@ router.post("/arkhub/getFriendUidList", validateBody(ReqSchema.activityStubSchem
 
 router.post("/arkhub/savePixelArt", async (req, res) => {
   const player = getPlayer();
-  const raw = (req as unknown as { rawBody?: Buffer }).rawBody ?? (await collectRawBody(req));
+  const raw = req.rawBody ?? (await collectRawBody(req));
   let brief: { activityId?: string; token?: string } | undefined;
   let pixelData: Buffer | undefined;
   try {

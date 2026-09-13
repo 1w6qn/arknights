@@ -26,9 +26,9 @@ export function mockExcel() {
       dailyMissionPeriodInfo: [],
       mainlineMissionEndImageDataList: [],
       crossAppShareMissions: {},
-      crossAppShareMissionConst: {},
+      crossAppShareMissionConst: { nameCardShareMissionId: "" },
       guideMissionGroupInfo: {},
-    } as unknown as MissionTable,
+    } as MissionTable,
 
     MedalTable: {
       medalList: [],
@@ -59,13 +59,19 @@ export function mockExcel() {
       storylines: {},
       storylineStorySets: {},
       storylineTags: {},
-      storylineConst: {},
+      storylineConst: {
+        recommendHideGuideGroupId: "",
+        tutorialSelectStorylineId: "",
+        mainlineStorylineId: "",
+      },
       cgGalleryDisplays: {},
       cgGalleryGroups: {},
       cgGalleryCgs: {},
       sixStarRuneData: {},
       sixStarMilestoneInfo: {},
-    } as unknown as StageTable,
+      sixStarCompatibleInfo: {},
+      conditionalDropInfo: {},
+    } as StageTable,
 
     GachaTable: {} as GachaData,
     GameDataConst: {} as GameDataConsts,

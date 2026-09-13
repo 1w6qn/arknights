@@ -292,8 +292,7 @@ async function parseMagazineMultipart(req: import("express").Request): Promise<{
   magazineSquad?: JsonValue[];
   squad?: JsonValue[];
 } | null> {
-  const raw =
-    (req as import("express").Request & { rawBody?: Buffer }).rawBody ?? (await collectRawBody(req));
+  const raw = req.rawBody ?? (await collectRawBody(req));
   const parts = parseMultipartForm(raw, req.headers["content-type"]);
   if (parts.size === 0) return null;
 

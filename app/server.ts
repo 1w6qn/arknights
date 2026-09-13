@@ -8,6 +8,7 @@ import express from "express";
 import * as path from "path";
 import config from "@core/config/index";
 import { logger, flush as flushLogs } from "@utils/logger";
+import { formatTimestamp, parseVirtualTime } from "@utils/time";
 import { createTrafficRecorder } from "@utils/traffic-recorder";
 import { captureManager } from "@capture/capture-manager";
 import excel from "@excel/excel";
@@ -191,7 +192,7 @@ export async function main(): Promise<void> {
       const chunks: Buffer[] = [];
       req.on("data", (chunk: Buffer) => chunks.push(chunk));
       req.on("end", () => {
-        (req as unknown as { rawBody: Buffer }).rawBody = Buffer.concat(chunks);
+        req.rawBody = Buffer.concat(chunks);
         next();
       });
     });
@@ -575,6 +576,15 @@ export async function main(): Promise<void> {
   const server = app.listen(config.PORT, () => {
     logger.info("index", `--------------DoctorateTs--------------`);
     logger.info("index", `running at http://localhost:${config.PORT}`);
+    // 虚拟时钟（DoctoratePy server.virtualtime 移植）：冻结为常量时钟时显式告警——
+    // 依赖时间流逝的结算（每日刷新/基建产能/AP 与信赖恢复）在此期间不推进
+    const virtualTs = parseVirtualTime(config.virtualtime);
+    if (virtualTs !== null) {
+      logger.warn(
+        "index",
+        `虚拟时钟已启用（config.virtualtime）：服务器逻辑时间冻结于 ${virtualTs}（${formatTimestamp(new Date(virtualTs * 1000))}）`,
+      );
+    }
     // B5：后台预热懒加载大表（消除首访 handbook/charword/skill/enemy 表 30-65ms 同步 parse 卡顿）
     void excel
       .warmupLazyTables()

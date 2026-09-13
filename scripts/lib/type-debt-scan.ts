@@ -229,19 +229,123 @@ export function scanTypeDebt(
   dirs: readonly string[] = SCAN_DIRS,
   extraFiles: readonly string[] = SCAN_EXTRA_FILES,
 ): Record<string, TypeDebtCounts> {
+  return scanTypeMetrics(rootDir, dirs, extraFiles).counts;
+}
+
+/** `as unknown as` 逃逸断言模式（先抹掉类型再断言，绕过一切类型检查） */
+const ESCAPE_CAST_RE = /\bas\s+unknown\s+as\b/g;
+
+/**
+ * 统计一段源码里的 `as unknown as` 逃逸点
+ *
+ * 与 `unknown` 关键字口径互补：后者同时覆盖「边界上的正确 `unknown`」（`catch`、未校验
+ * 外部 JSON），无法区分健康用法与「先抹类型再断言」的逃生口。本函数只数后者。注释、
+ * 字符串与正则中的同名字样按 {@link stripCommentsAndStrings} 剥离，不计入。
+ * @param src - 源码全文（未经剥离）
+ * @returns `as unknown as` 出现次数
+ */
+export function countEscapeCasts(src: string): number {
+  return (stripCommentsAndStrings(src).match(ESCAPE_CAST_RE) || []).length;
+}
+
+/**
+ * TS suppression 指令模式：**注释行开头**的 `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck`
+ *
+ * 只认 `//` 行注释开头的指令——JSDoc/块注释里的「提及」（如 `* 实现体一次 @ts-expect-error`）
+ * 与字符串里的同名字样不计入，避免把文档说明当成 suppression。
+ */
+const TS_SUPPRESSION_RE = /^[ \t]*\/\/[ \t]*@ts-(expect-error|ignore|nocheck)\b/gm;
+
+/**
+ * 统计一段源码里的 TS suppression 指令数
+ *
+ * 这是与 `any`/`as unknown as` 并列的第三条逃生通道：`@ts-expect-error` 让错误「合法化」，
+ * 且**完全不进任何现有指标**（关键字扫描看不到它）。有的确属必要的硬边界
+ * （Emittery 复杂泛型、含私有字段的类替身），但必须有棘轮，否则新增无人发现。
+ * @param src - 源码全文（未经剥离）
+ * @returns suppression 指令行数
+ */
+export function countTsSuppressions(src: string): number {
+  return (src.match(TS_SUPPRESSION_RE) || []).length;
+}
+
+/**
+ * 一次遍历同时得到「模糊类型计数」「逃逸点计数」与「suppression 计数」
+ *
+ * 本仓在 WSL 的 9p/drvfs（`/mnt/d`）上单次 `fs.readFileSync` 约 36ms/文件，
+ * 全仓扫描的耗时由读盘次数决定——所有指标必须在同一次读盘内算完，
+ * 否则守卫每多一个指标就多一次全仓扫描（实测每遍 15~20s）。
+ * @param rootDir - 仓库根绝对路径（结果键为该根的相对 POSIX 路径）
+ * @param dirs - 相对根目录的扫描目录，默认 {@link SCAN_DIRS}
+ * @param extraFiles - 相对根目录的额外单文件，默认 {@link SCAN_EXTRA_FILES}
+ * @returns `counts`（模糊类型，仅非零文件）、`escapes`（`as unknown as`，仅非零文件）、
+ *   `suppressions`（`@ts-*` 指令，仅非零文件）
+ */
+export function scanTypeMetrics(
+  rootDir: string,
+  dirs: readonly string[] = SCAN_DIRS,
+  extraFiles: readonly string[] = SCAN_EXTRA_FILES,
+): {
+  counts: Record<string, TypeDebtCounts>;
+  escapes: Record<string, number>;
+  suppressions: Record<string, number>;
+} {
   const fs = require("fs") as typeof import("fs");
   const path = require("path") as typeof import("path");
-  const out: Record<string, TypeDebtCounts> = {};
+  const counts: Record<string, TypeDebtCounts> = {};
+  const escapes: Record<string, number> = {};
+  const suppressions: Record<string, number> = {};
   const files = [
     ...dirs.flatMap((d) => collectTsFiles(path.join(rootDir, d))),
     ...extraFiles.map((f) => path.join(rootDir, f)).filter((f) => fs.existsSync(f)),
   ];
   for (const file of files) {
-    const counts = countVagueTypes(fs.readFileSync(file, "utf-8"));
-    if (counts.any + counts.unknown + counts.object === 0) continue;
-    out[path.relative(rootDir, file).split(path.sep).join("/")] = counts;
+    const src = fs.readFileSync(file, "utf-8");
+    const rel = path.relative(rootDir, file).split(path.sep).join("/");
+    const c = countVagueTypes(src);
+    if (c.any + c.unknown + c.object > 0) counts[rel] = c;
+    const n = countEscapeCasts(src);
+    if (n > 0) escapes[rel] = n;
+    const s = countTsSuppressions(src);
+    if (s > 0) suppressions[rel] = s;
   }
-  return out;
+  return { counts, escapes, suppressions };
+}
+
+/** 逃逸点基线文档 */
+export interface EscapeBaseline {
+  /** 全仓合计 */
+  total: number;
+  /** 相对路径 → `as unknown as` 计数（按路径排序） */
+  counts: Record<string, number>;
+}
+
+/**
+ * 构造逃逸点基线（键按路径排序，保证可复现的 diff）
+ * @param escapes - 逐文件逃逸点计数
+ * @returns 基线文档
+ */
+export function buildEscapeBaseline(escapes: Record<string, number>): EscapeBaseline {
+  const sorted: Record<string, number> = {};
+  for (const k of Object.keys(escapes).sort()) sorted[k] = escapes[k];
+  return {
+    total: Object.values(escapes).reduce((a, b) => a + b, 0),
+    counts: sorted,
+  };
+}
+
+/** suppression 指令基线文档（结构同 {@link EscapeBaseline}） */
+export type SuppressionBaseline = EscapeBaseline;
+
+/**
+ * 构造 suppression 基线（键按路径排序，保证可复现的 diff）
+ * @param suppressions - 逐文件 `@ts-*` 指令计数
+ * @returns 基线文档
+ */
+export function buildSuppressionBaseline(
+  suppressions: Record<string, number>,
+): SuppressionBaseline {
+  return buildEscapeBaseline(suppressions);
 }
 
 /**

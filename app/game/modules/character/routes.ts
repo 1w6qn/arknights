@@ -314,7 +314,10 @@ router.post("/addonStage/battleFinish", validateBody(addonStageBattleFinishSchem
     return res.send({ result: 1, ...player.delta });
   }
   const result = await player.troop.addonStageBattleFinish(body);
-  res.send({ ...(result as object), ...player.delta } satisfies AddonStageBattleFinishResponse);
+  res.send({
+    ...(result && typeof result === "object" ? result : {}),
+    ...player.delta,
+  } satisfies AddonStageBattleFinishResponse);
 });
 router.post("/unlockEquipment", validateBody(unlockEquipmentSchema), async (req, res) => {
   const player = getPlayer();

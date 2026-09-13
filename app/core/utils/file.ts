@@ -6,6 +6,7 @@
 
 import { access, readFile, stat, writeFile } from "fs/promises";
 import { readFileSync } from "fs";
+import type { JsonValue } from "./json-value";
 
 /**
  * 检查文件是否存在
@@ -35,7 +36,7 @@ export async function size(filePath: string): Promise<number> {
  * @param filePath - JSON 文件路径
  * @returns 解析后的 JSON 对象
  */
-export async function readJson<T = object>(filePath: string): Promise<T> {
+export async function readJson<T = JsonValue>(filePath: string): Promise<T> {
   const data = await readFile(filePath, "utf-8");
   return JSON.parse(data) as T;
 }
@@ -46,7 +47,7 @@ export async function readJson<T = object>(filePath: string): Promise<T> {
  * @param filePath - JSON 文件路径
  * @returns 解析后的 JSON 对象
  */
-export function readJsonSync<T = object>(filePath: string): T {
+export function readJsonSync<T = JsonValue>(filePath: string): T {
   const data = readFileSync(filePath, "utf-8");
   return JSON.parse(data) as T;
 }
@@ -59,6 +60,6 @@ export function readJsonSync<T = object>(filePath: string): T {
  * @param filePath - 目标文件路径
  * @param data - 要写入的对象
  */
-export async function writeJson(filePath: string, data: object): Promise<void> {
+export async function writeJson<T>(filePath: string, data: T): Promise<void> {
   await writeFile(filePath, JSON.stringify(data, null, 4), "utf-8");
 }

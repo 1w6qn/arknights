@@ -2032,7 +2032,7 @@ export interface PlayerRecruit_NormalModel_SlotModel_TagItem {
 }
 
 export interface PlayerGacha {
-    newbee: PlayerGacha_PlayerNewbeeGachaPool;
+    newbee?: PlayerGacha_PlayerNewbeeGachaPool;
     normal: { [key: string]: PlayerGacha_PlayerGachaPool };
     limit: { [key: string]: PlayerGacha_PlayerFreeLimitGacha };
     linkage: { [key: string]: { [key: string]: ServerPayload } };
@@ -3179,6 +3179,7 @@ export interface PlayerRoguelikeV2_CurrentData_PlayerStatus_Properties {
     capacity: number;
     population: PlayerRoguelikeV2_CurrentData_PlayerStatus_Properties_Population;
     conPerfectBattle: number;
+    hpShowState: string;
 }
 
 export interface PlayerRoguelikeV2_CurrentData_PlayerStatus_Properties_Hp {
@@ -3828,7 +3829,7 @@ export interface PlayerRoguelikeV2Dungeon {
 
 export interface PlayerRoguelikePendingEvent {
     index: string;
-    type: number;
+    type: PlayerRoguelikePlayerEventType;
     content: PlayerRoguelikePendingEvent_Content;
 }
 
@@ -4027,7 +4028,7 @@ export interface PlayerRoguelikePendingEvent_EndingBrief {
     ending: string;
     failEnding: string;
     theme: string;
-    mode: number;
+    mode: RoguelikeTopicMode;
     predefined: string;
     band: string;
     startTs: number;

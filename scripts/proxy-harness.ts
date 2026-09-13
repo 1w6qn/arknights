@@ -51,7 +51,7 @@ app.use((req, _res, next) => {
   const chunks: Buffer[] = [];
   req.on("data", (chunk: Buffer) => chunks.push(chunk));
   req.on("end", () => {
-    (req as unknown as { rawBody: Buffer }).rawBody = Buffer.concat(chunks);
+    req.rawBody = Buffer.concat(chunks);
     next();
   });
 });
@@ -75,7 +75,10 @@ async function setupSession(): Promise<string | null> {
 const createProxyHandler = (baseUrl: string) => {
   return async (req: express.Request, res: express.Response) => {
     // 官服对双斜杠路径返回 404，归一化去掉前导斜杠，保证拼出的转发 URL 无 //
-    const endpoint: string = (req.params.endpoint as unknown as string[])
+    // Express 5 的通配路由（`/*endpoint`）把通配段挂成数组，而 @types/express 声明为
+    // `ParamsDictionary`（string）——此处按运行期真值收窄（非数组时包一层，行为与 join 一致）。
+    const endpointParam: string | string[] = req.params.endpoint;
+    const endpoint: string = (Array.isArray(endpointParam) ? endpointParam : [endpointParam])
       .join("/")
       .replace(/^\/+/, "");
     const startedAt = Date.now();
@@ -88,7 +91,7 @@ const createProxyHandler = (baseUrl: string) => {
       delete forwardedHeaders.host;
       delete forwardedHeaders["content-length"];
       delete forwardedHeaders["transfer-encoding"];
-      const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
+      const rawBody = req.rawBody;
       const requestData =
         req.method === "POST"
           ? rawBody && rawBody.length > 0
@@ -131,7 +134,7 @@ async function record(
   startedAt: number,
 ): Promise<void> {
   try {
-    const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
+    const rawBody = req.rawBody;
     await captureManager.addRecord(
       {
         sessionId: sessionId,

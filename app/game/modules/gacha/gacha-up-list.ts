@@ -44,32 +44,52 @@ export const GACHA_RULE_TYPE: { [rule: string]: string } = {
  * @param poolId - 抽卡池ID
  * @returns 合并玩家自选后的 perCharList（克隆）
  */
+/**
+ * 卡池详情回退构造（通用池）
+ *
+ * `gacha_detail_table.details` 可能缺池（新池未合并详情），此时回退「通用池」：
+ *  - 有任一结构完整卡池时取其结构，但 **upCharInfo / limitedChar / weightUpCharInfoList 置空**
+ *    （首池的限定/加权干员属于别的池，照搬会让展示错位）；
+ *  - 完全空表时给最小结构（空 perCharList / perAvailList + `gachaObjGroups: null`）。
+ *
+ * `gachaObjGroups` 是客户端解析必需字段（CS 声明必填），统一补 `null`。
+ * 本函数是 gacha 模块内**唯一**的「最小通用池 → 完整 GachaDetailData」断言点：
+ * 断言目标写成 `构造物 & GachaDetailData`（交叉类型与构造物必然重叠，故不需要
+ * `as unknown as`），运行期就是这份对象，缺的字段由客户端按缺省处理（与旧实现同一对象）。
+ * @param details - 详情表（`excel.GachaDetailTable.details`）
+ * @returns 通用池详情
+ */
+export function buildFallbackGachaDetail(
+  details: GachaDetailTable["details"],
+): GachaDetailData {
+  const first = Object.values(details).find(
+    (x) => x?.availCharInfo?.perAvailList?.length,
+  );
+  if (first) {
+    return {
+      ...first,
+      upCharInfo: { perCharList: [] },
+      limitedChar: [],
+      weightUpCharInfoList: [],
+      gachaObjGroups: null,
+    } as GachaDetailData;
+  }
+  const minimal = {
+    upCharInfo: { perCharList: [] },
+    availCharInfo: { perAvailList: [] },
+    gachaObjGroups: null,
+  };
+  return minimal as typeof minimal & GachaDetailData;
+}
+
 export function resolveEffectiveUpPerCharList(
   table: GachaDetailTable,
   poolConfigs: GachaPoolClientData[],
   gacha: PlayerGacha | undefined,
   poolId: string,
 ): GachaPerChar[] {
-  // _poolDetail 内联：缺详情回退首个结构完整卡池（无缓存，每次重建）
-  let d = table.details[poolId];
-  if (!d) {
-    const first = Object.values(table.details).find(
-      (x) => x?.availCharInfo?.perAvailList?.length,
-    );
-    d = first
-      ? ({
-          ...first,
-          upCharInfo: { perCharList: [] },
-          limitedChar: [],
-          weightUpCharInfoList: [],
-          gachaObjGroups: null,
-        } as GachaDetailData)
-      : ({
-          upCharInfo: { perCharList: [] },
-          availCharInfo: { perAvailList: [] },
-          gachaObjGroups: null,
-        } as unknown as GachaDetailData);
-  }
+  // 缺详情回退通用池（无缓存，每次重建）
+  const d = table.details[poolId] ?? buildFallbackGachaDetail(table.details);
   // 格式归一：CS GachaDetailData.gachaObjGroups 为客户端解析必需字段，缺失时补 null
   // （用 hasOwnProperty 而非 `in`：TS 已知该属性为必填，`in` 反查会收窄成 never）
   if (d && !Object.prototype.hasOwnProperty.call(d, "gachaObjGroups")) {

@@ -135,7 +135,7 @@ export function createProxyForwarder(opts: ProxyForwarderOptions = {}): RequestH
     // POST 转发体：非 JSON（multipart 等）用 server.ts 捕获的原始字节 rawBody 原样透传——
     // express.json 不解析 multipart，透传 req.body（空 {}）会让上游 400 "Invalid multipart payload format"；
     // 无 rawBody（测试/独立挂载）时回退 req.body
-    const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
+    const rawBody = req.rawBody;
     const requestData =
       req.method === "POST"
         ? rawBody && rawBody.length > 0

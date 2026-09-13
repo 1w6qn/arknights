@@ -196,7 +196,7 @@ router.post("/useCharGachaVoucher", validateBody(useCharGachaVoucherSchema), asy
   }
   // 消耗凭证物品（consumable 类型，需要 instId 定位具体实例）
   await player.gainItem
-    .add({ id: itemId, count: 1, instId: Number(instId) } as unknown as ItemBundle)
+    .add({ id: itemId, count: 1, instId: Number(instId) })
     .use();
   // 发放随机干员（CHAR → char:get 入账）
   const chosen = randomChoice(pool);
@@ -262,7 +262,7 @@ router.post("/useMaterialVoucher", validateBody(useMaterialVoucherSchema), async
   }
   // 消耗凭证物品
   await player.gainItem
-    .add({ id: itemId, count: useCount, instId: Number(instId) } as unknown as ItemBundle)
+    .add({ id: itemId, count: useCount, instId: Number(instId) })
     .use();
   // 从关联材料池中随机选取材料
   const itemGet: ItemBundle[] = [];
@@ -391,10 +391,10 @@ router.post("/useOptionVoucher", validateBody(useOptionVoucherSchema), async (re
   }
   // 消耗凭证物品
   await player.gainItem
-    .add({ id: itemId, count: consumeCount, instId: Number(instId) } as unknown as ItemBundle)
+    .add({ id: itemId, count: consumeCount, instId: Number(instId) })
     .use();
-  // 发放玩家选择的物品
-  const itemGet: ItemBundle[] = choices as unknown as ItemBundle[];
+  // 发放玩家选择的物品（itemGet 即客户端提交的 choices 原样回显，见 UseOptionalVoucherResponse）
+  const itemGet = choices;
   for (const it of itemGet) player.gainItem.add(it);
   await player.gainItem.handle();
   res.send({

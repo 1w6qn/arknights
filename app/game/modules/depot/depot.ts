@@ -6,6 +6,7 @@
  * Request/Response 类；字段以 CS 类为准，服务端未返回的协议字段标为可选。
  */
 import { ItemBundle } from "@excel/excel";
+import type { ServerPayloadLeaf } from "@excel/json-value";
 import { GachaResult } from "../../kernel/model";
 import { PlayerDeltaResponse } from "../../kernel/http/common";
 
@@ -24,7 +25,8 @@ export interface VoucherDetailData {
   voucherType?: string;
   pickNum?: number;
   voucherBgDec?: string | null;
-  extraDataDic?: object;
+  /** 附加数据字典（服务端自定义；与 voucher.ts 的同名字段同形） */
+  extraDataDic?: Record<string, ServerPayloadLeaf>;
   itemList?: ItemBundle[];
   validTimeInfo?: { startTs: number; endTs: number };
 }
@@ -165,8 +167,11 @@ export interface UseOptionalVoucherRequest {
 
 /**
  * 使用选项凭证响应（CS: UseOptionalVoucherResponse）
- * CS 的 itemGet 为 List<ItemGet>，服务端契约使用 ItemBundle[]
+ *
+ * `itemGet` **原样回显**客户端提交的 `choices`（`OptionalChoiceItem { id, count }`），
+ * 服务端不额外补 `type`（客户端按 item_table 推导）——此前声明为 `ItemBundle[]`
+ * （`type` 必填）与实际报文不符，逼出 `choices as unknown as ItemBundle[]`。
  */
 export interface UseOptionalVoucherResponse extends PlayerDeltaResponse {
-  itemGet: ItemBundle[];
+  itemGet: OptionalChoiceItem[];
 }

@@ -146,7 +146,21 @@ describe("vecbreak（矢量突破）进攻链与里程碑", () => {
     return Object.assign(mock, {
       battle: {
         start: vi.fn().mockResolvedValue({ result: 0, battleId: "real-battle-id" }),
-        finish: vi.fn().mockResolvedValue({ result: 0, apFailReturn: 0, rewards: [], firstRewards: [] }),
+        finish: vi.fn().mockResolvedValue({
+          result: 0,
+          apFailReturn: 0,
+          expScale: 1,
+          goldScale: 1,
+          rewards: [],
+          firstRewards: [],
+          unlockStages: [],
+          unusualRewards: [],
+          additionalRewards: [],
+          furnitureRewards: [],
+          alert: [],
+          suggestFriend: false,
+          pryResult: [],
+        }),
         getActiveBattle: vi.fn(() => ({ battleId: "real-battle-id", stageId: "act2break_01" })),
       },
     });

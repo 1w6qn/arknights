@@ -17,11 +17,11 @@ import type {
 /**
  * node:sqlite 绑定值转换
  *
- * 归一化后只剩下 `string|number|bigint|null|Uint8Array`，均属 SQLInputValue；
- * 断言仅为绕过 `SqlParam` 联合过宽导致的赋值检查。
+ * 归一化后只剩下 `string|number|bigint|null|Uint8Array`，均属 `SQLInputValue`
+ * （`Uint8Array` 是 `NodeJS.ArrayBufferView` 的子类型，故不需要任何断言）。
  */
 function bind(params: SqlParam[]): SQLInputValue[] {
-  return normalizeParams(params) as unknown as SQLInputValue[];
+  return normalizeParams(params);
 }
 
 /** SQLite 预编译语句（同步执行，异步门面） */

@@ -24,7 +24,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdir, readFile, writeFile, rm, stat, readdir } from "fs/promises";
 import * as path from "path";
 import JSZip from "jszip";
-import { openCaptureDb, CAPTURE_DB_FILENAME } from "./capture-db";
+import { allRows, openCaptureDb, CAPTURE_DB_FILENAME } from "./capture-db";
 import { logger } from "@utils/logger";
 
 /** 抓包来源 */
@@ -341,22 +341,23 @@ class CaptureManager {
   /** 会话列表（最新在前；含运行中/已结束与记录数） */
   async listSessions(): Promise<(CaptureSession & { recordCount: number })[]> {
     await this.ensureInit();
-    const rows = this.db()
-      .prepare(
+    const rows = allRows<CaptureSession & { recordCount: number }>(
+      this.db().prepare(
         `SELECT s.id, s.name, s.source, s.started_at AS startedAt, s.ended_at AS endedAt, s.note,
                 (SELECT COUNT(*) FROM records r WHERE r.session_id = s.id) AS recordCount
          FROM sessions s ORDER BY s.started_at DESC`,
-      )
-      .all() as unknown as (CaptureSession & { recordCount: number })[];
+      ),
+    );
     return rows;
   }
 
   /** 删除会话（级联删除其全部记录与 body 目录） */
   async deleteSession(id: string): Promise<number> {
     await this.ensureInit();
-    const recs = this.db().prepare("SELECT rid FROM records WHERE session_id = ?").all(id) as unknown as {
-      rid: string;
-    }[];
+    const recs = allRows<{ rid: string }>(
+      this.db().prepare("SELECT rid FROM records WHERE session_id = ?"),
+      id,
+    );
     const stmt = this.db().prepare("DELETE FROM records WHERE session_id = ?");
     stmt.run(id);
     const del = this.db().prepare("DELETE FROM sessions WHERE id = ?").run(id);
@@ -599,16 +600,19 @@ class CaptureManager {
     const totalRow = this.db()
       .prepare(`SELECT COUNT(*) AS c FROM records${whereSql}`)
       .get(...params) as { c: number };
-    const rows = this.db()
-      .prepare(
+    const rows = allRows<CaptureRecord>(
+      this.db().prepare(
         `SELECT id, rid, session_id AS sessionId, ts, method, path, query, module, endpoint,
                 status, latency_ms AS latencyMs, source, direction,
                 req_headers AS reqHeaders, req_body_type AS reqBodyType, req_body_file AS reqBodyFile, req_size AS reqSize,
                 res_headers AS resHeaders, res_body_type AS resBodyType, res_body_file AS resBodyFile, res_size AS resSize,
                 note
          FROM records${whereSql} ORDER BY ts ${order}, id ${order} LIMIT ? OFFSET ?`,
-      )
-      .all(...params, limit, offset) as unknown as CaptureRecord[];
+      ),
+      ...params,
+      limit,
+      offset,
+    );
     return { total: totalRow.c, offset, limit, items: rows };
   }
 

@@ -302,12 +302,9 @@ router.post("/vecBreakV2/battleFinish", validateBody(battleFinishSchema), async 
   });
   vecBreakBattleCtxs.delete(player.uid);
   res.send({
-    apFailReturn: 0,
-    goldScale: 1,
-    expScale: 1,
-    suggestFriend: false,
-    ...(result as Record<string, unknown>),
-    result: Number((result as Record<string, unknown>)?.result ?? 0),
+    // battle.finish 声明了 BattleFinishResponse 骨架（battle.ts）——直接展开：
+    // 原先在其前面写死的 apFailReturn/goldScale/expScale/suggestFriend 会被展开覆盖（死代码）
+    ...result,
     msBefore,
     msAfter,
     finTs: now(),

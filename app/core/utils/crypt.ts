@@ -6,6 +6,7 @@
 
 import crypto from "crypto";
 import JSZip from "jszip";
+import type { JsonValue } from "./json-value";
 import { BattleData } from "@game/kernel/battle-model";
 
 const LOG_TOKEN_KEY = "pM6Umv*^hVQuB6t&";
@@ -42,8 +43,8 @@ export async function decryptBattleData(
  * @param loginTime - 登录时间戳
  * @returns 加密后的十六进制字符串
  */
-export async function encryptBattleData(
-  data: object,
+export async function encryptBattleData<T>(
+  data: T,
   loginTime: number,
 ): Promise<string> {
   const jsonData = JSON.stringify(data);
@@ -92,11 +93,11 @@ export async function decryptIsCheat(isCheat: string): Promise<string> {
  * 战斗回放数据经过 Base64 编码和 ZIP 压缩，此函数进行反向操作。
  * 
  * @param battleReplay - Base64 编码的战斗回放数据
- * @returns 解密后的战斗回放对象
+ * @returns 解密后的战斗回放对象（严格 JSON 域：回放包未建模，取值须显式收窄）
  */
 export async function decryptBattleReplay(
   battleReplay: string,
-): Promise<object> {
+): Promise<JsonValue> {
   const data = Buffer.from(battleReplay, "base64");
   const zip = await new JSZip().loadAsync(data);
   return JSON.parse(await zip.files["default_entry"].async("string"));

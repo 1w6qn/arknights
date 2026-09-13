@@ -54,13 +54,7 @@ export class SocialService {
    * @returns 实际生效的星标好友列表
    */
   async setStarFriendList(uid: string, idList: string[]): Promise<string[]> {
-    const cap = Math.max(
-      0,
-      Number(
-        (excel.GameDataConst as unknown as { maxStarFriendNum?: number })
-          ?.maxStarFriendNum ?? 5,
-      ),
-    );
+    const cap = Math.max(0, Number(excel.GameDataConst?.maxStarFriendNum ?? 5));
     const friends = new Set(
       (await this._manager._friendRepo.getFriendList(uid)).map((f) => f.uid),
     );
@@ -119,10 +113,7 @@ export class SocialService {
     if (await this._manager._friendRepo.hasFriendRequest(to, from)) {
       throw new BadRequestError("好友请求已发送，请勿重复发送");
     }
-    const cd = Number(
-      (excel.GameDataConst as unknown as { requestSameFriendCd?: number })
-        ?.requestSameFriendCd ?? 14400,
-    );
+    const cd = Number(excel.GameDataConst?.requestSameFriendCd ?? 14400);
     const lastTs = await this._manager._friendRepo.getLastRequestTs(from, to);
     if (cd > 0 && lastTs > 0 && now() - lastTs < cd) {
       const leftMin = Math.ceil((cd - (now() - lastTs)) / 60);

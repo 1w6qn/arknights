@@ -40,7 +40,7 @@ pnpm run decompile         # 官服客户端反编译工作流（Cpp2IL→ilspyc
 
 No lint script exists（ESLint 配置在仓但 `typescript-eslint` 8 尚不支持 TS 7，跑不起来）. Verification order: `pnpm run typecheck` (= `tsc -p tsconfig.json`, app+index) → `pnpm run typecheck:scripts` (= `tsc -p tsconfig.scripts.json`, app+index+scripts) → `pnpm run typecheck:tests` (= `tsc -p tsconfig.tests.json`, 含 `tests/**`) → `pnpm exec vitest run`。（`tsc` 增量模式会吞掉未变更文件的错误——判 0 错误时加 `--incremental false`，或先删 `.tsbuildinfo`。）
 
-**类型债棘轮**：`pnpm run type:debt` 报告全仓（`app`+`scripts`+`tests`+`hook`+`index.ts`）的 `any`/`unknown`/`object` 计数与 Top 违规文件，守卫是 `tests/unit/architecture/type-debt-ratchet.test.ts`（逐文件只减不增；新文件必须零模糊类型）。**全仓 `any` 已清零（7131 → 0），并由守卫的「全仓 `any === 0`」用例固化——不得回退**；`unknown`/`object` 仍走逐文件棘轮（存量计数以 `tests/unit/architecture/type-debt-baseline.json` 为准）。收敛后刷新基线 `pnpm run type:debt -- --write`；**扫描范围扩容**时才用 `pnpm run type:debt -- --write --expand-scope`（只放行新增文件）。策略、四种归宿与集中 suppression 政策见 `docs/type-system-audit.md`。
+**类型债棘轮**：`pnpm run type:debt` 报告全仓（`app`+`scripts`+`tests`+`hook`+`index.ts`）的 `any`/`unknown`/`object` 计数、**逃逸点（`as unknown as`）**与 **suppression（`@ts-expect-error`/`@ts-ignore`/`@ts-nocheck`）**，守卫是 `tests/unit/architecture/type-debt-ratchet.test.ts`（逐文件只减不增；新文件必须零模糊类型）。**全仓 `any` 已清零（7131 → 0），并由守卫的「全仓 `any === 0`」用例固化——不得回退**；`unknown`/`object` 仍走逐文件棘轮（存量计数以 `tests/unit/architecture/type-debt-baseline.json` 为准）。两条逃生通道各有独立基线（`type-escape-baseline.json` / `type-suppression-baseline.json`），刷新用 `pnpm run type:debt -- --write-escapes` 与 `-- --write-suppressions`（均只紧不松）；收敛后刷新模糊类型基线 `pnpm run type:debt -- --write`；**扫描范围扩容**时才用 `pnpm run type:debt -- --write --expand-scope`（只放行新增文件）。策略、四种归宿与集中 suppression 政策见 `docs/type-system-audit.md`。
 
 ## Generated files — never hand-edit
 

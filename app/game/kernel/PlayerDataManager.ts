@@ -182,7 +182,7 @@ export class PlayerDataManager {
     // excel 数据端口须在组合子模块之前就位：子模块构造期即可经 this._player.excel 取表
     this._excel = deps?.excel ?? excel;
     this._battleStore = battleStore ?? {
-      getBattleInfo: async () => undefined as unknown as BattleInfo,
+      getBattleInfo: async () => undefined,
       saveBattleInfo: async () => {},
       saveBattleRecord: async () => {},
       getBattleRecord: async () => undefined,
@@ -415,10 +415,10 @@ export class PlayerDataManager {
   /**
    * 获取战斗信息
    * @param battleId - 战斗ID
-   * @returns 战斗信息对象
+   * @returns 战斗信息对象（无记录时为 undefined）
    */
-  async getBattleInfo(battleId: string): Promise<BattleInfo> {
-    return (await this._battleStore.getBattleInfo(this.uid, battleId))!;
+  async getBattleInfo(battleId: string): Promise<BattleInfo | undefined> {
+    return await this._battleStore.getBattleInfo(this.uid, battleId);
   }
 
   /**

@@ -18,7 +18,8 @@ import { PlayerDataManager } from "../../kernel/PlayerDataManager";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import { random } from "../../kernel/util/random";
 import { getIn } from "../../kernel/util/json-path";
-import { resolveEffectiveUpPerCharList } from "./gacha-up-list";
+import { buildFallbackGachaDetail, resolveEffectiveUpPerCharList } from "./gacha-up-list";
+import type { ItemBundleInput } from "../../kernel/inventory-pipeline";
 import {
   LIMIT_FREE_GACHA_THRESHOLD,
   ensureLimitGacha,
@@ -123,12 +124,11 @@ export class GachaManager {
   ): { used: number; limit: number } | null {
     const cfg = this._newbeeConfig(poolId);
     if (!cfg) return null;
-    const nb = this.gacha.newbee as
-      | { openFlag?: number; cnt?: number; poolId?: string }
-      | undefined;
-    const samePool = !!nb && nb.poolId === poolId;
+    const nb = this.gacha.newbee;
+    const samePool = nb !== undefined && nb.poolId === poolId;
     return {
-      used: samePool ? Number(nb!.cnt ?? 0) : 0,
+      // cnt 在生成类型里必填，但旧存档可能缺该键 → 保留 `?? 0` 兜底
+      used: samePool ? Number(nb.cnt ?? 0) : 0,
       limit: Number(cfg.gachaTimes ?? 0),
     };
   }
@@ -242,25 +242,7 @@ export class GachaManager {
   private _poolDetail(poolId: string): GachaDetailData {
     let d = this._table.details[poolId];
     if (!d) {
-      if (!this._fallbackDetail) {
-        const first = Object.values(this._table.details).find(
-          (x) => x?.availCharInfo?.perAvailList?.length,
-        );
-        this._fallbackDetail = first
-          ? ({
-              ...first,
-              upCharInfo: { perCharList: [] },
-              // 修复：回退详情不携带首个池的限定/加权干员（内容属于别的池，展示会错）
-              limitedChar: [],
-              weightUpCharInfoList: [],
-              gachaObjGroups: null,
-            } as GachaDetailData)
-          : ({
-              upCharInfo: { perCharList: [] },
-              availCharInfo: { perAvailList: [] },
-              gachaObjGroups: null,
-            } as unknown as GachaDetailData);
-      }
+      this._fallbackDetail ??= buildFallbackGachaDetail(this._table.details);
       log.warn(
         `卡池 ${poolId} 无详情数据（gacha_detail_table 缺失），回退通用池`,
       );
@@ -305,11 +287,11 @@ export class GachaManager {
    * 校验抽卡消耗是否足够（修复：原实现无余额校验——扣费直接减、可扣成负数，
    * 未知/空 itemId 还会被 _useItem 静默跳过 → 免费抽；不足或不可校验时拒绝）
    */
-  private _verifyCost(costs: ItemBundle[], limitPoolId = ""): boolean {
+  private _verifyCost(costs: ItemBundleInput[], limitPoolId = ""): boolean {
     const p = this._player._playerdata;
     for (const c of costs) {
-      // ItemBundle 生成类型无 instId；服务端消耗品消耗按运行时附加字段判定
-      const instId = (c as ItemBundle & { instId?: number }).instId;
+      // type 可缺省（由物品表推导）；instId 为服务端消耗品实例号扩展字段
+      const instId = c.instId;
       const type =
         c.type || excel.getItem(c.id)?.itemType;
       switch (type) {
@@ -377,7 +359,7 @@ export class GachaManager {
     await this._refreshLimitPool(poolId);
     // 新手池 21 次上限（在余额校验与扣费之前拒绝，Round 43）
     this._assertNewbeeQuota(poolId, 1);
-    const costs: ItemBundle[] = [];
+    const costs: ItemBundleInput[] = [];
     switch (useTkt) {
       case GachaType.Diamond:
         if(poolId.startsWith("BOOT")){
@@ -393,7 +375,7 @@ export class GachaManager {
         costs.push({id:"LIMITED_FREE_GACHA",type:"LIMITED_FREE_GACHA",count:1})
         break;
       case GachaType.UseItem:
-        costs.push({id:itemId ?? "",count:1} as unknown as ItemBundle)
+        costs.push({id:itemId ?? "",count:1})
         break;
       case GachaType.ClassicSingleTicket:
         costs.push({id:"CLASSIC_TKT_GACHA",type:"CLASSIC_TKT_GACHA",count:1})
@@ -431,7 +413,7 @@ export class GachaManager {
     await this._refreshLimitPool(poolId);
     // 新手池 21 次上限（十连需整批可容纳；在余额校验与扣费之前拒绝，Round 43）
     this._assertNewbeeQuota(poolId, 10);
-    const costs: ItemBundle[] = [];
+    const costs: ItemBundleInput[] = [];
     switch (useTkt) {
       case GachaType.Diamond:
         if(poolId.startsWith("BOOT")){
@@ -574,18 +556,8 @@ export class GachaManager {
         const limit = Number(cfg?.gachaTimes ?? 0);
         let must6 = false;
         await this._player.update(async (draft) => {
-          if (!draft.gacha.newbee) {
-            draft.gacha.newbee = {
-              openFlag: 1,
-              cnt: 0,
-              poolId,
-            } as unknown as typeof draft.gacha.newbee;
-          }
-          const nb = draft.gacha.newbee as unknown as {
-            openFlag: number;
-            cnt: number;
-            poolId: string;
-          };
+          // 新手池账本（生成类型已登记为可选：见 playerdata-server-adapt.ts#SERVER_OPTIONAL_FIELDS）
+          const nb = (draft.gacha.newbee ??= { openFlag: 1, cnt: 0, poolId });
           // 换池（BOOT_0_1_1 → _2/_3）视为重新起算
           if (nb.poolId !== poolId) {
             nb.poolId = poolId;

@@ -252,6 +252,11 @@ export const SERVER_ADD_FIELDS: Record<string, Record<string, string>> = {
   PlayerRoguelikeV2_OuterData_Record: { modeCnt: "number", endingCnt: "number" },
   PlayerRoguelikeV2_OuterData_Challenge: { highScore: "number" },
   PlayerRoguelikeV2_OuterData_Mission_MissionItem: { tmpl: "object" },
+  // rlv2 战斗内状态：CS 有 `Properties.RewardHpShowStatus hpShowState`（客户端运行时枚举，
+  // 官服报文不含），服务端在 init 写初值 "NORMAL"（modules/roguelike/status.ts）——
+  // 硬编码模型 rlv2-model.ts 早已声明该字段，此前不登记导致 `current` / `update` 两处
+  // `as unknown as`（2026-09-13 登记）。
+  PlayerRoguelikeV2_CurrentData_PlayerStatus_Properties: { hpShowState: "string" },
   PlayerRoguelikeV2_CurrentData: { record: "object" },
   // tower
   TowerCurrent_Status: { strategy: "string" }, // towerId 由 rename 处理；strategy 线格式字符串
@@ -538,6 +543,21 @@ export const SERVER_ENUM_KEEP_AS_STRING: string[] = [
   "PlayerRoguelikeV2_OuterData_Mission_MissionItem.type",
   "PlayerRoguelikeV2_OuterData_Mission_MissionSlot.type",
   "PlayerRoguelikeV2_OuterData_Record_History.mode",
+  // 肉鸽事件类型：线格式为枚举名字符串（CS 为 PlayerRoguelikePlayerEventType 枚举）。
+  // 证据：参考实现 reference/opendoctoratepy-ex-public/server/rlv2.py 一律写
+  // `"type": "SCENE"` / `"BATTLE"` / "RECRUIT"；本仓运行时（events.ts#createEvent 的 emit 点）
+  // 同样写字符串枚举名。此前生成类型为 number，与硬编码模型 rlv2-model.ts（string）冲突，
+  // 逼出 roguelike/logic.ts 的 current / update 两处 `as unknown as`。
+  "PlayerRoguelikePendingEvent.type",
+  // 同一子树的事件结束简报 mode（CS: RoguelikeTopicMode）——该枚举在
+  // PlayerRoguelikeV2_OuterData_Record_History.mode 上已按名字符串登记，此处保持同族一致。
+  "PlayerRoguelikePendingEvent_EndingBrief.mode",
+  // 待证实（**未登记**）：同子树内 ChoiceAddition.Reward/Cost.type、
+  // InitRecruitContent.ShowChar.type、InitTeam.Char.type、BattleContent.battleFailDisplay、
+  // SacrificeContent/ExpeditionContent.type 也是 CS 枚举，且本仓从不写非空值（零报文风险）；
+  // 但「名字符串」这一线格式仅由父级 .type 与参考实现间接支持，缺客户端侧证据，
+  // 故暂不登记（登记前需抓包/客户端解析确认）。它们也是 roguelike/logic.ts
+  // current/update 两处断言无法降级的第二层原因。
   "PlayerStatus.globalVoiceLan",
   "TowerCurrent_GameCard.type", // 线格式 "CHAR" 等字符串
   "TowerCurrent_Status.state",
@@ -582,6 +602,10 @@ export const SERVER_FIELD_TYPE_OVERRIDES: Record<string, string> = {
 
 /** 可选字段（线格式服务端常省略）：接口名 → 字段名数组；生成时输出 name?: type */
 export const SERVER_OPTIONAL_FIELDS: Record<string, string[]> = {
+  // 新手池账本：首建/旧存档可整块缺失，管理器惰性建键
+  // （modules/gacha/logic.ts#NEWBEE：`if (!draft.gacha.newbee) draft.gacha.newbee = {…}`）。
+  // 客户端模型声明为必填，服务端存档实为可选——此前逼出两处 `as unknown as`。
+  PlayerGacha: ["newbee"],
   // 单抽池：线格式不含基础池字段 cnt/maxCnt/avail（客户端模型继承自 PlayerGachaPool）
   PlayerGacha_PlayerSingleGacha: ["cnt", "maxCnt", "avail"],
   // 线索：线格式不含 ts（管理器创建时才写入）

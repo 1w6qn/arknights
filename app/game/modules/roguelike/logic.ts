@@ -895,7 +895,7 @@ export class RoguelikeV2Manager implements PlayerRoguelikeV2 {
       outer: this.outer,
       current,
       pinned: this.pinned,
-    } as unknown as PlayerRoguelikeV2;
+    } as PlayerRoguelikeV2;
   }
 
   persistCurrent(): void {

@@ -543,7 +543,10 @@ export class AutoChessManager {
     }
     const start = await this._player.battle.start({
       stageId: body.stageId,
-      squad: [],
+      // 服务端内部调用（训练战斗）：无客户端编队。
+      // 注意 `slots` 必须存在——battle.start 会遍历 `squad.slots` 做危险等级/精英化校验
+      // （原先此处传 `squad: []`，运行期 `[].slots` 为 undefined → 500；断言把它藏住了）。
+      squad: { squadId: "", name: "", slots: [] },
       usePracticeTicket: 0,
       assistFriend: null,
       isRetro: 0,
@@ -552,7 +555,7 @@ export class AutoChessManager {
       continuous: { battleTimes: 1 },
       isReplay: 0,
       startTs: 0,
-    } as unknown as CommonStartBattleRequest);
+    });
     return {
       ok: true,
       data: {
@@ -589,13 +592,11 @@ export class AutoChessManager {
       try {
         finishPayload = {
           ...finishPayload,
-          ...((await this._player.battle.finish({
+          // battle.finish 声明了 BattleFinishResponse 骨架（见 battle.ts），可安全叠加
+          ...(await this._player.battle.finish({
             data: body.data,
             battleData: body.battleData as { isCheat: string; completeTime: number },
-          })) as unknown as Omit<
-            AutoChessFinishBattleResponse,
-            "playerDataDelta" | "pushMessage"
-          >),
+          })),
         };
       } catch (error) {
         logger.error(

@@ -8,6 +8,7 @@ export {
   accrueCampaignKills,
   campaignMaxKills,
   campaignWeeklyBudget,
+  campaignsV2View,
   claimCampaignBreakRewards,
   claimCampaignMissionReward,
   ensureCampaignsV2State,

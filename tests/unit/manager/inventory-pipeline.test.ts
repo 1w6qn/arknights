@@ -6,18 +6,33 @@
  * 2. 执行语义与既有 items:get / items:use 事件直发等价（emit 载荷一致）；
  * 3. 空队列 no-op。
  */
-import { describe, it, expect, vi } from "vitest";
-import { GainItemPipeline } from "@game/kernel/inventory-pipeline";
+import { describe, it, expect } from "vitest";
+import { GainItemPipeline, type PipelineItem } from "@game/kernel/inventory-pipeline";
 import type { PlayerDataManager } from "@game/kernel/PlayerDataManager";
-import type { TypedEventEmitter } from "@game/kernel/events/runtime";
+import { mockTypedEventEmitter } from "../../helpers";
 
+/** 记录到的 emit（事件名 + 载荷实参） */
+interface RecordedEmit {
+  event: "items:get" | "items:use";
+  args: [PipelineItem[]];
+}
+
+/**
+ * 夹具：真实事件总线 + 订阅待断言的两个事件
+ *
+ * 用 `tests/helpers#mockTypedEventEmitter()`（真实 TypedEventEmitter）承接，经 `on` 订阅
+ * 记录载荷——而不是手写 `{ emit }` 替身再 `as unknown as TypedEventEmitter`
+ * （Emittery 的 emit 是复杂泛型，替身无法结构兼容，断言会掩盖签名漂移）。
+ */
 function makeEnv() {
-  const emitted: { event: string; args: unknown[] }[] = [];
-  const trigger = {
-    emit: vi.fn(async (event: string, args: unknown[]) => {
-      emitted.push({ event, args });
-    }),
-  } as unknown as TypedEventEmitter;
+  const emitted: RecordedEmit[] = [];
+  const trigger = mockTypedEventEmitter();
+  trigger.on("items:get", ([items]) => {
+    emitted.push({ event: "items:get", args: [items] });
+  });
+  trigger.on("items:use", ([items]) => {
+    emitted.push({ event: "items:use", args: [items] });
+  });
   const player = {} as PlayerDataManager;
   return { player, trigger, emitted };
 }

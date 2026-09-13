@@ -1,8 +1,8 @@
 {
   "totals": {
     "any": 0,
-    "unknown": 407,
-    "object": 26
+    "unknown": 350,
+    "object": 6
   },
   "counts": {
     "app/core/auth/auth.ts": {
@@ -42,7 +42,7 @@
     },
     "app/core/db/drivers/sqlite.ts": {
       "any": 0,
-      "unknown": 3,
+      "unknown": 2,
       "object": 0
     },
     "app/core/db/friend-repo.ts": {
@@ -65,16 +65,6 @@
       "unknown": 2,
       "object": 0
     },
-    "app/core/utils/crypt.ts": {
-      "any": 0,
-      "unknown": 0,
-      "object": 2
-    },
-    "app/core/utils/file.ts": {
-      "any": 0,
-      "unknown": 0,
-      "object": 3
-    },
     "app/core/utils/logger.ts": {
       "any": 0,
       "unknown": 17,
@@ -92,7 +82,7 @@
     },
     "app/core/utils/traffic-recorder.ts": {
       "any": 0,
-      "unknown": 9,
+      "unknown": 6,
       "object": 0
     },
     "app/game/app.ts": {
@@ -107,7 +97,7 @@
     },
     "app/game/kernel/PlayerDataManager.ts": {
       "any": 0,
-      "unknown": 3,
+      "unknown": 2,
       "object": 0
     },
     "app/game/kernel/PlayerStatus.ts": {
@@ -119,11 +109,6 @@
       "any": 0,
       "unknown": 2,
       "object": 0
-    },
-    "app/game/kernel/battle-model.ts": {
-      "any": 0,
-      "unknown": 0,
-      "object": 10
     },
     "app/game/kernel/events/core.ts": {
       "any": 0,
@@ -163,7 +148,7 @@
     "app/game/modules/account/AccountManager.ts": {
       "any": 0,
       "unknown": 3,
-      "object": 1
+      "object": 0
     },
     "app/game/modules/account/user.ts": {
       "any": 0,
@@ -195,11 +180,6 @@
       "unknown": 1,
       "object": 0
     },
-    "app/game/modules/activities/arkhub/router.ts": {
-      "any": 0,
-      "unknown": 1,
-      "object": 0
-    },
     "app/game/modules/activities/milestone/logic.ts": {
       "any": 0,
       "unknown": 3,
@@ -207,7 +187,7 @@
     },
     "app/game/modules/activities/shared/activity.ts": {
       "any": 0,
-      "unknown": 19,
+      "unknown": 15,
       "object": 0
     },
     "app/game/modules/aprilFool/aprilFool.ts": {
@@ -232,7 +212,7 @@
     },
     "app/game/modules/autochess/autochess.ts": {
       "any": 0,
-      "unknown": 4,
+      "unknown": 2,
       "object": 0
     },
     "app/game/modules/autochess/routes.ts": {
@@ -242,7 +222,7 @@
     },
     "app/game/modules/battle/battle.ts": {
       "any": 0,
-      "unknown": 9,
+      "unknown": 5,
       "object": 0
     },
     "app/game/modules/building/models.ts": {
@@ -250,24 +230,9 @@
       "unknown": 7,
       "object": 0
     },
-    "app/game/modules/building/trade-orders.ts": {
-      "any": 0,
-      "unknown": 1,
-      "object": 0
-    },
-    "app/game/modules/campaignV2/accrue.ts": {
-      "any": 0,
-      "unknown": 2,
-      "object": 0
-    },
     "app/game/modules/campaignV2/campaignV2.ts": {
       "any": 0,
       "unknown": 3,
-      "object": 0
-    },
-    "app/game/modules/campaignV2/routes.ts": {
-      "any": 0,
-      "unknown": 9,
       "object": 0
     },
     "app/game/modules/character/char-skills.ts": {
@@ -277,18 +242,13 @@
     },
     "app/game/modules/character/char.ts": {
       "any": 0,
-      "unknown": 4,
+      "unknown": 3,
       "object": 0
     },
     "app/game/modules/character/charBuild.ts": {
       "any": 0,
       "unknown": 2,
       "object": 0
-    },
-    "app/game/modules/character/routes.ts": {
-      "any": 0,
-      "unknown": 0,
-      "object": 1
     },
     "app/game/modules/character/team-power.ts": {
       "any": 0,
@@ -310,16 +270,6 @@
       "unknown": 3,
       "object": 0
     },
-    "app/game/modules/depot/depot.ts": {
-      "any": 0,
-      "unknown": 0,
-      "object": 1
-    },
-    "app/game/modules/depot/routes.ts": {
-      "any": 0,
-      "unknown": 4,
-      "object": 0
-    },
     "app/game/modules/equipmentMission/equipmentMission.ts": {
       "any": 0,
       "unknown": 1,
@@ -330,19 +280,9 @@
       "unknown": 3,
       "object": 0
     },
-    "app/game/modules/gacha/gacha-up-list.ts": {
-      "any": 0,
-      "unknown": 1,
-      "object": 0
-    },
     "app/game/modules/gacha/handler.ts": {
       "any": 0,
       "unknown": 1,
-      "object": 0
-    },
-    "app/game/modules/gacha/logic.ts": {
-      "any": 0,
-      "unknown": 4,
       "object": 0
     },
     "app/game/modules/medal/medal.ts": {
@@ -375,11 +315,6 @@
       "unknown": 4,
       "object": 0
     },
-    "app/game/modules/retro/RetroManager.ts": {
-      "any": 0,
-      "unknown": 1,
-      "object": 0
-    },
     "app/game/modules/roguelike/battle.ts": {
       "any": 0,
       "unknown": 2,
@@ -392,7 +327,7 @@
     },
     "app/game/modules/roguelike/logic.ts": {
       "any": 0,
-      "unknown": 5,
+      "unknown": 4,
       "object": 0
     },
     "app/game/modules/roguelike/relic.ts": {
@@ -455,11 +390,6 @@
       "unknown": 2,
       "object": 0
     },
-    "app/game/modules/social/SocialService.ts": {
-      "any": 0,
-      "unknown": 2,
-      "object": 0
-    },
     "app/game/modules/social/social.ts": {
       "any": 0,
       "unknown": 1,
@@ -483,11 +413,6 @@
     "app/game/modules/user/routes.ts": {
       "any": 0,
       "unknown": 4,
-      "object": 0
-    },
-    "app/game/modules/vecbreak/routes.ts": {
-      "any": 0,
-      "unknown": 2,
       "object": 0
     },
     "app/ops/admin/arkhub-pixel.ts": {
@@ -515,29 +440,14 @@
       "unknown": 3,
       "object": 0
     },
-    "app/ops/assets/asset.ts": {
-      "any": 0,
-      "unknown": 0,
-      "object": 2
-    },
     "app/ops/capture/capture-manager.ts": {
       "any": 0,
-      "unknown": 15,
-      "object": 0
-    },
-    "app/ops/proxy/forwarder.ts": {
-      "any": 0,
-      "unknown": 1,
+      "unknown": 12,
       "object": 0
     },
     "app/ops/proxy/transform.ts": {
       "any": 0,
       "unknown": 4,
-      "object": 0
-    },
-    "app/server.ts": {
-      "any": 0,
-      "unknown": 1,
       "object": 0
     },
     "hook/main.ts": {
@@ -560,12 +470,12 @@
       "unknown": 2,
       "object": 0
     },
-    "scripts/proxy-harness.ts": {
+    "scripts/fbs-crosscheck.ts": {
       "any": 0,
-      "unknown": 6,
+      "unknown": 1,
       "object": 0
     },
-    "tests/helpers/mockExcel.ts": {
+    "scripts/proxy-harness.ts": {
       "any": 0,
       "unknown": 2,
       "object": 0
@@ -593,11 +503,6 @@
     "tests/unit/manager/freshPlayer.test.ts": {
       "any": 0,
       "unknown": 1,
-      "object": 0
-    },
-    "tests/unit/manager/inventory-pipeline.test.ts": {
-      "any": 0,
-      "unknown": 3,
       "object": 0
     },
     "tests/unit/manager/playerdata-composition.test.ts": {

@@ -6,7 +6,7 @@
  */
 
 import { PlayerDataModel } from "../../kernel/playerdata";
-import type { JsonObject } from "@excel/json-value";
+import type { JsonObject, JsonValue } from "@excel/json-value";
 import { PlayerDataManager } from "../../kernel/PlayerDataManager";
 import {
   BattleInfo,
@@ -261,10 +261,10 @@ export class AccountManager implements BattleInfoStore {
    * 获取战斗结算信息（battle_infos 表独立存储——A3）
    * @param uid - 用户ID
    * @param battleId - 战斗ID
-   * @returns 战斗信息（不存在返回 undefined，调用方 `!` 或 `?.` 自行处理）
+   * @returns 战斗信息（不存在返回 undefined，调用方须显式处理）
    */
-  async getBattleInfo(uid: string, battleId: string): Promise<BattleInfo> {
-    return (await this._battleStore?.getInfo(uid, battleId)) as BattleInfo;
+  async getBattleInfo(uid: string, battleId: string): Promise<BattleInfo | undefined> {
+    return await this._battleStore?.getInfo(uid, battleId);
   }
 
   /**
@@ -1064,7 +1064,8 @@ export interface UserConfig {
       beforeNonHitCnt: number;
     };
   };
-  rlv2: object;
+  /** 肉鸽存档快照（服务端自定义；未建模 JSON，索引/取值均须显式收窄） */
+  rlv2: JsonValue;
 }
 
 /**

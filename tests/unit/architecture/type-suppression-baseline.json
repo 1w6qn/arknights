@@ -1,0 +1,8 @@
+{
+  "total": 5,
+  "counts": {
+    "app/game/kernel/events/runtime.ts": 3,
+    "tests/helpers/diAdapters.ts": 1,
+    "tests/helpers/mockPlayerData.ts": 1
+  }
+}

@@ -37,11 +37,9 @@ export interface GoldDistEntry {
   weight: number;
 }
 
-/** 站级基础概率表（贸易站页；JSON 键为字符串，此处转型保持既有数字索引类型） */
-export const GOLD_ORDER_DISTRIBUTION = ORDER_CONFIG.goldOrderDistribution as unknown as Record<
-  number,
-  GoldDistEntry[]
->;
+/** 站级基础概率表（贸易站页；JSON 键为字符串，数字索引类型按 TS 的字符串索引签名规则兼容） */
+export const GOLD_ORDER_DISTRIBUTION: Record<number, GoldDistEntry[]> =
+  ORDER_CONFIG.goldOrderDistribution;
 
 /** 暖机激活所需累积工时（小时）：α 小幅提升 3h、β 提升 5h（贸易站页） */
 export const WARMUP_ALPHA_HOURS = ORDER_CONFIG.warmupAlphaHours;

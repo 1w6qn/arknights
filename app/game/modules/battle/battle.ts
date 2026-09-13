@@ -13,7 +13,9 @@ import { DisplayDetailRewards } from "@excel/excel";
 import { syncAct44SideEntry } from "../activities/act44side/informant";
 import {
   accrueCampaignKills,
+  campaignsV2View,
   refreshCampaignMissions,
+  type CampaignsV2State,
 } from "../campaignV2/public";
 import { randomChoice, randomChoices, generateBattleId } from "@utils/random";
 import { rarityToIndex } from "@utils/rarity";
@@ -104,6 +106,30 @@ function resolveStage(stageId: string): ExcelStage | undefined {
 }
 
 /**
+ * 关卡掉落条目（数字档位视图）
+ *
+ * excel 加载时 `normalizeStageDropInfo`（`@excel/excel`）已把 `dropType`/`occPercent` 从
+ * 字符串枚举**就地**改写为数字档位（`DROP_TYPE_NUMERIC` / `OCC_PERCENT_NUMERIC`），
+ * 但生成类型 `StageData.stageDropInfo.displayDetailRewards` 仍声明为字符串枚举，
+ * 读取侧此前只能写 `displayDetailRewards as unknown as DisplayDetailRewards[]` /
+ * `item.dropType as unknown as number`。
+ *
+ * 这里按数字档位返回**副本**：已是数字的原样保留；若拿到未归一化的表（测试夹具等），
+ * 按 `normalizeStageDropInfo` 相同的缺省档位兜底（occPercent=4 / dropType=2）——
+ * 该兜底不会产出 1/8，故 `[1, 8]`（ONCE/COMPLETE 首通奖励）判定与旧字符串实现一致。
+ * @param stage - 关卡表条目（`excel.StageTable.stages[id]`）
+ * @returns 掉落条目数组（dropType/occPercent 为数字档位）
+ */
+function dropRewardsOf(stage: ExcelStage): DisplayDetailRewards[] {
+  const raw = stage.stageDropInfo?.displayDetailRewards ?? [];
+  return raw.map((item) => ({
+    ...item,
+    occPercent: typeof item.occPercent === "number" ? item.occPercent : 4,
+    dropType: typeof item.dropType === "number" ? item.dropType : 2,
+  }));
+}
+
+/**
  * 查找悖论模拟（干员密录）关卡的手册元数据
  *
  * 悖论模拟关卡（mem_ 前缀，handbookStageData 收录）结算时需要用到其中的
@@ -143,6 +169,55 @@ interface BattleSession {
   stageId: string;
   startTs: number;
   status: BattleSessionStatus;
+}
+
+/**
+ * 战斗结算响应（`battleFinish` 的统一骨架）
+ *
+ * 四个返回分支（重复结算被拒 / 未知关卡 / 演习 / 正规结算）此前形状不一：
+ * 后三个分支里「演习」只回 `{ result: 0 }`，而另两个最小分支回的是完整空壳——
+ * 客户端按完整骨架解析，故统一为下面的骨架（演习分支的**行为微调**：补齐空列表，
+ * 与原 `{ result: 0 }` 相比只增不减；跨模块消费方此前只能靠
+ * `as unknown as Omit<XFinishBattleResponse, …>` 断言，现在有了声明式契约）。
+ */
+export interface BattleFinishResponse {
+  result: number;
+  apFailReturn: number;
+  expScale: number;
+  goldScale: number;
+  rewards: ItemBundle[];
+  firstRewards: ItemBundle[];
+  unlockStages: string[];
+  unusualRewards: ItemBundle[];
+  additionalRewards: ItemBundle[];
+  furnitureRewards: ItemBundle[];
+  alert: string[];
+  suggestFriend: boolean;
+  /** 好友建议占位（恒为空表；逻辑未实现，仅对齐响应结构） */
+  pryResult: never[];
+}
+
+/**
+ * 最小结算响应（空壳）
+ * @param result - 结算结果码（0=成功/演习，1=被拒）
+ * @returns 各奖励/解锁列表全空的结算响应
+ */
+function emptyBattleFinishResponse(result = 0): BattleFinishResponse {
+  return {
+    result,
+    apFailReturn: 0,
+    expScale: 0,
+    goldScale: 0,
+    rewards: [],
+    firstRewards: [],
+    unlockStages: [],
+    unusualRewards: [],
+    additionalRewards: [],
+    furnitureRewards: [],
+    alert: [],
+    suggestFriend: false,
+    pryResult: [],
+  };
 }
 
 export class BattleManager {
@@ -478,17 +553,26 @@ export class BattleManager {
   async finish(args: {
     data: string;
     battleData: { isCheat: string; completeTime: number };
-  }) {
+  }): Promise<BattleFinishResponse> {
     const { data } = args;
     // 解密锚点优先用 battleStart 快照（客户端用「开始战斗时」的锚点加密），
     // 防止战斗中途 syncData 刷新 pushFlags.status 导致 key 漂移（bad decrypt）
     const loginTime =
       battleLoginTimes.get(this._player.uid) ?? this._player._playerdata.pushFlags.status;
     const battleData = await decryptBattleData(data, loginTime);
-    const battleInfo = await accountManager.getBattleInfo(
+    const fetchedInfo = await accountManager.getBattleInfo(
       this._player.uid,
       battleData.battleId,
     );
+    if (!fetchedInfo) {
+      // battleStart 上下文缺失（进程重启后直接重放 finish 等）：归一到「未知关卡」
+      // （stageId=""，isPractice=0）走下方空结算分支，避免解构 undefined 直接 500。
+      logger.warn(
+        "battle",
+        `quest/battleFinish 缺少 battleStart 上下文 ${battleData.battleId}，返回空结算`,
+      );
+    }
+    const battleInfo: BattleInfo = fetchedInfo ?? { stageId: "", isPractice: 0 };
     let goldScale = 0,
       expScale = 0,
       apFailReturn = 0;
@@ -503,21 +587,7 @@ export class BattleManager {
         "battle",
         `battleFinish 重复结算被拒（battleId=${battleData.battleId}）`,
       );
-      return {
-        result: 1,
-        apFailReturn: 0,
-        expScale: 0,
-        goldScale: 0,
-        rewards: [],
-        firstRewards: [],
-        unlockStages: [],
-        unusualRewards: [],
-        additionalRewards: [],
-        furnitureRewards: [],
-        alert: [],
-        suggestFriend: false,
-        pryResult: [],
-      };
+      return emptyBattleFinishResponse(1);
     }
     /**
      * 标记本场战斗已结算（一次性幂等标记，落库 battle_infos）
@@ -543,25 +613,10 @@ export class BattleManager {
         "battle",
         `quest/battleFinish 未知关卡 ${stageId}，返回空结算`,
       );
-      return {
-        result: 0,
-        apFailReturn: 0,
-        expScale: 0,
-        goldScale: 0,
-        rewards: [],
-        firstRewards: [],
-        unlockStages: [],
-        unusualRewards: [],
-        additionalRewards: [],
-        furnitureRewards: [],
-        alert: [],
-        suggestFriend,
-        pryResult: [],
-      };
+      return emptyBattleFinishResponse();
     }
     const { apCost, expGain, goldGain } = stage;
-    const displayDetailRewards =
-      stage.stageDropInfo.displayDetailRewards;
+    const displayDetailRewards = dropRewardsOf(stage);
     let [
       additionalRewards,
       unusualRewards,
@@ -671,7 +726,8 @@ export class BattleManager {
     }
     if (isPractice) {
       await markSettled();
-      return { result: 0 };
+      // 演习：无奖励/无解锁，但响应骨架与其它分支一致（此前仅 `{ result: 0 }`）
+      return emptyBattleFinishResponse();
     }
     // 修复（2026-09-09）：结算成功即打上一次性标记（重放同 battleId 直接拒绝）
     await markSettled();
@@ -731,7 +787,7 @@ export class BattleManager {
   ): Promise<void> {
     const { battleData, battleInfo, stage, stageId, isPractice, goldScale, ctx } = deps;
     const { apCost, goldGain } = stage;
-    const displayDetailRewards = stage.stageDropInfo.displayDetailRewards;
+    const displayDetailRewards = dropRewardsOf(stage);
     const playerStage = draft.dungeon.stages[stageId];
     if (isPractice) {
       if (playerStage.state == 0) {
@@ -803,7 +859,7 @@ export class BattleManager {
       }
       if (firstClear) {
         for (const item of displayDetailRewards) {
-          if ([1, 8].includes(item.dropType as unknown as number)) {
+          if ([1, 8].includes(item.dropType)) {
             ctx.firstRewards.push({
               type: item.type as ItemType,
               id: item.id,
@@ -862,7 +918,7 @@ export class BattleManager {
       }
       [ctx.additionalRewards, ctx.unusualRewards, ctx.furnitureRewards, ctx.rewards] =
         await this.dropReward(
-          displayDetailRewards as unknown as DisplayDetailRewards[],
+          displayDetailRewards,
           battleData.completeState,
           stageId,
         );
@@ -986,14 +1042,10 @@ export class BattleManager {
       // 修复（2026-09-09，S1）：剿灭作战蚀刻章（CampaignsComplete 模板）——原实现该事件
       // 从未 emit，36 枚剿灭勋章永不可得。载荷为 campaignsV2 存档（模板自行校验
       // instances[unlockParam[0]].maxKills==400 且无未领突破奖励）。
-      const campaignsSave = (
-        this._player._playerdata as unknown as {
-          campaignsV2?: { instances?: Record<string, unknown> };
-        }
-      ).campaignsV2 ?? {};
-      await this._trigger.emit("CampaignsComplete", [
-        campaignsSave as { instances?: Record<string, { maxKills?: number; rewardStatus?: number[] } | undefined> },
-      ]);
+      // campaignsV2 不在生成模型里 → 经 campaignV2 模块的单一断言点取（见 campaignsV2View）。
+      const campaignsSave: CampaignsV2State =
+        campaignsV2View(this._player._playerdata).campaignsV2 ?? {};
+      await this._trigger.emit("CampaignsComplete", [campaignsSave]);
       if (campaignGained > 0) {
         await this._player.gainItem
           .add({ id: "4003", type: "DIAMOND_SHD" as ItemType, count: campaignGained })

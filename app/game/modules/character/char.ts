@@ -1,6 +1,7 @@
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import { PlayerDataManager } from "../../kernel/PlayerDataManager";
 import { ItemBundle, ItemType } from "@excel/excel";
+import type { ItemBundleInput } from "../../kernel/inventory-pipeline";
 import excel from "@excel/excel";
 import { newlyCompletedPowers } from "./team-power";
 import { GachaResult } from "../gacha/gacha";
@@ -33,16 +34,11 @@ interface MasterSkillView {
 }
 
 /**
- * 管道消耗目标视图
+ * 管道消耗/入账目标视图 = {@link ItemBundleInput}（服务端口径）
  *
- * ItemBundle 无 `instId`（服务端消耗品实例号扩展字段），且消耗品券调用点只给
- * id/count/instId（`type` 由物品表推导）——此视图描述该调用口径，入管道时按 ItemBundle 断言
- * （断言合法：ItemBundle 可赋给本类型）。
+ * 消耗品券调用点只给 id/count/instId（`type` 由物品表推导），`ItemBundle` 声明必填——
+ * 入管道时直接用管道的入参类型 {@link ItemBundleInput}，不再做任何断言。
  */
-type PipelineUseTarget = Omit<ItemBundle, "type"> & {
-  type?: ItemType;
-  instId?: number;
-};
 
 /** 物品类型数字枚举 → 字符串（spCharMissions 等表的 rewards.type 为数字枚举） */
 function itemTypeToString(itemType: number | string): string {
@@ -92,10 +88,10 @@ export class CharManager {
    * 消耗物品：经 gainItem 管道统一出队（inventory-pipeline），不直发 items:use。
    * @param items - 待消耗物品列表（空列表直接跳过）
    */
-  private async _useItems(items: PipelineUseTarget[]): Promise<void> {
+  private async _useItems(items: ItemBundleInput[]): Promise<void> {
     if (items.length === 0) return;
     const pipe = this._player.gainItem;
-    for (const item of items) pipe.add(item as ItemBundle);
+    for (const item of items) pipe.add(item);
     await pipe.use();
   }
 
@@ -432,9 +428,7 @@ export class CharManager {
           `干员 ${char.charId} 无精${destEvolvePhase} 相位配置`,
         );
       }
-      await this._useItems(
-        evolveCost.concat([excel.makeItem("4001", goldCost) as unknown as ItemBundle]),
-      );
+      await this._useItems(evolveCost.concat([excel.makeItem("4001", goldCost)]));
       // 累计消耗龙门币任务（CostGold / CostGoldPlus）—— 晋升耗币统计
       await this._trigger.emit("CostGold", [{ goldCost: goldCost }]);
       await this._trigger.emit("CostGoldPlus", [{ goldCostPlus: goldCost }]);
