@@ -84,7 +84,11 @@
 - **account 仍为共享门面**：`building`/`gacha`/`social`/`battle` 直接调 `accountManager.*`，同时 `account` 反向依赖 `battle/BattleStore`、`social/SocialService`、`user/freshPlayer` → 建议拆 `account-data` 门面。
 - **静态环（6 模块）**：`user → social → battle → activities/act44side → activities/shared → account → user`（含 `account↔battle`、`account↔social`、`shared↔act44side` 双向依赖）。
 - **路由层耦合（剩余）**：`user/routes.ts` 引用 `account/user` + `user.schema`。
-- 全仓唯一 public 出口 `activities/arkhub/public.ts` 无跨模块引用走它 → 模块门面模式仍在推广中。
+- ~~全仓唯一 public 出口 `activities/arkhub/public.ts` 无跨模块引用走它 → 模块门面模式仍在推广中。~~
+  **已收敛（2026-09-13）**：arkhub 重构为 `domain/` + `session/` + `capture/` 分层并重写 `public.ts` 门面，
+  `app/server.ts`（原 247 行内联绑定 → `session/bindings.ts`）、`app/ops/admin/*`、`scripts/*`、`tests/*`
+  全部只经 public 消费；新增守卫 R5（game 不得依赖 ops）与 R6（模块外仅可 import arkhub public），
+  见 `docs/arkhub-重构-2026-09-13.md` 与 `tests/unit/architecture/module-boundary.test.ts`。
 
 ## 7. 重构建议（按优先级）
 

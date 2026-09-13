@@ -1,150 +1,14 @@
 /**
  * 活动路由：arkhub（由 router/activity.ts 拆分而来，实现未改动）
  */
-import { collectRawBody, arkhubFullHost } from "../shared/shared";
+import { arkhubFullHost } from "../shared/shared";
 import * as ReqSchema from "../shared/activity.schema";
 
-import { getPlayer, getPlayerOptional } from "../../../kernel/http/request-context";
 import type { PlayerActivity } from "../../../kernel/playerdata";
 import config from "@core/config/index";
-import {
-  arkhubPixelPublished,
-  arkhubPixelCollected,
-} from "./arkhub";
-import { parseMultipartForm } from "../../../kernel/util/multipart";
-import {
-  savePixel,
-  loadPixelBytes,
-  buildPixelArtResp,
-  computeNewCollects,
-  consumePixelUploadToken,
-  ARKPIXEL_MAX_PUBLISH,
-} from "./arkpixel";
-import {
-  ActCheckinvsSignRequest,
-  ActCheckinvsSignResponse,
-  AutoConfirmMissionsRequest,
-  AutoConfirmMissionsResponse,
-  ChangeFestivalCharRequest,
-  ChangeFestivalCharResponse,
-  ConfirmActivityMissionGroupRequest,
-  ConfirmActivityMissionGroupResponse,
-  ConfirmActivityMissionListRequest,
-  ConfirmActivityMissionListResponse,
-  ConfirmActivityMissionRequest,
-  ConfirmActivityMissionResponse,
-  ExchangeActivityShopItemRequest,
-  ExchangeActivityShopItemResponse,
-  GetActivityCheckInRewardRequest,
-  GetActivityCheckInRewardResponse,
-  GetActivityCollectionRewardRequest,
-  GetActivityCollectionRewardResponse,
-  GetActivityShopInfoRequest,
-  GetActivityShopInfoResponse,
-  GetChainLogInFinalRewardsRequest,
-  GetChainLogInFinalRewardsResponse,
-  GetChainLogInRewardRequest,
-  GetChainLogInRewardResponse,
-  GetCheckInRewardRequest,
-  GetCheckInRewardResponse,
-  GetOpenServerCheckInRewardRequest,
-  GetOpenServerCheckInRewardResponse,
-  GetSwitchOnlyRewardRequest,
-  GetSwitchOnlyRewardResponse,
-  RecycleCharmsRequest,
-  RecycleCharmsResponse,
-  RewardAllMilestoneRequest,
-  RewardAllMilestoneResponse,
-  RewardMilestoneRequest,
-  RewardMilestoneResponse,
-  TryGetCharmFirstRewardRequest,
-  TryGetCharmFirstRewardResponse,
-  BossRushStartBattleRequest,
-  BossRushStartBattleResponse,
-  BossRushFinishBattleRequest,
-  BossRushFinishBattleResponse,
-  BossRushRelicSelectRequest,
-  BossRushRelicSelectResponse,
-  BossRushRelicUpgradeRequest,
-  BossRushRelicUpgradeResponse,
-  EnemyDuelBattleStartResponse,
-  EnemyDuelCreateTeamRequest,
-  EnemyDuelCreateTeamResponse,
-  EnemyDuelJoinTeamRequest,
-  EnemyDuelJoinTeamResponse,
-  EnemyDuelMultiBattleFinishRequest,
-  EnemyDuelMultiBattleFinishResponse,
-  EnemyDuelMultiBattleStartRequest,
-  EnemyDuelQueryMatchRequest,
-  EnemyDuelQueryMatchResponse,
-  EnemyDuelRankInfo,
-  EnemyDuelSingleBattleFinishRequest,
-  EnemyDuelSingleBattleFinishResponse,
-  EnemyDuelSingleBattleStartRequest,
-  EnemyDuelStartMatchRequest,
-  EnemyDuelStartMatchResponse,
-  Act24sideAlchemyRequest,
-  Act24sideAlchemyResponse,
-  Act24sideBattleFinishRequest,
-  Act24sideBattleFinishResponse,
-  Act24sideBattleStartRequest,
-  Act24sideBattleStartResponse,
-  Act24sideEatRequest,
-  Act24sideEatResponse,
-  Act24sideGetHuntCollectRewardsRequest,
-  Act24sideGetHuntCollectRewardsResponse,
-  Act24sideSetToolRequest,
-  Act24sideSetToolResponse,
-  Act25sideBattleFinishRequest,
-  Act25sideBattleFinishResponse,
-  Act25sideBattleStartRequest,
-  Act25sideBattleStartResponse,
-  Act25sideDailyRefreshRequest,
-  Act25sideDailyRefreshResponse,
-  Act25sideFinishInvestigationRequest,
-  Act25sideFinishInvestigationResponse,
-  Act25sideHarvestRequest,
-  Act25sideHarvestResponse,
-  Act25sideInvestigateRequest,
-  Act25sideInvestigateResponse,
-  Act29sideCommitMelodyRequest,
-  Act29sideCommitMelodyResponse,
-  Act29sideStartMajorInvestRequest,
-  Act29sideStartMajorInvestResponse,
-  Act29sideSyncthesizeRequest,
-  Act29sideSyncthesizeResponse,
-  Act36sideConfirmDexNavRewardRequest,
-  Act36sideConfirmDexNavRewardResponse,
-  FootballBattleFinishRequest,
-  FootballBattleFinishResponse,
-  FootballBattleStartRequest,
-  FootballBattleStartResponse,
-  TrainingGroundBattleFinishRequest,
-  TrainingGroundBattleFinishResponse,
-  TrainingGroundBattleStartRequest,
-  TrainingGroundBattleStartResponse,
-  Act13sideDailyMissionCommitRequest,
-  Act13sideDailyMissionRandomRequest,
-  Act1vhalfidleRequest,
-  Act35sideBuyRequest,
-  Act35sideCreateRequest,
-  Act42sideGetDailyRewardsRequest,
-  Act44sideNextStateRequest,
-  Act44sideSelectChoiceRequest,
-  Act44sideStartGameRequest,
-  Act45sideConfirmRequest,
-  Act46sideGameRequest,
-  Act5d1BuyGoodsRequest,
-  ActivityGetRewardRequest,
-  ActivityMiniBattleFinishRequest,
-  ActivityMiniBattleFinishResponse,
-  ActivityMiniBattleStartRequest,
-  ActivityMiniBattleStartResponse,
-  ActivityStubItemsResponse,
-  ActivityStubRequest,
-  ActivityStubResponse,
-} from "../shared/activity";
-import { validateBody } from "../../../kernel/http/validate-body";
+import { arkhubPixelCollected } from "./domain/state";
+import { buildPixelArtResp, computeNewCollects } from "./domain/pixel";
+import { ActivityStubRequest, ActivityStubResponse } from "../shared/activity";
 
 import { PlayerDataManager } from "../../../kernel/PlayerDataManager";
 
@@ -158,15 +22,13 @@ import { PlayerDataManager } from "../../../kernel/PlayerDataManager";
 export async function handleArkhubenterHall(player: PlayerDataManager, body: ActivityStubRequest) {
   // 私服模式：本地网关应答器启动后指向本服端口（客户端连本服进空广场），
   // 否则返回官服域名（官服网关不可达/账号凭据无效时客户端无法进入）
-  const { isArkhubLocalGatewayActive, getArkhubLocalGatewayPort } = await import(
-    "./gateway/local"
-  );
-  const endpoint = isArkhubLocalGatewayActive()
+  const { isArkhubSessionActive, getArkhubSessionPort } = await import("./session/server");
+  const endpoint = isArkhubSessionActive()
     ? String(config.Host).replace(/^https?:\/\//, "")
     : "arkhub-gateway.hypergryph.com";
   // 实际监听端口（本地网关端口被占自动避让后的真实端口；未启动回退配置端口）
-  const port = isArkhubLocalGatewayActive()
-    ? getArkhubLocalGatewayPort() || (config.capture?.gatewayPort ?? 30000)
+  const port = isArkhubSessionActive()
+    ? getArkhubSessionPort() || (config.capture?.gatewayPort ?? 30000)
     : 30000;
   return ({
     result: 0,
@@ -293,7 +155,7 @@ export async function handleArkhubsyncInfo(player: PlayerDataManager, body: Acti
     }
   });
   const actMissions = pd.mission.missions["ACTIVITY"] ?? {};
-  const hubMissions: Record<string, unknown> = {};
+  const hubMissions: Record<string, (typeof actMissions)[string]> = {};
   for (const id of Object.keys(actMissions)) {
     if (id.startsWith("1arkhubActivity_")) hubMissions[id] = actMissions[id];
   }
@@ -305,6 +167,25 @@ export async function handleArkhubsyncInfo(player: PlayerDataManager, body: Acti
 
 export async function handleArkhubreport(player: PlayerDataManager, body: ActivityStubRequest) {
   return ({ result: 0, ...player.delta });
+}
+
+/**
+ * 像素画审核（CS: ActArkhubReviewPixelArtRequest { uid, status, items }）
+ *
+ * 私服仅记录审核动作到 `activity.ARK_HUB.act1arkhub.reviewedPixelArts`，返回空增量。
+ * 2026-09-13 自 `user/routes.ts` 迁入（原端点 `/pixelArt/review` 挂在 user 的 rootRouter）。
+ *
+ * @param player 玩家组合根
+ * @returns 空增量响应
+ */
+export async function handleArkhubReviewPixelArt(player: PlayerDataManager) {
+  await player.update(async (draft) => {
+    const act = draft.activity;
+    if (!act.ARK_HUB) act.ARK_HUB = {};
+    const hub = (act.ARK_HUB["act1arkhub"] = act.ARK_HUB["act1arkhub"] ?? {});
+    hub.reviewedPixelArts = hub.reviewedPixelArts ?? {};
+  });
+  return player.delta satisfies ActivityStubResponse;
 }
 
 // ===== 顶层辅助函数（由 router.ts 拆分时保留，原样迁移）=====

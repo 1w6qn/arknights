@@ -12,7 +12,7 @@ import {
   mockPlayerData,
   mockTypedEventEmitter,
   type MockPlayerDataManager,
-} from "../../helpers";
+} from "../../../../helpers";
 import {
   ARKDEX_PROPS,
   arkdexDamageScale,
@@ -44,7 +44,7 @@ import {
   arkhubEndScan,
   arkdexAlterOfMap,
   ARKDEX_MAX_ENCOUNTER,
-} from "@game/modules/activities/arkhub/arkdex";
+} from "@game/modules/activities/arkhub/public";
 
 /**
  * ARK_HUB act1arkhub 存档窄视图

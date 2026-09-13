@@ -2,152 +2,33 @@
  * 活动路由：arkhub（由 router/activity.ts 拆分而来，实现未改动）
  */
 import { Router } from "express";
-import { collectRawBody, arkhubFullHost } from "../shared/shared";
+import { collectRawBody } from "../shared/shared";
 import * as ReqSchema from "../shared/activity.schema";
 
-import { getPlayer, getPlayerOptional } from "../../../kernel/http/request-context";
+import { getPlayer } from "../../../kernel/http/request-context";
 import config from "@core/config/index";
-import {
-  arkhubPixelPublished,
-  arkhubPixelCollected,
-} from "./arkhub";
+import { arkhubPixelPublished } from "./domain/state";
 import { parseMultipartForm } from "../../../kernel/util/multipart";
 import {
   savePixel,
   loadPixelBytes,
-  buildPixelArtResp,
-  computeNewCollects,
   consumePixelUploadToken,
   ARKPIXEL_MAX_PUBLISH,
-} from "./arkpixel";
-import {
-  ActCheckinvsSignRequest,
-  ActCheckinvsSignResponse,
-  AutoConfirmMissionsRequest,
-  AutoConfirmMissionsResponse,
-  ChangeFestivalCharRequest,
-  ChangeFestivalCharResponse,
-  ConfirmActivityMissionGroupRequest,
-  ConfirmActivityMissionGroupResponse,
-  ConfirmActivityMissionListRequest,
-  ConfirmActivityMissionListResponse,
-  ConfirmActivityMissionRequest,
-  ConfirmActivityMissionResponse,
-  ExchangeActivityShopItemRequest,
-  ExchangeActivityShopItemResponse,
-  GetActivityCheckInRewardRequest,
-  GetActivityCheckInRewardResponse,
-  GetActivityCollectionRewardRequest,
-  GetActivityCollectionRewardResponse,
-  GetActivityShopInfoRequest,
-  GetActivityShopInfoResponse,
-  GetChainLogInFinalRewardsRequest,
-  GetChainLogInFinalRewardsResponse,
-  GetChainLogInRewardRequest,
-  GetChainLogInRewardResponse,
-  GetCheckInRewardRequest,
-  GetCheckInRewardResponse,
-  GetOpenServerCheckInRewardRequest,
-  GetOpenServerCheckInRewardResponse,
-  GetSwitchOnlyRewardRequest,
-  GetSwitchOnlyRewardResponse,
-  RecycleCharmsRequest,
-  RecycleCharmsResponse,
-  RewardAllMilestoneRequest,
-  RewardAllMilestoneResponse,
-  RewardMilestoneRequest,
-  RewardMilestoneResponse,
-  TryGetCharmFirstRewardRequest,
-  TryGetCharmFirstRewardResponse,
-  BossRushStartBattleRequest,
-  BossRushStartBattleResponse,
-  BossRushFinishBattleRequest,
-  BossRushFinishBattleResponse,
-  BossRushRelicSelectRequest,
-  BossRushRelicSelectResponse,
-  BossRushRelicUpgradeRequest,
-  BossRushRelicUpgradeResponse,
-  EnemyDuelBattleStartResponse,
-  EnemyDuelCreateTeamRequest,
-  EnemyDuelCreateTeamResponse,
-  EnemyDuelJoinTeamRequest,
-  EnemyDuelJoinTeamResponse,
-  EnemyDuelMultiBattleFinishRequest,
-  EnemyDuelMultiBattleFinishResponse,
-  EnemyDuelMultiBattleStartRequest,
-  EnemyDuelQueryMatchRequest,
-  EnemyDuelQueryMatchResponse,
-  EnemyDuelRankInfo,
-  EnemyDuelSingleBattleFinishRequest,
-  EnemyDuelSingleBattleFinishResponse,
-  EnemyDuelSingleBattleStartRequest,
-  EnemyDuelStartMatchRequest,
-  EnemyDuelStartMatchResponse,
-  Act24sideAlchemyRequest,
-  Act24sideAlchemyResponse,
-  Act24sideBattleFinishRequest,
-  Act24sideBattleFinishResponse,
-  Act24sideBattleStartRequest,
-  Act24sideBattleStartResponse,
-  Act24sideEatRequest,
-  Act24sideEatResponse,
-  Act24sideGetHuntCollectRewardsRequest,
-  Act24sideGetHuntCollectRewardsResponse,
-  Act24sideSetToolRequest,
-  Act24sideSetToolResponse,
-  Act25sideBattleFinishRequest,
-  Act25sideBattleFinishResponse,
-  Act25sideBattleStartRequest,
-  Act25sideBattleStartResponse,
-  Act25sideDailyRefreshRequest,
-  Act25sideDailyRefreshResponse,
-  Act25sideFinishInvestigationRequest,
-  Act25sideFinishInvestigationResponse,
-  Act25sideHarvestRequest,
-  Act25sideHarvestResponse,
-  Act25sideInvestigateRequest,
-  Act25sideInvestigateResponse,
-  Act29sideCommitMelodyRequest,
-  Act29sideCommitMelodyResponse,
-  Act29sideStartMajorInvestRequest,
-  Act29sideStartMajorInvestResponse,
-  Act29sideSyncthesizeRequest,
-  Act29sideSyncthesizeResponse,
-  Act36sideConfirmDexNavRewardRequest,
-  Act36sideConfirmDexNavRewardResponse,
-  FootballBattleFinishRequest,
-  FootballBattleFinishResponse,
-  FootballBattleStartRequest,
-  FootballBattleStartResponse,
-  TrainingGroundBattleFinishRequest,
-  TrainingGroundBattleFinishResponse,
-  TrainingGroundBattleStartRequest,
-  TrainingGroundBattleStartResponse,
-  Act13sideDailyMissionCommitRequest,
-  Act13sideDailyMissionRandomRequest,
-  Act1vhalfidleRequest,
-  Act35sideBuyRequest,
-  Act35sideCreateRequest,
-  Act42sideGetDailyRewardsRequest,
-  Act44sideNextStateRequest,
-  Act44sideSelectChoiceRequest,
-  Act44sideStartGameRequest,
-  Act45sideConfirmRequest,
-  Act46sideGameRequest,
-  Act5d1BuyGoodsRequest,
-  ActivityGetRewardRequest,
-  ActivityMiniBattleFinishRequest,
-  ActivityMiniBattleFinishResponse,
-  ActivityMiniBattleStartRequest,
-  ActivityMiniBattleStartResponse,
-  ActivityStubItemsResponse,
-  ActivityStubRequest,
-  ActivityStubResponse,
-} from "../shared/activity";
+} from "./domain/pixel";
+import { ActivityStubRequest } from "../shared/activity";
 import { validateBody } from "../../../kernel/http/validate-body";
+import {
+  handleArkhubenterHall,
+  handleArkhubgetFriendUidList,
+  handleArkhubgetPixelArt,
+  handleArkhubsetSecretary,
+  handleArkhubsetSquad,
+  handleArkhubsyncInfo,
+  handleArkhubreport,
+  handleArkhubReviewPixelArt,
+} from "./logic";
 
 const router = Router();
-import { handleArkhubenterHall, handleArkhubgetFriendUidList, handleArkhubgetPixelArt, handleArkhubsetSecretary, handleArkhubsetSquad, handleArkhubsyncInfo, handleArkhubreport } from "./logic";
 
 
 router.post("/arkhub/enterHall", validateBody(ReqSchema.activityStubSchema), async (req, res) => {
@@ -223,6 +104,17 @@ router.post("/arkhub/syncInfo", validateBody(ReqSchema.activityStubSchema), asyn
 
 router.post("/arkhub/report", validateBody(ReqSchema.activityStubSchema), async (req, res) => {
   res.send(await handleArkhubreport(getPlayer(), req.body as ActivityStubRequest));
+});
+
+/**
+ * 根级路由（非 /activity 前缀，由 activities/index.ts 的 rootRouter 聚合）
+ *
+ * `/pixelArt/review` 是 arkhub 专属端点（写 ARK_HUB.reviewedPixelArts），
+ * 2026-09-13 自 `user/routes.ts` 的 rootRouter 迁回本模块——URL 与响应形状不变。
+ */
+export const rootRouter = Router();
+rootRouter.post("/pixelArt/review", validateBody(ReqSchema.arkhubPixelArtReviewSchema), async (_req, res) => {
+  res.send(await handleArkhubReviewPixelArt(getPlayer()));
 });
 
 export default router;

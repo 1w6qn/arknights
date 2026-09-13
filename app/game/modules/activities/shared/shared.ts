@@ -8,6 +8,7 @@ import { ItemBundle, ItemType } from "@excel/excel";
 import excel from "@excel/excel";
 import { logger } from "@utils/logger";
 import config from "@core/config/index";
+import { arkhubSyncMissionCoin } from "../arkhub/public";
 import {
   ActCheckinvsSignRequest,
   ActCheckinvsSignResponse,
@@ -198,16 +199,8 @@ export async function confirmOneActivityMission(
       activityMissions[missionId].state = 3;
     }
     // 枢纽任务奖励 → ARK_HUB.coin / tshop.shop_act1arkhub.coin 同步（官服形状，
-    // 与 mission manager 的 _confirmActivityTableMission 保持一致）
-    const seal = missionInfo.rewards.find(
-      (r) => r.id === "act1arkhub_token_seal",
-    );
-    if (seal?.count) {
-      const hub = draft.activity.ARK_HUB?.act1arkhub;
-      if (hub) hub.coin = (hub.coin ?? 0) + seal.count;
-      const shop = draft.tshop?.["shop_act1arkhub"];
-      if (shop) shop.coin = (shop.coin ?? 0) + seal.count;
-    }
+    // 与 mission manager 的 _confirmActivityTableMission 统一走 arkhub 模块实现）
+    arkhubSyncMissionCoin(draft, missionInfo.rewards);
   });
   for (const it of rewards) player.gainItem.add(it);
   await player.gainItem.handle();

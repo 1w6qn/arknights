@@ -98,7 +98,6 @@ import {
   getRewardsSchema,
   getThumbnailUrlSchema,
   medalSetCustomDataSchema,
-  pixelArtReviewSchema,
   receiveTeamCollectionRewardSchema,
   recvLongTermCheckInRewardSchema,
   rewardMedalSchema,
@@ -786,22 +785,6 @@ rootRouter.post("/mainlineClue/getRewards", validateBody(getRewardsSchema), asyn
 });
 
 // ---- 2026-08-13 补全：客户端缺失路由（根路径）----
-
-/**
- * 像素画审核（CS: ActArkhubReviewPixelArtRequest { uid, status, items }）
- * 私服记录到 activity.ARK_HUB.pixelArts，返回空增量
- */
-rootRouter.post("/pixelArt/review", validateBody(pixelArtReviewSchema), async (req, res) => {
-  const player = getPlayer();
-  const body = req.body as { uid?: string; status?: number };
-  await player.update(async (draft) => {
-    const act = draft.activity;
-    if (!act.ARK_HUB) act.ARK_HUB = {};
-    const hub = (act.ARK_HUB["act1arkhub"] = act.ARK_HUB["act1arkhub"] ?? {});
-    hub.reviewedPixelArts = hub.reviewedPixelArts ?? {};
-  });
-  res.send(player.delta);
-});
 
 /**
  * 演出剧情开始

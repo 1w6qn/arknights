@@ -26,6 +26,7 @@ import { PlayerDataManager } from "../../kernel/PlayerDataManager";
 import { logger } from "@utils/logger";
 import { readJsonSync } from "@utils/file";
 import { registerMissionTriggers } from "./trigger";
+import { arkhubSyncMissionCoin } from "../activities/arkhub/public";
 
 /**
  * 每日任务链头 ID 列表（startList）。
@@ -716,16 +717,8 @@ export class MissionManager {
         newlyCompleted = true;
       }
       if (data) data.confirmed = 1;
-      // 枢纽任务奖励 → ARK_HUB.coin / tshop.shop_act1arkhub.coin 同步累加
-      const seal = (missionInfo.rewards ?? []).find(
-        (r) => r.id === "act1arkhub_token_seal",
-      );
-      if (seal?.count) {
-        const hub = draft.activity.ARK_HUB?.act1arkhub;
-        if (hub) hub.coin = (hub.coin ?? 0) + seal.count;
-        const shop = draft.tshop?.["shop_act1arkhub"];
-        if (shop) shop.coin = (shop.coin ?? 0) + seal.count;
-      }
+      // 枢纽任务奖励 → ARK_HUB.coin / tshop.shop_act1arkhub.coin 同步累加（统一实现）
+      arkhubSyncMissionCoin(draft, missionInfo.rewards ?? []);
     });
     // 已领取：不发放奖励、不重复触发勋章/物品事件
     if (alreadyConfirmed) return [];

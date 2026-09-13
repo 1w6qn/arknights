@@ -28,7 +28,7 @@
 | equipmentMission | 模组任务数据驱动，战斗统计推进；enemyStats 全队击杀归因不准、缺失统计兜底置满 |
 | character 养成 | 升级/晋升/潜能/技能/专精/模组完整；多处直发 items 事件未走管道、evolveChar 静默失败 |
 | rlv2 肉鸽 | 64 端点，47 测试文件/约355 用例，官方结构 diff 测试；黑流树海三结局/骰子 ruleGroup/铜币/远征简化，alchemyReward 忽略 index，旧 /game/rlv2 与 /roguelike 双前缀兼容缺失 |
-| arkhub 奇象巡展 | HTTP 9 端点 + 长连接 gateway 协议完整；部分 schema 仍 activityStubSchema、report 桩 |
+| arkhub 奇象巡展 | HTTP 10 端点（9 个 `/activity/arkhub/*` + 根级 `/pixelArt/review`）+ 长连接会话协议完整；部分 schema 仍 activityStubSchema、report 桩。**2026-09-13 已按 enemyDuel 样式分层**（`domain/`+`session/`+`capture/`，模块外仅经 `public.ts`，启动绑定在 `session/bindings.ts`），见 `docs/arkhub-重构-2026-09-13.md` |
 | bossRush | 波次/遗物/结算完整；battleId 仅内存、缺 finish 抓包验证 |
 | act44side 情报屋 | 完整营业日状态机 + 抓包样本比对；BEFORE_SINGLE_RESULT 不支持 |
 | arkodc ODC | 5 端点，varSeq/奖励数据驱动；battleId stub、物品直发 items:get 违规 |

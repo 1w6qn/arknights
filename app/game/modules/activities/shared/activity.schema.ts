@@ -552,3 +552,14 @@ export const arkhubSetSquadSchema = z.object({
   // 故按被读层级收紧到「JSON 数组」，元素结构保持透传
   squads: z.array(z.json()).optional(),
 });
+
+/**
+ * 像素画审核请求（CS: ActArkhubReviewPixelArtRequest { uid, status, items }）
+ *
+ * 私服仅记录审核动作（`ARK_HUB.act1arkhub.reviewedPixelArts`），返回空增量。
+ * 2026-09-13 自 `account/user.schema.ts` 迁入活动族（端点 `/pixelArt/review` 同步归位 arkhub 模块）。
+ */
+export const arkhubPixelArtReviewSchema = z.object({
+  uid: z.string().optional(),
+  status: z.number().optional(),
+});

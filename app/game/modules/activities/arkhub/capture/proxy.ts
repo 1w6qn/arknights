@@ -23,7 +23,6 @@ import {
   parseGatewayStream,
   framesToJson,
   gatewayTranscript,
-  fieldsToJson,
 } from "./protocol";
 
 /**

@@ -13,58 +13,43 @@ import {
   encodeFieldVarint as fv,
   ProtoReader,
 } from "../codec";
-import { GW_CODE_OK } from "../router";
-import type {
-  ArkhubFrameRouter,
-  ArkhubGatewayHandlerContext,
-  ArkhubGatewayFrame,
-} from "../router";
-import { CAPTURE_MAP_IDS, ARKHUB_STATE_MASK, pushPlayerStateMask } from "./session";
+import type { ArkhubSessionFrameRouter } from "../dispatch";
+import type { ArkhubSessionHandlerContext, ArkhubSessionFrame } from "../contract";
+import { CAPTURE_MAP_IDS, ARKHUB_STATE_MASK, pushPlayerStateMask } from "./hub";
+import {
+  GW_ANSWER_EXCHANGE_REQ,
+  GW_CANCEL_DUEL_REQ,
+  GW_CAPTURE_INFO_REQ,
+  GW_CAPTURE_INFO_RESP,
+  GW_CODE_OK,
+  GW_CREATE_EXCHANGE_REQ,
+  GW_CREATURE_ALTER_NOTIFY,
+  GW_DELETE_CREATURE_REQ,
+  GW_DUEL_ROUND_RESULT_REPORT_REQ,
+  GW_ENCOUNTER_CREATURE_NOTIFY,
+  GW_END_CAPTURE_REQ,
+  GW_END_CAPTURE_RESP,
+  GW_EXCHANGE_STATE_NOTIFY,
+  GW_GET_ALL_EXCHANGE_INFO_REQ,
+  GW_GET_ALL_EXCHANGE_INFO_RESP,
+  GW_JOIN_DUEL_REQ,
+  GW_JOIN_DUEL_RESP,
+  GW_LEAVE_DUEL_REQ,
+  GW_LOADING_FINISH_REQ,
+  GW_ON_JOIN_DUEL_NOTIFY,
+  GW_PRESET_EXCHANGE_REQ,
+  GW_ROUND_PREPARE_REQ,
+  GW_SET_CREATURE_LIKE_REQ,
+  GW_SET_CREATURE_SQUAD_REQ,
+  GW_SET_FOLLOWING_CREATURE_REQ,
+  GW_START_CAPTURE_REQ,
+  GW_START_CAPTURE_RESP,
+  GW_START_DUEL_REQ,
+  GW_START_DUEL_RESP,
+  GW_UPLOAD_BATTLE_DATA_REQ,
+  GW_DUEL_STAGE_CHANGE_NOTIFY,
+} from "../messages";
 
-/* ---------- 帧 subID（low32） ---------- */
-
-/** 捕捉信息查询（GetCaptureInfoReq）→ GetCaptureInfoResp */
-const GW_CAPTURE_INFO_REQ = BigInt(0xb7c2ad8b);
-const GW_CAPTURE_INFO_RESP = BigInt(0xb7c2b4de);
-/** 捕捉开始（StartCaptureReq）→ StartCaptureResp，随后服务端主动推 EncounterCreatureNotify */
-const GW_START_CAPTURE_REQ = BigInt(0xb7c267d7);
-const GW_START_CAPTURE_RESP = BigInt(0xb7c2b07e);
-const GW_ENCOUNTER_CREATURE_NOTIFY = BigInt(0xb7c20f13);
-/** 捕捉结束（EndCaptureReq）→ EndCaptureResp（ArkDexSettleInfo 结算） */
-const GW_END_CAPTURE_REQ = BigInt(0xb7c204e8);
-const GW_END_CAPTURE_RESP = BigInt(0xb7c26451);
-/** 对局入座（JoinDuelReq）→ JoinDuelResp；入座后服务端主动推 OnJoinDuelNotify */
-const GW_JOIN_DUEL_REQ = BigInt(0xb7c277bf);
-const GW_JOIN_DUEL_RESP = BigInt(0xb7c2a2e2);
-const GW_ON_JOIN_DUEL_NOTIFY = BigInt(0xb7c2ef4f);
-/** 取消对局（CancelDuelReq）→ ACK */
-const GW_CANCEL_DUEL_REQ = BigInt(0xb7c21661);
-/** 对局开始（StartDuelReq）→ StartDuelResp{code} */
-const GW_START_DUEL_REQ = BigInt(0xf8faa515);
-const GW_START_DUEL_RESP = BigInt(0xf8fa2dce);
-/** 回合准备 / 战报上传 / 加载完成 / 离开对局（服务端 fire-and-forget → ACK） */
-const GW_ROUND_PREPARE_REQ = BigInt(0xf8fa9c6e);
-const GW_UPLOAD_BATTLE_DATA_REQ = BigInt(0xf8faab16);
-const GW_LOADING_FINISH_REQ = BigInt(0xf8faf090);
-const GW_LEAVE_DUEL_REQ = BigInt(0xf8fad282);
-/** 对局回合结算上报（DuelRoundResultReportReq）→ onDuelSettle（对局结算发券）+ ACK */
-const GW_DUEL_ROUND_RESULT_REPORT_REQ = BigInt(0xf8fa293a);
-/** 交换信息（GetAllCreatureExchangeInfoReq）→ GetAllCreatureExchangeInfoResp（本地空状态） */
-const GW_GET_ALL_EXCHANGE_INFO_REQ = BigInt(0xb7c21f3a);
-const GW_GET_ALL_EXCHANGE_INFO_RESP = BigInt(0xb7c25f13);
-/** 预设交换 / 发起交换 / 应答交换（单机无真实玩家 → ACK） */
-const GW_PRESET_EXCHANGE_REQ = BigInt(0xb7c2369e);
-const GW_CREATE_EXCHANGE_REQ = BigInt(0xb7c2394d);
-const GW_ANSWER_EXCHANGE_REQ = BigInt(0xb7c2be4f);
-/** 交换状态广播（CreatureExchangeStateNotify，收到仅记录日志） */
-const GW_EXCHANGE_STATE_NOTIFY = BigInt(0xb7c283a3);
-/** 生物管理请求（单机本地回官方 resp 或 {1:100} ACK） */
-const GW_DELETE_CREATURE_REQ = BigInt(0xb7c264e3);
-const GW_SET_CREATURE_LIKE_REQ = BigInt(0xb7c28d19);
-const GW_SET_FOLLOWING_CREATURE_REQ = BigInt(0xb7c20b13);
-const GW_SET_CREATURE_SQUAD_REQ = BigInt(0xb7c2cbf4);
-/** 生物变更广播（CreatureAlterNotify，收到仅记录日志） */
-const GW_CREATURE_ALTER_NOTIFY = BigInt(0xb7c2d119);
 
 /** 拟合对局关卡（stage_table：act1arkhub_08 = "奇象拟合对战场"） */
 const DUEL_STAGE_ID = "act1arkhub_08";
@@ -104,13 +89,16 @@ function buildCreatureBrief(uniqueId: bigint, templateId: number, persona = 0): 
   return Buffer.concat([fv(1, uniqueId), fv(2, templateId), fv(3, persona)]);
 }
 
+/** 生物个体唯一 id 基址（unique_id = 基址 + 序号；高位段隔离，单机遭遇/结算引用同一批） */
+const CREATURE_INST_ID_BASE = BigInt(0x100000000);
+
 /**
  * 由生物模板 id 列表生成 CreatureBrief 数组（每人个体 id 取 0x100000000 递增基底，
  * 保证 neg-id 空间独立且稳定——单机遭遇/结算均引用同一批）。
  */
 function buildCreatureBriefs(creatureTemplates: number[]): Buffer[] {
   return (creatureTemplates ?? []).map((t, i) =>
-    buildCreatureBrief(BigInt(0x100000000) + BigInt(i + 1), t, 0),
+    buildCreatureBrief(CREATURE_INST_ID_BASE + BigInt(i + 1), t, 0),
   );
 }
 
@@ -238,7 +226,7 @@ function buildExchangeInfoResp(
 /* ---------- 帧处理 ---------- */
 
 /** 捕捉信息查询（GetCaptureInfoReq：{1:creature_inst_id}）→ GetCaptureInfoResp {1:code, 2:battle_info} */
-function handleGetCaptureInfo(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleGetCaptureInfo(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   logger.info("arkhub-gateway", `捕捉信息查询 → 捕捉信息 (uid=${ctx.state.uid || "?"})`);
   ctx.send(
     8,
@@ -258,7 +246,7 @@ function handleGetCaptureInfo(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGat
  * 遭遇闭环：onScanStart 同步返回本轮遭遇（读上一轮已落盘的 activeEncounter，错开一帧
  * 避免 async 竞态）；无返回时回填兜底集（私服降级）。
  */
-function handleStartCapture(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleStartCapture(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const { state, opts } = ctx;
   if (CAPTURE_MAP_IDS.includes(state.currentMapId)) {
     let enc: { creatures: number[]; lureNumId?: number } | undefined;
@@ -323,7 +311,7 @@ function parseEndParam(buf: Buffer): { completeState: number; slots: number[] } 
  * 成功（complete_state=3）：按槽位索引从遭遇会话取捕获子集 → onScanSettle；
  * 放弃/失败：无奖励最小响应；无 param（引导战/旧形状）：回退旧行为（遭遇非空即成功）。
  */
-function handleEndCapture(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleEndCapture(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const { state, opts } = ctx;
   const encounter = state.encounter?.creatures ?? [];
   const body = frame.body;
@@ -391,14 +379,14 @@ function handleEndCapture(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGateway
 }
 
 /** 对局入座（JoinDuelReq）→ JoinDuelResp；随后服务端主动推 OnJoinDuelNotify */
-function handleJoinDuel(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleJoinDuel(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   logger.info("arkhub-gateway", `对局入座 → JoinDuelResp + OnJoinDuelNotify (uid=${ctx.state.uid || "?"})`);
   ctx.send(8, (frame.subID & ~0xffffffffn) | GW_JOIN_DUEL_RESP, buildJoinDuelResp());
   ctx.send(8, (frame.subID & ~0xffffffffn) | GW_ON_JOIN_DUEL_NOTIFY, buildOnJoinDuelNotify());
 }
 
 /** 对局开始（StartDuelReq：BattleParam{1:duel_id, 2:battle_id}）→ StartDuelResp{1:code=100} + 对局战状态 */
-function handleStartDuel(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleStartDuel(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   logger.info("arkhub-gateway", `对局开始 → StartDuelResp (uid=${ctx.state.uid || "?"})`);
   ctx.send(8, (frame.subID & ~0xffffffffn) | GW_START_DUEL_RESP, buildStartDuelResp());
   // 对局战状态（官服实锤：JoinDuel/StartDuel 后推 PlayerAlterDataNotify f1=0x800）——
@@ -415,8 +403,8 @@ function handleStartDuel(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayF
  * 空/不可解析上报保守按胜（不扣玩家）。响应 ACK {1:100}。
  */
 function handleDuelRoundResultReport(
-  ctx: ArkhubGatewayHandlerContext,
-  frame: ArkhubGatewayFrame,
+  ctx: ArkhubSessionHandlerContext,
+  frame: ArkhubSessionFrame,
 ): void {
   const { state, opts } = ctx;
   let battleKey = "";
@@ -487,8 +475,8 @@ function handleDuelRoundResultReport(
 
 /** 交换信息（GetAllCreatureExchangeInfoReq：{1:exchange_type}）→ f2 回显 + requests 按 hub.trade 回填 */
 function handleGetAllExchangeInfo(
-  ctx: ArkhubGatewayHandlerContext,
-  frame: ArkhubGatewayFrame,
+  ctx: ArkhubSessionHandlerContext,
+  frame: ArkhubSessionFrame,
 ): void {
   let exchangeType = 0;
   const reader = new ProtoReader(frame.body);
@@ -520,7 +508,7 @@ function handleGetAllExchangeInfo(
  * 2:creature_giving(个体 unique_id)}，抓包实锤 `08f29401 1004`）→ onTradePreset
  * （arkhubSetTrade 落 ARK_HUB.trade）+ ACK（无官服响应样本，保持现状形状）。
  */
-function handlePresetExchange(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handlePresetExchange(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   let wanting = 0;
   let giving = 0;
   const reader = new ProtoReader(frame.body);
@@ -547,7 +535,7 @@ function handlePresetExchange(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGat
  * 发起交换（CreateCreatureExchangeReq）→ onTradeCreate（任务 16 计数，arkhubDoTrade）+ ACK。
  * 无官服响应样本 → 响应形状零变更（§30.4 教训：不硬写无样本响应）。
  */
-function handleCreateExchange(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleCreateExchange(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   logger.info("arkhub-gateway", `发起交换 → 计数 + ACK (uid=${ctx.state.uid || "?"})`);
   try {
     ctx.opts.onTradeCreate?.(ctx.state.uid);
@@ -563,45 +551,50 @@ function handleCreateExchange(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGat
  * 客户端未观测到等待/重试；若后续抓到官服响应样本按样本修正本表）。
  * 未列入本表的未注册帧不走此兜底（由路由器 fallback 处理）。
  */
+/** low32 十六进制键（与 ack() 查表键一致；由帧常量派生，不再手写字面量） */
+function low32Hex(id: bigint): string {
+  return (id & 0xffffffffn).toString(16).padStart(8, "0");
+}
+
 const ACK_RESP_OF: Record<string, bigint> = {
-  b7c21661: BigInt(0xb7c21662), // CancelDuelReq
-  f8fa9c6e: BigInt(0xf8fa9c6f), // RoundPrepareReq
-  f8faab16: BigInt(0xf8faab17), // UploadBattleDataReq
-  f8faf090: BigInt(0xf8faf091), // LoadingFinishReq
-  f8fad282: BigInt(0xf8fad283), // LeaveDuelReq
-  b7c2369e: BigInt(0xb7c2369f), // PresetCreatureExchangeReq
-  b7c2394d: BigInt(0xb7c2394e), // CreateCreatureExchangeReq
-  b7c2be4f: BigInt(0xb7c2be50), // AnswerCreatureExchangeReq
-  b7c264e3: BigInt(0xb7c264e4), // DeleteCreatureReq
-  b7c28d19: BigInt(0xb7c28d1a), // SetCreatureLikeReq
-  b7c20b13: BigInt(0xb7c20b14), // SetFollowingCreatureReq
-  b7c2cbf4: BigInt(0xb7c2cbf5), // SetCreatureSquadReq
+  [low32Hex(GW_CANCEL_DUEL_REQ)]: GW_CANCEL_DUEL_REQ + 1n, // CancelDuelReq
+  [low32Hex(GW_ROUND_PREPARE_REQ)]: GW_ROUND_PREPARE_REQ + 1n, // RoundPrepareReq
+  [low32Hex(GW_UPLOAD_BATTLE_DATA_REQ)]: GW_UPLOAD_BATTLE_DATA_REQ + 1n, // UploadBattleDataReq
+  [low32Hex(GW_LOADING_FINISH_REQ)]: GW_LOADING_FINISH_REQ + 1n, // LoadingFinishReq
+  [low32Hex(GW_LEAVE_DUEL_REQ)]: GW_LEAVE_DUEL_REQ + 1n, // LeaveDuelReq
+  [low32Hex(GW_PRESET_EXCHANGE_REQ)]: GW_PRESET_EXCHANGE_REQ + 1n, // PresetCreatureExchangeReq
+  [low32Hex(GW_CREATE_EXCHANGE_REQ)]: GW_CREATE_EXCHANGE_REQ + 1n, // CreateCreatureExchangeReq
+  [low32Hex(GW_ANSWER_EXCHANGE_REQ)]: GW_ANSWER_EXCHANGE_REQ + 1n, // AnswerCreatureExchangeReq
+  [low32Hex(GW_DELETE_CREATURE_REQ)]: GW_DELETE_CREATURE_REQ + 1n, // DeleteCreatureReq
+  [low32Hex(GW_SET_CREATURE_LIKE_REQ)]: GW_SET_CREATURE_LIKE_REQ + 1n, // SetCreatureLikeReq
+  [low32Hex(GW_SET_FOLLOWING_CREATURE_REQ)]: GW_SET_FOLLOWING_CREATURE_REQ + 1n, // SetFollowingCreatureReq
+  [low32Hex(GW_SET_CREATURE_SQUAD_REQ)]: GW_SET_CREATURE_SQUAD_REQ + 1n, // SetCreatureSquadReq
 };
 
 /**
  * 服务端 fire-and-forget 请求的通用 ACK（{1:100}，响应对查 ACK_RESP_OF）。
  */
-function ack(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
-  const lowKey = (frame.subID & 0xffffffffn).toString(16).padStart(8, "0");
+function ack(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
+  const lowKey = low32Hex(frame.subID);
   const respLow = ACK_RESP_OF[lowKey] ?? frame.subID + BigInt(1);
   ctx.send(8, (frame.subID & ~0xffffffffn) | respLow, Buffer.from([0x08, GW_CODE_OK]));
 }
 
 /** 交换状态广播（服务端下发）——收到仅记录日志，不回帧 */
-function logOnly(ctx: ArkhubGatewayHandlerContext, _frame: ArkhubGatewayFrame): void {
+function logOnly(ctx: ArkhubSessionHandlerContext, _frame: ArkhubSessionFrame): void {
   logger.info("arkhub-gateway", `交换状态广播 (uid=${ctx.state.uid || "?"})`);
 }
 
 /** 生物变更广播（服务端下发）——收到仅记录日志，不回帧 */
 function logOnlyCreatureAlter(
-  ctx: ArkhubGatewayHandlerContext,
-  _frame: ArkhubGatewayFrame,
+  ctx: ArkhubSessionHandlerContext,
+  _frame: ArkhubSessionFrame,
 ): void {
   logger.info("arkhub-gateway", `生物变更广播 (uid=${ctx.state.uid || "?"})`);
 }
 
 /** 注册捕捉/对局/生物/交换路由 */
-export function registerPlayHandlers(router: ArkhubFrameRouter): void {
+export function registerPlayHandlers(router: ArkhubSessionFrameRouter): void {
   // 捕捉
   router.registerLow(8, GW_CAPTURE_INFO_REQ, "捕捉信息Req(GetCaptureInfoReq)", handleGetCaptureInfo);
   router.registerLow(8, GW_START_CAPTURE_REQ, "捕捉开始(StartCaptureReq)", handleStartCapture);
@@ -621,7 +614,7 @@ export function registerPlayHandlers(router: ArkhubFrameRouter): void {
     handleDuelRoundResultReport,
   );
   // 对局阶段广播（服务端下发——客户端不会主动发；log-only 覆盖 §11 全表）
-  router.registerLow(8, BigInt(0xf8faf4f3), "阶段广播(DuelStageChangeNotify)", logOnly);
+  router.registerLow(8, GW_DUEL_STAGE_CHANGE_NOTIFY, "阶段广播(DuelStageChangeNotify)", logOnly);
   // 生物管理
   router.registerLow(8, GW_DELETE_CREATURE_REQ, "删除生物(DeleteCreatureReq)", ack);
   router.registerLow(8, GW_SET_CREATURE_LIKE_REQ, "生物点赞(SetCreatureLikeReq)", ack);

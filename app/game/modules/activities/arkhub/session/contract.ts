@@ -1,25 +1,10 @@
 /**
- * arkhub 网关帧路由器（路由层）
+ * arkhub 网关会话——跨层类型契约
  *
- * 把「帧 → 应答」的 dispatch 从业务实现中剥离：
- *   - TCP 传输层（arkhub-gateway-local.ts）只负责组帧/切帧/收发/日志；
- *   - 业务层（handlers/*）按 (mainID, subID) 注册处理函数；
- *   - 路由层（本模块）按帧头 mainID/subID 分发到对应 handler。
- *
- * 匹配规则（按优先级）：
- *   1. main 级 handler（mainID 精确，如心跳 main=1）
- *   2. full 匹配（整 64 位 subID，如登录 0x0fa1 / 场景 hello 0x00018fb64de29cdb）
- *   3. low32 匹配（低 32 位，如玩法帧 subID 高 32 位是会话/场景前缀，随场景变化）
- *   4. fallback（未注册帧的兜底——main=8 回通用 ACK，其余仅日志）
- *
- * 本模块同时承载路由层共享的类型契约（连接状态/处理上下文/网关配置项），
- * 供 handlers 与传输层共同使用，避免循环依赖。
+ * 连接状态 / 处理上下文 / 帧形状 / 服务端配置回调：由 handlers（业务）、dispatch（帧分发）、
+ * server（传输装配）三方共享，单独成文件避免循环依赖（原内联在 gateway/router.ts）。
+ * 层次：messages → codec → contract → dispatch → handlers → server。
  */
-import { FRAME_NAMES } from "./codec";
-
-/** 网关返回码：100 = OK */
-export const GW_CODE_OK = 100;
-
 /**
  * 玩家奇象展册户籍数据（EnterSceneNotify PlayerSyncData f5-f9 的数据源）。
  * 来源：私服存档 ARK_HUB.act1arkhub（dex 图鉴收录 / scanBag 持有个体 / coin 券 / props 道具箱）。
@@ -36,7 +21,7 @@ export interface ArkdexDocsData {
 }
 
 /** 本地网关启动选项（index.ts 注入私服玩法回调） */
-export interface ArkhubLocalGatewayOptions {
+export interface ArkhubSessionServerOptions {
   /** 本机监听端口（缺省 30000，对齐官服网关端口） */
   port?: number;
   /** 端口被占时自动避让尝试次数上限（缺省 50：port, port+1, ...） */
@@ -176,7 +161,7 @@ export interface ArkhubLocalGatewayOptions {
 }
 
 /** 单条连接的可变状态（handler 直接读写；按连接维护，不跨连接保留） */
-export interface ArkhubGatewayConnectionState {
+export interface ArkhubSessionConnectionState {
   /** 当前连接的登录 uid（登录帧解析；场景 hello 用它构建自己的玩家条目） */
   uid: string;
   /** 当前场景 map_id（初始 TOWN；切场景后更新） */
@@ -207,7 +192,7 @@ export interface ArkhubGatewayConnectionState {
 }
 
 /** 解析后的一帧（传输层切帧后交给路由层） */
-export interface ArkhubGatewayFrame {
+export interface ArkhubSessionFrame {
   /** 消息族 ID（1=心跳 / 2=心跳回显 / 4=登录 / 8=玩法帧） */
   mainID: number;
   /** 完整 64 位 subID */
@@ -219,11 +204,11 @@ export interface ArkhubGatewayFrame {
 }
 
 /** handler 执行上下文（连接状态 + 网关配置 + 发送能力） */
-export interface ArkhubGatewayHandlerContext {
+export interface ArkhubSessionHandlerContext {
   /** 连接级可变状态（uid/场景/引导/遭遇），handler 直接读写 */
-  state: ArkhubGatewayConnectionState;
-  /** 服务器级配置回调（index.ts 注入，见 ArkhubLocalGatewayOptions） */
-  opts: ArkhubLocalGatewayOptions;
+  state: ArkhubSessionConnectionState;
+  /** 服务器级配置回调（index.ts 注入，见 ArkhubSessionServerOptions） */
+  opts: ArkhubSessionServerOptions;
   /**
    * 发送一帧（mainID + subID + body）——传输层注入：写 socket 并记录收发日志。
    * handler 用其返回应答/推送帧。
@@ -232,149 +217,7 @@ export interface ArkhubGatewayHandlerContext {
 }
 
 /** 单帧处理函数（业务逻辑——见 handlers/*） */
-export type ArkhubFrameHandler = (
-  ctx: ArkhubGatewayHandlerContext,
-  frame: ArkhubGatewayFrame,
+export type ArkhubSessionFrameHandler = (
+  ctx: ArkhubSessionHandlerContext,
+  frame: ArkhubSessionFrame,
 ) => void;
-
-/** 路由匹配模式 */
-type MatchMode = "full" | "low";
-
-/** 已注册路由条目 */
-interface RegisteredRoute {
-  /** 语义名（日志/自检用） */
-  name: string;
-  /** 处理函数 */
-  handler: ArkhubFrameHandler;
-  /** 匹配模式：full=整 64 位、low=低 32 位 */
-  mode: MatchMode;
-}
-
-/**
- * arkhub 网关帧路由器
- *
- * 注册表 + dispatch：
- *   register      —— 整 64 位 subID 精确匹配（登录/场景 hello 等）
- *   registerLow   —— 低 32 位匹配（玩法帧，高 32 位会话/场景前缀随场景变化）
- *   registerMain  —— mainID 级匹配（心跳等无 subID 语义的帧）
- *   setFallback   —— 未注册帧兜底（main=8 通用 ACK）
- *   dispatch      —— 按 mainID/subID 分发；未命中走 fallback
- *   nameOf        —— 查帧名（日志可读化；未注册时回退 FRAME_NAMES / "未知"）
- *   routes        —— 路由表（自检/文档）
- */
-export class ArkhubFrameRouter {
-  /** mainID 级路由（mainID → 条目） */
-  private readonly mainRoutes = new Map<number, RegisteredRoute>();
-  /** subID 级路由（`${mainID}:${mode}:${hex}` → 条目） */
-  private readonly subRoutes = new Map<string, RegisteredRoute>();
-  /** 未注册帧兜底 */
-  private fallbackRoute: RegisteredRoute | null = null;
-
-  /**
-   * 注册整 64 位 subID 精确匹配路由
-   *
-   * @param mainID - 消息族 ID
-   * @param subID - 完整 64 位 subID
-   * @param name - 语义名
-   * @param handler - 处理函数
-   * @returns this（链式）
-   */
-  register(mainID: number, subID: bigint, name: string, handler: ArkhubFrameHandler): this {
-    this.subRoutes.set(`${mainID}:full:${subID.toString(16)}`, { name, handler, mode: "full" });
-    return this;
-  }
-
-  /**
-   * 注册低 32 位匹配路由（玩法帧——subID 高 32 位为会话/场景前缀）
-   *
-   * @param mainID - 消息族 ID（玩法帧恒为 8）
-   * @param low32 - 低 32 位 subID
-   * @param name - 语义名
-   * @param handler - 处理函数
-   * @returns this（链式）
-   */
-  registerLow(mainID: number, low32: bigint, name: string, handler: ArkhubFrameHandler): this {
-    this.subRoutes.set(`${mainID}:low:${low32.toString(16)}`, { name, handler, mode: "low" });
-    return this;
-  }
-
-  /**
-   * 注册 mainID 级路由（心跳等无 subID 语义的帧）
-   *
-   * @param mainID - 消息族 ID
-   * @param name - 语义名
-   * @param handler - 处理函数
-   * @returns this（链式）
-   */
-  registerMain(mainID: number, name: string, handler: ArkhubFrameHandler): this {
-    this.mainRoutes.set(mainID, { name, handler, mode: "full" });
-    return this;
-  }
-
-  /**
-   * 设置未注册帧的兜底处理（main=8 回通用 ACK {1:100}；其余 main 仅日志——见传输层装配）
-   *
-   * @param name - 兜底名
-   * @param handler - 处理函数
-   * @returns this（链式）
-   */
-  setFallback(name: string, handler: ArkhubFrameHandler): this {
-    this.fallbackRoute = { name, handler, mode: "full" };
-    return this;
-  }
-
-  /**
-   * 分发一帧到对应 handler
-   *
-   * 优先级：main 级 → full → low32 → fallback。
-   *
-   * @param ctx - 处理上下文（连接状态 + 配置 + send）
-   * @param frame - 解析后的一帧
-   */
-  dispatch(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
-    const route =
-      this.mainRoutes.get(frame.mainID) ??
-      this.subRoutes.get(`${frame.mainID}:full:${frame.subID.toString(16)}`) ??
-      this.subRoutes.get(`${frame.mainID}:low:${frame.low32.toString(16)}`) ??
-      this.fallbackRoute;
-    if (!route) return;
-    route.handler(ctx, frame);
-  }
-
-  /**
-   * 查帧名（日志可读化）
-   *
-   * 先查已注册路由（请求帧），再回退 FRAME_NAMES（响应/广播 subID 未注册为路由），最后 "未知"。
-   *
-   * @param mainID - 消息族 ID
-   * @param subID - 完整 64 位 subID
-   * @returns 帧名（含官方消息名；未识别为 "未知"）
-   */
-  nameOf(mainID: number, subID: bigint): string {
-    const lowKey = (subID & 0xffffffffn).toString(16).padStart(8, "0");
-    const fullKey = subID.toString(16);
-    const route =
-      this.subRoutes.get(`${mainID}:full:${fullKey}`) ??
-      this.subRoutes.get(`${mainID}:low:${lowKey}`);
-    return route?.name ?? FRAME_NAMES[lowKey] ?? "未知";
-  }
-
-  /**
-   * 当前已注册路由表（自检/日志/文档）
-   *
-   * @returns 路由描述数组（mainID + subID(low32) + 语义名）
-   */
-  routes(): Array<{ mainID: number; subID: string; name: string }> {
-    const out: Array<{ mainID: number; subID: string; name: string }> = [];
-    for (const [mainID, r] of this.mainRoutes) out.push({ mainID, subID: `main:${mainID}`, name: r.name });
-    for (const [key, r] of this.subRoutes) {
-      const [mainID, mode, hex] = key.split(":");
-      out.push({
-        mainID: Number(mainID),
-        subID: mode === "low" ? `low:${hex}` : `full:${hex}`,
-        name: r.name,
-      });
-    }
-    return out;
-  }
-}

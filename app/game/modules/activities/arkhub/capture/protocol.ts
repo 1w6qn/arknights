@@ -14,9 +14,7 @@
  *   MSG_NAMES            —— 观测到的消息 ID → 名称映射（best-effort）
  */
 import { logger } from "@utils/logger";
-
-/** 帧头大小：4B 长度 + 4B 消息 ID + 8B 头字段 */
-export const GATEWAY_HEADER_SIZE = 16;
+import { GATEWAY_HEADER_SIZE } from "../session/messages";
 
 /**
  * 消息 ID → 名称（2026-08-11 由反编译注册表 LongServiceProtocolTypeID/SubID 确认）：
@@ -58,8 +56,8 @@ export const MSG_SCHEMAS: Record<number, { name: string; up?: string[]; down?: s
  * 实测 msgId 1（up 移动输入）与 msgId 2（down 位置广播）均为 [type:uint32][param:uint32]（+8B extra）；
  * type 0-3 为四种输入/移动命令。
  */
-export function decodeFixedPayload(payload: Buffer): unknown[] {
-  const words: unknown[] = [];
+export function decodeFixedPayload(payload: Buffer): number[] {
+  const words: number[] = [];
   for (let off = 0; off + 4 <= payload.length; off += 4) {
     words.push(payload.readUInt32BE(off));
   }
@@ -77,8 +75,8 @@ export const FIXED_SCHEMAS: Record<number, string[]> = {
 };
 
 /** 按 FIXED_SCHEMAS 命名定长二进制 payload */
-export function decodeFixedWithSchema(payload: Buffer, fieldNames: string[]): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
+export function decodeFixedWithSchema(payload: Buffer, fieldNames: string[]): Record<string, number> {
+  const out: Record<string, number> = {};
   for (let off = 0; off + 4 <= payload.length; off += 4) {
     const idx = off / 4;
     const name = idx < fieldNames.length ? fieldNames[idx] : `word${idx}`;
@@ -120,6 +118,12 @@ export interface PbField {
   /** 15B Vector3 位置（field 匹配 0x0d/0x15/0x1d 三个 fixed32） */
   vec3?: { x: number; y: number; z: number };
 }
+
+/**
+ * 解码产物的 JSON 友好值：varint/fixed64 → 字符串、fixed32 → 数字、
+ * length-delimited → 文本/hex/嵌套对象/vec3；字段缺失为 undefined。
+ */
+export type PbDecodedValue = string | number | undefined | PbDecodedValue[] | { [key: string]: PbDecodedValue };
 
 /**
  * 解码 protobuf 字段序列（通用，不依赖 schema）
@@ -331,11 +335,11 @@ function toUtf8(buf: Buffer): string | undefined {
  * varint/fixed32/fixed64 → number|string、length-delimited → 文本/hex/嵌套对象。
  * 仅当字段号 ≤ fieldNames 长度且 wire 匹配时命名；否则保留通用结构。
  */
-export function decodeWithSchema(fields: PbField[], fieldNames: string[]): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
+export function decodeWithSchema(fields: PbField[], fieldNames: string[]): Record<string, PbDecodedValue> {
+  const out: Record<string, PbDecodedValue> = {};
   for (const f of fields) {
     const name = f.field >= 1 && f.field <= fieldNames.length ? fieldNames[f.field - 1] : `field${f.field}`;
-    let value: unknown;
+    let value: PbDecodedValue;
     if (f.varint !== undefined) value = f.varint.toString();
     else if (f.fixed64 !== undefined) value = f.fixed64.toString();
     else if (f.fixed32 !== undefined) value = f.fixed32;
@@ -346,7 +350,7 @@ export function decodeWithSchema(fields: PbField[], fieldNames: string[]): Recor
     else value = undefined;
     // 重复字段 → 数组
     if (name in out) {
-      out[name] = Array.isArray(out[name]) ? [...(out[name] as unknown[]), value] : [out[name], value];
+      out[name] = Array.isArray(out[name]) ? [...(out[name] as PbDecodedValue[]), value] : [out[name], value];
     } else {
       out[name] = value;
     }
@@ -423,7 +427,7 @@ export function decodeVector3(payload: Buffer): { x: number; y: number; z: numbe
  * 与客户端 `PixelArtInfo {Id, Md5, Status, CreateTime, UpdateTime, PublishTime, Revision, CollectedCount}`
  * 完全吻合（14/14 样本匹配）——记录流即大厅展示的像素画列表同步。
  */
-export function decodePixelArtInfo(fields: PbField[]): Record<string, unknown> | null {
+export function decodePixelArtInfo(fields: PbField[]): Record<string, PbDecodedValue> | null {
   const f = (n: number): PbField | undefined => fields.find((x) => x.field === n);
   const id = f(1)?.varint;
   const md5 = f(2)?.str ?? f(2)?.bytes;
@@ -533,9 +537,9 @@ export interface GatewayFrame {
   /** protobuf 解码后的字段（空表示非 protobuf payload） */
   fields: PbField[];
   /** 按 schema 命名的 payload（MSG_SCHEMAS 命中时） */
-  named?: Record<string, unknown>;
+  named?: Record<string, PbDecodedValue>;
   /** 定长二进制 payload 的解释（非 protobuf，如 msgId 1/2 按 4B uint32） */
-  fixed?: unknown[];
+  fixed?: number[];
   /** 原始 payload（hex） */
   payloadHex: string;
 }
@@ -651,7 +655,7 @@ export function parseGatewayStream(buffer: Buffer, label: string): GatewayStream
 }
 
 /** 将 protobuf 字段树序列化为 JSON 友好对象 */
-export function fieldsToJson(fields: PbField[]): unknown[] {
+export function fieldsToJson(fields: PbField[]): PbDecodedValue[] {
   return fields.map((field) => ({
     field: field.field,
     wire: field.wireName,
@@ -666,7 +670,7 @@ export function fieldsToJson(fields: PbField[]): unknown[] {
 }
 
 /** 将解析结果序列化为 JSON 友好对象（bytes/varint 等转字符串） */
-export function framesToJson(frames: GatewayFrame[]): unknown[] {
+export function framesToJson(frames: GatewayFrame[]): PbDecodedValue[] {
   return frames.map((f) => ({
     len: f.len,
     msgId: f.msgId,
@@ -691,7 +695,7 @@ export interface GatewayMessage {
   /** 帧头 12-15 */
   flag: number;
   /** 还原的可读内容（named 优先；无 schema 时给字段树/hex） */
-  body: unknown;
+  body: PbDecodedValue;
 }
 
 /** 请求-响应配对（1:1 语义配对：Login、Ping/Pong 等） */

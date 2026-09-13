@@ -10,75 +10,51 @@
  *           play → session（CAPTURE_MAP_IDS 捕抓区判定）。
  */
 import { logger } from "@utils/logger";
-import { ARKHUB_GUIDE_ACTOR_FLAGS } from "@game/modules/activities/arkhub/arkhub";
+import { ARKHUB_GUIDE_ACTOR_FLAGS } from "../../domain/state";
 import {
   encodeFieldBytes as fb,
   encodeFieldVarint as fv,
   encodeFieldFixed32 as ff32,
   ProtoReader,
 } from "../codec";
-import { GW_CODE_OK } from "../router";
+import type { ArkhubSessionFrameRouter } from "../dispatch";
 import type {
   ArkdexDocsData,
-  ArkhubFrameRouter,
-  ArkhubGatewayHandlerContext,
-  ArkhubGatewayFrame,
-} from "../router";
+  ArkhubSessionHandlerContext,
+  ArkhubSessionFrame,
+} from "../contract";
 import { buildPixelArtData } from "./shop";
+import {
+  GW_CHANGE_OUTLOOK_REQ,
+  GW_CHANGE_OUTLOOK_RESP,
+  GW_CODE_OK,
+  GW_EMOTE,
+  GW_GET_BUSINESS_CARD_REQ,
+  GW_GET_BUSINESS_CARD_RESP,
+  GW_GUIDE_FLAGS_NOTIFY,
+  GW_INTERACT_ACK,
+  GW_INTERACT_REQ,
+  GW_INTERACT_WITH_UNIT_REQ,
+  GW_INTERACT_WITH_UNIT_RESP,
+  GW_LOGOUT_SCENE_REQ,
+  GW_MODIFY_PLAYER_ACTION_REQ,
+  GW_MOVE_REQ,
+  GW_RECONNECT_REQ,
+  GW_RECONNECT_RESP,
+  GW_REPORT_ACTIVE_REQ,
+  GW_REWARD_NOTIFY,
+  GW_SCENE_DATA,
+  GW_SCENE_HELLO,
+  GW_SCENE_SWITCH,
+  GW_SCENE_SWITCH_ACK,
+  GW_UPDATE_SETTINGS_REQ,
+  GW_UPDATE_SETTINGS_RESP,
+  GW_USER_LOGIN_REQ,
+  GW_USER_LOGIN_RESP,
+  GW_LOG_ONLY_DOWN_FRAMES,
+  GW_SCENE_PREFIX,
+} from "../messages";
 
-/* ---------- 帧 subID ---------- */
-
-/** 登录请求/响应 subID（main=4） */
-const GW_USER_LOGIN_REQ = BigInt(0x0fa1);
-const GW_USER_LOGIN_RESP = BigInt(0x0fa2);
-/** 重连登录请求/响应（UserReconnectReq/Resp，main=4） */
-const GW_RECONNECT_REQ = BigInt(0x0fa3);
-const GW_RECONNECT_RESP = BigInt(0x0fa4);
-/** 场景 hello subID（登录后客户端必发，实为 EnterSceneReq） */
-const GW_SCENE_HELLO = BigInt("0x00018fb64de29cdb");
-/** 场景数据响应 subID（服务端回给 hello 的 EnterSceneNotify 帧） */
-const GW_SCENE_DATA = BigInt("0x0002c89b38b37d3d");
-/** 切场景请求 subID（low32） */
-const GW_SCENE_SWITCH = BigInt(0x38b3b60b);
-/** 切场景 ACK 响应 subID（low32；响应前缀固定 0x2c89b3） */
-const GW_SCENE_SWITCH_ACK = BigInt(0x38b3a5a8);
-/** 离开场景（LogoutSceneReq：{1:logout_type}） */
-const GW_LOGOUT_SCENE_REQ = BigInt(0x38b3c3c9);
-/** 位置同步（MoveReq）——回位置 ACK（subID+1），保持既有行为 */
-const GW_MOVE_REQ = BigInt(0x38b32a34);
-/** 交互提交请求（领奖/AVG 完成：{1: actorId, 2: operationId("get_reward")}） */
-const GW_INTERACT_REQ = BigInt(0x38b3116d);
-/**
- * 交互提交 ACK（0x38b38cd6，官服实锤 2026-08-19 抓包）
- * 形状：[4B 请求序号回显] + {1:100}。交互提交后官服下发三帧：
- * 38b38cd6 ACK → 3000ee32 奖励通知 → 38b36462 引导更新广播。
- */
-const GW_INTERACT_ACK = BigInt(0x38b38cd6);
-/**
- * GuideFlags 广播（服务端引导推进后主动下发）
- * 形状：{2:{1:更新数}, 5:[{1:{1:key, 2:value}}×N]}——客户端据此更新引导状态并结束对话。
- */
-const GW_GUIDE_FLAGS_NOTIFY = BigInt(0x38b36462);
-/** 状态变更广播 subID（SyncAlterDataNotify，shop.ts 购买后推送道具变更复用） */
-export const GW_SYNC_ALTER_NOTIFY = GW_GUIDE_FLAGS_NOTIFY;
-/**
- * 奖励/掉落通知（服务端主动下发：{1:类型, 3:生物id列表} / {1:4, 4:npcPixel id}）
- */
-const GW_REWARD_NOTIFY = BigInt(0x3000ee32);
-/** 设置更新（UpdatePlayerSettingsReq：{1:settings=map<int,int>}）→ 38b3db61 回显 */
-const GW_UPDATE_SETTINGS_REQ = BigInt(0x38b36054);
-const GW_UPDATE_SETTINGS_RESP = BigInt(0x38b3db61);
-/** 名片查看（GetBusinessCardReq：[seq]{1:unique_id}）→ 38b3613c BusinessCardResp */
-const GW_GET_BUSINESS_CARD_REQ = BigInt(0x38b322c3);
-const GW_GET_BUSINESS_CARD_RESP = BigInt(0x38b3613c);
-/** 更换形象（ChangeOutlookReq：{1:charater, 2:skin, 3:skin_sp}）→ 38b3f7a7 回显 */
-const GW_CHANGE_OUTLOOK_REQ = BigInt(0x38b3d83c);
-const GW_CHANGE_OUTLOOK_RESP = BigInt(0x38b3f7a7);
-/** 交互（InteractWithUnitReq：{1:target_unique_id, 2:action, 3:squad_index}）→ 38b3d134 */
-const GW_INTERACT_WITH_UNIT_REQ = BigInt(0x38b36055);
-const GW_INTERACT_WITH_UNIT_RESP = BigInt(0x38b3d134);
-/** 动作掩码（ModifyPlayerActionReq：{1:operation, 2:state_mask}）→ ACK + 状态广播 */
-const GW_MODIFY_PLAYER_ACTION_REQ = BigInt(0x38b39680);
 
 /**
  * 玩家状态掩码位（反编译 ActArkhubPlayerStateMask / ActArkhubServerPlayerStatusMask，
@@ -108,7 +84,7 @@ export const ARKHUB_STATE_OP = { SET: 1, CLEAR: 2 } as const;
  * 合并为同一帧推送，避免客户端两次消费（对局/扫描结算等“状态+奖励”同时变更场景）。
  */
 export function pushPlayerStateMask(
-  ctx: ArkhubGatewayHandlerContext,
+  ctx: ArkhubSessionHandlerContext,
   mask?: number,
   coin?: number,
 ): void {
@@ -119,7 +95,7 @@ export function pushPlayerStateMask(
   }
   ctx.send(
     8,
-    (BigInt("0x2c89b3") << BigInt(32)) | GW_GUIDE_FLAGS_NOTIFY,
+    (GW_SCENE_PREFIX << BigInt(32)) | GW_GUIDE_FLAGS_NOTIFY,
     Buffer.concat(parts),
   );
   // 持久化：重连/重启后登录可恢复（官服 PlayerReconnectData.f1 同语义）
@@ -134,7 +110,7 @@ export function pushPlayerStateMask(
  * 登录/重连时恢复持久化的网关状态（存档 → 连接）：状态掩码、已结算对局去重键、
  * 捕捉会话（重连后 GetCaptureInfo/EndCapture 仍可用）。
  */
-function restoreGatewayState(ctx: ArkhubGatewayHandlerContext): void {
+function restoreGatewayState(ctx: ArkhubSessionHandlerContext): void {
   const { state, opts } = ctx;
   let persisted: ReturnType<NonNullable<typeof opts.resolveGatewayState>>;
   try {
@@ -150,10 +126,6 @@ function restoreGatewayState(ctx: ArkhubGatewayHandlerContext): void {
     state.encounter = persisted.encounter;
   }
 }
-/** 活跃上报（ReportPlayerActiveReq：{1:count}）——fire-and-forget，不响应 */
-const GW_REPORT_ACTIVE_REQ = BigInt(0x38b3ab0c);
-/** 表情/动作发送（DoRolePlayingReq：{1:emoj_id, 2:theme_id, 3:action_mask}）→ ACK */
-const GW_EMOTE = BigInt(0x38b3170a);
 
 /** 方舟枢纽广场 map_id（activity.ARK_HUB.sceneTypeMap：-1520665757 = TOWN 广场） */
 export const HALL_MAP_ID = -1520665757;
@@ -500,7 +472,7 @@ function ackBody(): Buffer {
 /* ---------- 帧处理 ---------- */
 
 /** 玩家资料（charId/skinId 供客户端渲染广场玩家模型；缺省回退通用值） */
-function buildProfile(ctx: ArkhubGatewayHandlerContext): {
+function buildProfile(ctx: ArkhubSessionHandlerContext): {
   nickname: string;
   level: number;
   charId: string;
@@ -525,7 +497,7 @@ function buildProfile(ctx: ArkhubGatewayHandlerContext): {
  * 户籍依赖玩家存档在内存：构建前 await ensurePlayerLoaded（网关登录不走 HTTP 懒加载链，
  * 未加载时 resolveArkdexDocs 读不到玩家 → 场景帧缺 f5-f9 → 捕捉区/图鉴等功能不解锁）。
  */
-async function sendSceneFrame(ctx: ArkhubGatewayHandlerContext, mapId: number): Promise<void> {
+async function sendSceneFrame(ctx: ArkhubSessionHandlerContext, mapId: number): Promise<void> {
   const { state, opts } = ctx;
   try {
     await opts.ensurePlayerLoaded?.(state.uid);
@@ -542,15 +514,20 @@ async function sendSceneFrame(ctx: ArkhubGatewayHandlerContext, mapId: number): 
 }
 
 /** 心跳（main=1）：回显 16B（客户端时间戳 + 服务端时间戳） */
-function handleHeartbeat(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleHeartbeat(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const echo = Buffer.alloc(16);
   frame.body.copy(echo, 0, 0, Math.min(frame.body.length, 8));
   echo.writeBigUInt64BE(BigInt(Date.now()), 8);
   ctx.send(2, BigInt(0), echo);
 }
 
+/** 判断回调返回值是否为 thenable（配置回调允许同步返回或 Promise） */
+function isPromiseLike<T>(v: T | PromiseLike<T>): v is PromiseLike<T> {
+  return typeof (v as PromiseLike<T>).then === "function";
+}
+
 /** 登录（main=4 sub=0x0fa1）：解析 uid（field1）用于 token/场景，任意凭据均放行（私服） */
-function handleLogin(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleLogin(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const { state, opts } = ctx;
   const uid = readLoginUid(frame.body);
   state.uid = uid;
@@ -560,21 +537,21 @@ function handleLogin(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame
   // 渐进引导：登录后按 uid 解析 GuideFlags（persisted，缺省回退完成态）。
   // 支持异步回调（动态加载玩法模块）——fire-and-forget，场景 hello 前生效。
   const guideResolved = opts.resolveGuideFlags?.(uid);
-  if (guideResolved && typeof (guideResolved as Promise<unknown>).then === "function") {
-    (guideResolved as Promise<Record<string, number> | undefined>)
+  if (guideResolved && isPromiseLike(guideResolved)) {
+    guideResolved
       .then((flags) => {
         if (flags) state.guideState = flags;
       })
       .catch((e: Error) => logger.warn("arkhub-gateway", `GuideFlags 解析失败: ${e.message}`));
   } else if (guideResolved) {
-    state.guideState = guideResolved as Record<string, number>;
+    state.guideState = guideResolved;
   }
   logger.info("arkhub-gateway", `本地网关登录: uid=${uid || "?"}`);
   ctx.send(4, GW_USER_LOGIN_RESP, buildLoginResp(uid));
 }
 
 /** 重连登录（UserReconnectReq：{1:uid, 2:base64 JWT}）→ {1:101} 重连成功（私服单账号任意放行） */
-function handleReconnect(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleReconnect(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const uid = readLoginUid(frame.body);
   ctx.state.uid = uid;
   // 重连同样恢复持久化状态（官服重连经 PlayerReconnectData 下发 state_mask 等）
@@ -601,7 +578,7 @@ function readLoginUid(body: Buffer): string {
 }
 
 /** 场景 hello（EnterSceneReq）→ 合法 EnterSceneNotify（当前场景 + 自己） */
-function handleEnterScene(ctx: ArkhubGatewayHandlerContext, _frame: ArkhubGatewayFrame): void {
+function handleEnterScene(ctx: ArkhubSessionHandlerContext, _frame: ArkhubSessionFrame): void {
   const { state, opts } = ctx;
   state.currentMapId = HALL_MAP_ID;
   // 进入大厅：首次自动完成"登录/入场引导"（arkhub_login）。
@@ -626,7 +603,7 @@ function handleEnterScene(ctx: ArkhubGatewayHandlerContext, _frame: ArkhubGatewa
  * 切场景（传送门）：请求 {1:2, 2:<目标 map_id 有符号 varint>}（官服抓包：
  * 0x38b3b60b → ACK 0x38b3a5a8{f1:9} + 新场景 EnterSceneNotify 0x38b37d3d）
  */
-function handleChangeScene(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleChangeScene(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const { state } = ctx;
   let targetMapId = state.currentMapId;
   try {
@@ -655,25 +632,25 @@ function handleChangeScene(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewa
   // 官服序列：先小 ACK（{1:9}），再发新场景 EnterSceneNotify
   ctx.send(
     8,
-    (BigInt("0x2c89b3") << BigInt(32)) | GW_SCENE_SWITCH_ACK,
+    (GW_SCENE_PREFIX << BigInt(32)) | GW_SCENE_SWITCH_ACK,
     Buffer.from([0x08, 0x09]),
   );
   sendSceneFrame(ctx, state.currentMapId);
 }
 
 /** 离开场景（LogoutSceneReq）→ 通用 ACK {1:100} */
-function handleLogoutScene(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleLogoutScene(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   logger.debug("arkhub-gateway", `离开场景 (uid=${ctx.state.uid || "?"})`);
   ctx.send(8, frame.subID + BigInt(1), ackBody());
 }
 
 /** 位置同步（MoveReq）——body 仅日志，回位置 ACK（subID+1，保持既有行为） */
-function handleMove(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleMove(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   ctx.send(8, frame.subID + BigInt(1), ackBody());
 }
 
 /** 设置更新（UpdatePlayerSettingsReq：{1:settings=map<int,int>}）→ 38b3db61 回显 code + settings */
-function handleUpdateSettings(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleUpdateSettings(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const entries: Array<{ key: number; value: number }> = [];
   const reader = new ProtoReader(frame.body);
   for (;;) {
@@ -711,7 +688,7 @@ function handleUpdateSettings(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGat
 }
 
 /** 名片查看（GetBusinessCardReq：[seq]{1:unique_id}）→ 38b3613c BusinessCardResp（最小结构） */
-function handleGetBusinessCard(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleGetBusinessCard(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const seq = frame.body.length >= 4 ? frame.body.readUInt32BE(0) : 0;
   logger.info("arkhub-gateway", `名片查看 (uid=${ctx.state.uid || "?"}) → BusinessCard (seq=${seq})`);
   ctx.send(
@@ -722,7 +699,7 @@ function handleGetBusinessCard(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGa
 }
 
 /** 更换形象（ChangeOutlookReq：{1:charater, 2:skin, 3:skin_sp}）→ 38b3f7a7 回显确认 */
-function handleChangeOutlook(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleChangeOutlook(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const reader = new ProtoReader(frame.body);
   let charater = "";
   let skin = "";
@@ -748,7 +725,7 @@ function handleChangeOutlook(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGate
 }
 
 /** 交互（InteractWithUnitReq）→ 38b3d134 InteractionActionResp{1:result_code=0} */
-function handleInteractWithUnit(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleInteractWithUnit(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   logger.info("arkhub-gateway", `交互 (uid=${ctx.state.uid || "?"}) → InteractionActionResp`);
   ctx.send(
     8,
@@ -763,8 +740,8 @@ function handleInteractWithUnit(ctx: ArkhubGatewayHandlerContext, frame: ArkhubG
  * 后 ACK，并回推 PlayerAlterDataNotify f1=新掩码确认（官服同形——客户端据此更新状态机）。
  */
 function handleModifyPlayerAction(
-  ctx: ArkhubGatewayHandlerContext,
-  frame: ArkhubGatewayFrame,
+  ctx: ArkhubSessionHandlerContext,
+  frame: ArkhubSessionFrame,
 ): void {
   let op = 0;
   let mask = 0;
@@ -787,17 +764,17 @@ function handleModifyPlayerAction(
 }
 
 /** 活跃上报（ReportPlayerActiveReq）——官服 fire-and-forget，不响应（仅日志） */
-function handleReportActive(ctx: ArkhubGatewayHandlerContext, _frame: ArkhubGatewayFrame): void {
+function handleReportActive(ctx: ArkhubSessionHandlerContext, _frame: ArkhubSessionFrame): void {
   logger.debug("arkhub-gateway", `活跃上报 (uid=${ctx.state.uid || "?"})`);
 }
 
 /** 服务端下发帧（down 广播，客户端不会主动发）——收到仅记录日志，不回帧 */
-function logOnlyDown(ctx: ArkhubGatewayHandlerContext, _frame: ArkhubGatewayFrame): void {
+function logOnlyDown(ctx: ArkhubSessionHandlerContext, _frame: ArkhubSessionFrame): void {
   logger.debug("arkhub-gateway", `服务端下发帧（忽略） uid=${ctx.state.uid || "?"}`);
 }
 
 /** 表情/动作（DoRolePlayingReq）→ 通用 ACK {1:100}（单机 fire-and-forget） */
-function handleEmote(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleEmote(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   ctx.send(8, frame.subID + BigInt(1), ackBody());
 }
 
@@ -808,7 +785,7 @@ function handleEmote(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame
  * ② 3000ee32 道具奖励通知（{1:1, 2:[{1:5012,2:1},{1:5022,2:1}]}）
  * ③ 38b36462 引导更新广播（capture_update_guide=1，客户端据此结束对话）
  */
-function handleSubmitActorOp(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleSubmitActorOp(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const { state, opts } = ctx;
   const body = frame.body;
   const seq = body.length >= 4 ? body.readUInt32BE(0) : 0;
@@ -921,7 +898,7 @@ function handleSubmitActorOp(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGate
 }
 
 /** 注册会话/场景/交互/引导路由 */
-export function registerSessionHandlers(router: ArkhubFrameRouter): void {
+export function registerSessionHandlers(router: ArkhubSessionFrameRouter): void {
   // main 级（心跳无 subID 语义）
   router.registerMain(1, "心跳(Ping)", handleHeartbeat);
   // full 匹配（登录/重连/场景 hello——整 64 位 subID）
@@ -940,14 +917,7 @@ export function registerSessionHandlers(router: ArkhubFrameRouter): void {
   router.registerLow(8, GW_REPORT_ACTIVE_REQ, "活跃上报(ReportPlayerActiveReq)", handleReportActive);
   router.registerLow(8, GW_EMOTE, "表情(DoRolePlayingReq)", handleEmote);
   router.registerLow(8, GW_INTERACT_REQ, "交互提交(SubmitActorOpReq)", handleSubmitActorOp);
+  for (const f of GW_LOG_ONLY_DOWN_FRAMES) router.registerLow(8, f.id, f.name, logOnlyDown);
   // 服务端下发帧（down 广播——客户端不会主动发；注册为 log-only 使路由表覆盖 §11 全表，
   // 避免误落入通用 ACK 兜底回错帧）
-  router.registerLow(8, BigInt(0x38b37d3d), "场景数据(EnterSceneNotify)", logOnlyDown);
-  router.registerLow(8, BigInt(0x38b31d8f), "状态同步(SyncStateNotify)", logOnlyDown);
-  router.registerLow(8, BigInt(0x38b3360a), "玩家同步(SyncSceneNotify)", logOnlyDown);
-  router.registerLow(8, BigInt(0x38b3e70f), "强制定位(ForceSetPositionNotify)", logOnlyDown);
-  router.registerLow(8, BigInt(0x38b3f32d), "重连通知(OnReconnectNotify)", logOnlyDown);
-  router.registerLow(8, BigInt(0x38b39689), "中继登录(OnRelayNotify)", logOnlyDown);
-  router.registerLow(8, BigInt(0x30009df1), "错误提示(NotifyErrorMessageNotify)", logOnlyDown);
-  router.registerLow(8, BigInt(0x4de28c3f), "退出场景(SyncClientLogoutNotify)", logOnlyDown);
 }

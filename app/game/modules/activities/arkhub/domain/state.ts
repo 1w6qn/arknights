@@ -9,13 +9,56 @@
  * 调用方：网关回调（index.ts 注入 arkhub-gateway-local）、Phase 2 的 ARKDEX/
  * ARKPIXEL 玩法路由。所有函数幂等可重复调用（计数取 max/累加）。
  */
-import { PlayerDataManager } from "../../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../../../kernel/PlayerDataManager";
 import { ItemBundle } from "@excel/excel";
 import { logger } from "@utils/logger";
-import type { PlayerActivity } from "../../../kernel/playerdata";
+import type { Draft } from "mutative";
+import type { PlayerActivity, PlayerDataModel } from "../../../../kernel/playerdata";
 
 /** ARK_HUB 活动 id（activity.basicInfo.act1arkhub） */
 export const ARKHUB_ACT_ID = "act1arkhub";
+
+/** 枢纽店 id（templateShop.shop_act1arkhub，币与 ARK_HUB.coin 镜像） */
+export const ARKHUB_SHOP_ID = "shop_act1arkhub";
+
+/**
+ * 枢纽店货币读写引用（shop_act1arkhub 币 = activity.ARK_HUB.act1arkhub.coin）
+ *
+ * templateShop 经此消费，不再自行持有 ARK_HUB 存档形状知识（2026-09-13 跨模块收敛）。
+ *
+ * @param draft - player.update 的 draft
+ * @returns 硬币读写引用；枢纽状态未播种返回 null
+ */
+export function arkhubCoinRef(
+  draft: Draft<PlayerDataModel>,
+): { coin: number; set: (v: number) => void } | null {
+  const hub = draft.activity?.ARK_HUB?.act1arkhub;
+  return hub ? { coin: hub.coin ?? 0, set: (v: number) => (hub.coin = v) } : null;
+}
+
+/**
+ * 活动任务奖励的枢纽币同步（官服形状）
+ *
+ * 领取奖励含 `act1arkhub_token_seal` 时，同步累加 `activity.ARK_HUB.act1arkhub.coin`
+ * 与 `tshop.shop_act1arkhub.coin`。mission 主管线、activities/shared 兜底领取统一走此函数
+ * （2026-09-13 收敛三处重复实现；interlockRefresh 的无调用方私有副本已删除）。
+ *
+ * @param draft - player.update 的 draft
+ * @param rewards - 本次领取的奖励列表（读 id/count）
+ * @returns 是否发生同步
+ */
+export function arkhubSyncMissionCoin(
+  draft: Draft<PlayerDataModel>,
+  rewards: ReadonlyArray<{ id: string; count: number }>,
+): boolean {
+  const seal = rewards.find((r) => r.id === "act1arkhub_token_seal");
+  if (!seal?.count) return false;
+  const hub = draft.activity?.ARK_HUB?.act1arkhub;
+  if (hub) hub.coin = (hub.coin ?? 0) + seal.count;
+  const shop = draft.tshop?.[ARKHUB_SHOP_ID];
+  if (shop) shop.coin = (shop.coin ?? 0) + seal.count;
+  return true;
+}
 
 /**
  * ARK_HUB 活动状态（draft.activity.ARK_HUB[actId]）

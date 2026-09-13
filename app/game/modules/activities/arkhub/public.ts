@@ -1,47 +1,28 @@
 /**
- * arkhub（奇象巡展）活动模块 public 出口
+ * arkhub（奇象巡展 / ARK_HUB）活动模块 public 出口
  *
- * 对外收敛网关基础设施（TCP 协议处理 / 帧路由 / 本地应答器 / enterHall 适配）：
- * ops 侧（server/forwarder/transform/admin/scripts）统一经此入口消费，避免绕过模块出口。
- * 注意：活动业务符号（arkhubOnDuelSettle / arkdex / arkpixel 等）暂未收敛——
- * server.ts 等既有消费方仍直接 import 子路径，后续单独迭代。
+ * 模块外（`app/server.ts`、`app/ops/**`、`scripts/**`、`tests/**`）只经此文件消费；
+ * 子路径 import 由 `tests/unit/architecture/module-boundary.test.ts` 的 R6 守卫拦截。
+ *
+ * 门面分组（与目录分层一一对应）：
+ *   domain  —— 玩法域（状态/计数器/事件、ARKDEX 寻迹、像素存储、像素格式）
+ *   session —— 长连接会话协议栈（帧常量 → 线级编解码 → 契约 → 分发 → TCP 传输）
+ *   capture —— capture 模式官服网关适配（30000 转发器 + 抓包帧解析）
  */
-// gateway（TCP 转发器 + enterHall 适配 + capture 记录注入）
-export {
-  startArkhubGatewayProxy,
-  ArkhubGatewayProxyOptions,
-  ArkhubGatewayProxyResult,
-  updateGatewayTarget,
-  getGatewayTarget,
-  adaptArkhubEnterHallResponse,
-  isArkhubEnterHall,
-  ArkhubGatewayInfo,
-  setGatewayRecordSink,
-  getGatewayRecordSink,
-  GatewayRecordSink,
-  OFFICIAL_ARKHUB_GATEWAY_HOST,
-  OFFICIAL_ARKHUB_GATEWAY_PORT,
-  OFFICIAL_ARKHUB_GATEWAY_CANARY_HOST,
-} from "./gateway/gateway";
-// local（本地网关应答器——私服模式空广场）
-export {
-  startArkhubLocalGateway,
-  isArkhubLocalGatewayActive,
-  setArkhubLocalGatewayActive,
-  getArkhubLocalGatewayPort,
-  ArkhubLocalGatewayOptions,
-  ArkdexDocsData,
-} from "./gateway/local";
-// router（帧路由 + 网关类型契约）
-export {
-  GW_CODE_OK,
-  ArkhubFrameRouter,
-  ArkhubFrameHandler,
-  ArkhubGatewayFrame,
-  ArkhubGatewayHandlerContext,
-  ArkhubGatewayConnectionState,
-} from "./gateway/router";
-// protocol（网关帧协议解析——admin/scripts 消费）
-export * from "./gateway/protocol";
-// codec（帧编解码）
-export * from "./gateway/codec";
+// ---------- domain：玩法域（HTTP 与网关共用） ----------
+export * from "./domain/state";
+export * from "./domain/dex";
+export * from "./domain/pixel";
+export * from "./domain/pixel-format";
+
+// ---------- session：长连接会话协议栈 ----------
+export * from "./session/messages";
+export * from "./session/codec";
+export * from "./session/contract";
+export * from "./session/dispatch";
+export * from "./session/server";
+export * from "./session/bindings";
+
+// ---------- capture：capture 模式官服网关适配 ----------
+export * from "./capture/proxy";
+export * from "./capture/protocol";

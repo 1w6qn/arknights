@@ -1,6 +1,6 @@
 {
   "_comment": "excel 单例直连基线（棘轮）：file → 默认导入 @excel/excel 的次数。只允许下降：新增文件、次数上升、基线含已不存在/已迁移完的文件，三种情况由 excel-singleton-ratchet.test.ts 红灯。收紧方式=迁移该文件后删掉它的条目（守卫失败信息会直接列出待删条目），不得为过测放宽基线。",
-  "_generatedAt": "2026-09-10",
+  "_generatedAt": "2026-09-13",
   "_scope": "app/game 下除 app/game/excel（数据层自身）与 app/game/kernel/PlayerDataManager.ts（组合根，端口默认值）",
   "counts": {
     "app/game/kernel/inventory.ts": 1,
@@ -11,7 +11,7 @@
     "app/game/modules/activities/act24side/router.ts": 1,
     "app/game/modules/activities/act44side/informant.ts": 1,
     "app/game/modules/activities/act44side/router.ts": 1,
-    "app/game/modules/activities/arkhub/arkdex.ts": 1,
+    "app/game/modules/activities/arkhub/domain/dex.ts": 1,
     "app/game/modules/activities/bossRush/bossrush.ts": 1,
     "app/game/modules/activities/bossRush/router.ts": 1,
     "app/game/modules/activities/charm/router.ts": 1,
@@ -19,7 +19,6 @@
     "app/game/modules/activities/checkin/openServer.ts": 1,
     "app/game/modules/activities/checkin/router.ts": 1,
     "app/game/modules/activities/enemyDuel/router.ts": 1,
-    "app/game/modules/activities/interlockRefresh/logic.ts": 1,
     "app/game/modules/activities/interlockRefresh/router.ts": 1,
     "app/game/modules/activities/milestone/logic.ts": 1,
     "app/game/modules/activities/milestone/router.ts": 1,

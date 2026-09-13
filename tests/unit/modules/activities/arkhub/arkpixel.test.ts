@@ -17,7 +17,7 @@ import {
   registerPixelUploadToken,
   consumePixelUploadToken,
   _resetPendingPixelUploadsForTest,
-} from "@game/modules/activities/arkhub/arkpixel";
+} from "@game/modules/activities/arkhub/public";
 import { PIXEL_PALETTE, PIXEL_DATA_LEN } from "@ops/admin/arkhub-pixel";
 
 /** 合法像素：全空白（255,255,255） */

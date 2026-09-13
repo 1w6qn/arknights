@@ -27,6 +27,7 @@ import { ItemBundle, ItemType } from "@excel/excel";
 import type { Draft } from "mutative";
 import type { PlayerDataModel, PlayerTemplateShop } from "../../kernel/playerdata";
 import { asShape } from "../activities/shared/activity-json";
+import { ARKHUB_SHOP_ID, arkhubCoinRef } from "../activities/arkhub/public";
 import {
   TemplateBuyGoodRequest,
   TemplateBuyGoodResponse,
@@ -119,12 +120,8 @@ function shopCoinRefs(
   draft: Draft<PlayerDataModel>,
   shopId: string,
 ): { coin: number; set: (v: number) => void } | null {
-  if (shopId === "shop_act1arkhub") {
-    const hub = draft.activity?.ARK_HUB?.act1arkhub;
-    return hub
-      ? { coin: hub.coin ?? 0, set: (v: number) => (hub.coin = v) }
-      : null;
-  }
+  // 枢纽店币 = activity.ARK_HUB.act1arkhub.coin（形状知识收敛在 arkhub 模块）
+  if (shopId === ARKHUB_SHOP_ID) return arkhubCoinRef(draft);
   if (shopId === "shop_act53side") {
     // TYPE_ACT53SIDE 未具名登记（走 PlayerActivity 兜底索引签名的 ServerPayload 两层），
     // 第三层 actCoin 需显式收窄为存档形状。

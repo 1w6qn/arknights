@@ -15,15 +15,13 @@ import path from "node:path";
 import { captureManager } from "@capture/capture-manager";
 import {
   parseGatewayStream,
-  type GatewayFrame,
-  type PbField,
-} from "@game/modules/activities/arkhub/public";
-import {
   arkdexIsAlter,
   arkdexAlterBase,
   arkdexActiveMap,
-} from "@game/modules/activities/arkhub/arkdex";
-import { ARKHUB_ACT_ID } from "@game/modules/activities/arkhub/arkhub";
+  ARKHUB_ACT_ID,
+  type GatewayFrame,
+  type PbField,
+} from "@game/modules/activities/arkhub/public";
 import type { PlayerDataManager } from "@game/kernel/PlayerDataManager";
 import { logger } from "@utils/logger";
 

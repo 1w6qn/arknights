@@ -10,7 +10,7 @@
  *   - TCP 监听（端口自动避让，多实例并存各拿空闲端口）
  *   - 连接生命周期 + 帧切分（长度前缀）
  *   - 帧收发日志（可读化：已知帧显示语义名 + 字段摘要，心跳/位置同步降噪为 DEBUG）
- *   - 路由装配：把 handlers/* 注册到 ArkhubFrameRouter，未注册帧回通用 ACK
+ *   - 路由装配：把 handlers/* 注册到 ArkhubSessionFrameRouter，未注册帧回通用 ACK
  * 帧 → 应答的业务逻辑已拆分：
  *   - 逻辑层：handlers/session.ts（登录/场景/交互/引导）、handlers/play.ts（捕捉/对局/生物/交换）、
  *     handlers/shop.ts（商店/道具/像素）
@@ -20,38 +20,38 @@
 import net from "net";
 import { logger } from "@utils/logger";
 import { buildFrame } from "./codec";
+import { GW_CODE_OK } from "./messages";
 import {
-  ArkhubFrameRouter,
-  GW_CODE_OK,
-} from "./router";
+  ArkhubSessionFrameRouter,
+} from "./dispatch";
 import type {
-  ArkhubGatewayConnectionState,
-  ArkhubGatewayHandlerContext,
-  ArkhubGatewayFrame,
-  ArkhubLocalGatewayOptions,
-} from "./router";
-import { registerSessionHandlers, HALL_MAP_ID, defaultGuideFlags } from "./handlers/session";
+  ArkhubSessionConnectionState,
+  ArkhubSessionHandlerContext,
+  ArkhubSessionFrame,
+  ArkhubSessionServerOptions,
+} from "./contract";
+import { registerSessionHandlers, HALL_MAP_ID, defaultGuideFlags } from "./handlers/hub";
 import { registerPlayHandlers } from "./handlers/play";
 import { registerShopHandlers } from "./handlers/shop";
 
 /** 兼容旧导出：网关配置项/户籍数据类型（现定义于 arkhub-gateway-router.ts） */
-export type { ArkhubLocalGatewayOptions, ArkdexDocsData } from "./router";
+export type { ArkhubSessionServerOptions, ArkdexDocsData } from "./contract";
 
 /** 本地网关是否已启动（enterHall 路由据此把客户端导向本地而非官服域名） */
 let _localGatewayActive = false;
 /** 查询本地网关是否已启动 */
-export function isArkhubLocalGatewayActive(): boolean {
+export function isArkhubSessionActive(): boolean {
   return _localGatewayActive;
 }
 /** 设置本地网关启动状态（测试重置用） */
-export function setArkhubLocalGatewayActive(v: boolean): void {
+export function setArkhubSessionActive(v: boolean): void {
   _localGatewayActive = v;
 }
 
 /** 本地网关实际监听端口（enterHall 路由回报给客户端；未启动为 0） */
 let _localGatewayPort = 0;
 /** 查询本地网关实际监听端口 */
-export function getArkhubLocalGatewayPort(): number {
+export function getArkhubSessionPort(): number {
   return _localGatewayPort;
 }
 
@@ -66,22 +66,22 @@ const MAX_FRAME_LEN = 65536;
  *
  * 监听首选端口，被占（另一实例/其它程序占用）时自动尝试下一个端口（port, port+1, ...
  * 最多 maxPortTries 次）——多实例并存或端口冲突时各拿一个空闲端口，enterHall 经
- * getArkhubLocalGatewayPort() 回报实际端口。监听成功后解析客户端帧并按路由分发：
+ * getArkhubSessionPort() 回报实际端口。监听成功后解析客户端帧并按路由分发：
  * 登录（任意凭据 code=100，记录 uid 供场景使用）、心跳回显、场景 hello（合法
  * EnterSceneNotify——含自己的 PlayerSyncData）、切场景（传送门）等——具体应答见
  * handlers/* 与 docs/arkhub-gateway-protocol.md §11 帧处理总表。
  * 全部避让端口被占返回 null（本地网关不可用，enterHall 回退官服域名）。
  *
- * @param opts - 监听配置 + 私服玩法回调（见 ArkhubLocalGatewayOptions）
+ * @param opts - 监听配置 + 私服玩法回调（见 ArkhubSessionServerOptions）
  * @returns 成功返回 net.Server，全部端口被占返回 null
  */
-export function startArkhubLocalGateway(
-  opts: ArkhubLocalGatewayOptions = {},
+export function startArkhubSessionServer(
+  opts: ArkhubSessionServerOptions = {},
 ): Promise<net.Server | null> {
   const { port = DEFAULT_GATEWAY_PORT, maxPortTries = 50 } = opts;
 
   // 路由装配（一次装配，所有连接共用）——逻辑层 handlers 在此注册
-  const router = new ArkhubFrameRouter();
+  const router = new ArkhubSessionFrameRouter();
   registerSessionHandlers(router);
   registerPlayHandlers(router);
   registerShopHandlers(router);
@@ -96,7 +96,7 @@ export function startArkhubLocalGateway(
   const handleConnection = (sock: net.Socket): void => {
     let buffer = Buffer.alloc(0);
     // 连接级状态（handler 直接读写；按连接维护，不跨连接保留）
-    const state: ArkhubGatewayConnectionState = {
+    const state: ArkhubSessionConnectionState = {
       uid: "",
       currentMapId: HALL_MAP_ID,
       guideState: defaultGuideFlags(),
@@ -193,7 +193,7 @@ export function startArkhubLocalGateway(
     };
 
     /** handler 上下文（连接状态 + 网关配置 + send）——注入路由分发 */
-    const ctx: ArkhubGatewayHandlerContext = { state, opts, send };
+    const ctx: ArkhubSessionHandlerContext = { state, opts, send };
 
     sock.on("data", (chunk: Buffer) => {
       buffer = Buffer.concat([buffer, chunk]);
@@ -212,7 +212,7 @@ export function startArkhubLocalGateway(
         logFrame("←", mainID, subID, body);
 
         try {
-          const frame: ArkhubGatewayFrame = {
+          const frame: ArkhubSessionFrame = {
             mainID,
             subID,
             low32: subID & 0xffffffffn,

@@ -77,6 +77,7 @@ const EXEMPTIONS: { file: string; spec: string; reason: string }[] = [
   { file: "app/game/modules/shop/logic/low-high.ts", spec: "../../gacha/gacha-up-list", reason: "共享卡池实现/列表" },
   { file: "app/game/modules/shop/logic/social.ts", spec: "../../pay/purchase-record", reason: "共享购买记录实现" },
   { file: "app/game/modules/social/SocialManager.ts", spec: "../account/AccountManager", reason: "共享账号服务（好友/uid/计数）——建议拆 account-data 门面" },
+  { file: "app/game/modules/system/plugin-heartbeat.ts", spec: "@plugin/index", reason: "system 插件心跳是插件宿主入口，需直连 ops 插件注册表（端口化待做）" },
   { file: "app/game/modules/user/routes.ts", spec: "../account/user", reason: "user 路由引用 account 协议/校验（路由层耦合，需下沉）" },
   { file: "app/game/modules/user/routes.ts", spec: "../account/user.schema", reason: "user 路由引用 account 协议/校验（路由层耦合，需下沉）" },
 ];
@@ -111,6 +112,10 @@ export function checkImport(fileRepoRel: string, spec: string): Violation | null
     return { rule: "R1 core 不得依赖 game/ops", file: fileRepoRel, spec };
   if (inKernel && t.startsWith("app/game/modules/"))
     return { rule: "R2 kernel/excel 不得依赖 modules", file: fileRepoRel, spec };
+  // R5（2026-09-13）：分层单向——game 不得反向依赖 ops（唯一历史违规 arkhub/arkpixel →
+  // @ops/admin/arkhub-pixel 已由像素格式下沉消除）。ops 依赖 game 仍合法（须走 public）。
+  if (fileRepoRel.startsWith("app/game/") && t.startsWith("app/ops/"))
+    return { rule: "R5 game 不得依赖 ops", file: fileRepoRel, spec };
   if (srcMod && fileRepoRel !== AGGREGATION_ROOT) {
     const dstMod = modOf(t);
     if (dstMod && dstMod !== srcMod) {
@@ -124,6 +129,29 @@ export function checkImport(fileRepoRel: string, spec: string): Violation | null
     }
   }
   return null;
+}
+
+/** arkhub 模块门面（R6：模块外只经 public 消费） */
+const ARKHUB_PREFIX = "app/game/modules/activities/arkhub/";
+
+/**
+ * R6：arkhub 模块外的引用必须落在 `activities/arkhub/public`
+ *
+ * 覆盖 app/ops、scripts、tests（app/game 内部自引用不受此规则约束，由 R3 管跨模块）。
+ * 模块外的**相对路径**引用同样拦截（resolveSpec 统一解析后判定）。
+ *
+ * @param fileRepoRel 引用方仓库相对路径
+ * @param spec import 说明符
+ * @returns 违规项；不涉及 arkhub 或落在 public 时返回 null
+ */
+export function checkArkhubFacade(fileRepoRel: string, spec: string): Violation | null {
+  if (fileRepoRel.startsWith(ARKHUB_PREFIX)) return null; // 模块内自引用
+  const target = resolveSpec(spec, fileRepoRel);
+  if (!target) return null;
+  const t = target.replace(/\.ts$/, "");
+  if (!t.startsWith(ARKHUB_PREFIX)) return null;
+  if (t === `${ARKHUB_PREFIX}public`) return null;
+  return { rule: "R6 arkhub 模块外仅可 import public 门面", file: fileRepoRel, spec };
 }
 
 describe("模块边界守卫", () => {
@@ -162,6 +190,42 @@ describe("模块边界守卫", () => {
       return /express\.Router\(\)|\bRouter\(\)\s*;/.test(readSource(f));
     });
     expect(offenders).toEqual([]);
+  });
+
+  it("R6：ops/scripts/tests 引用 arkhub 必须经 public 门面", () => {
+    const repoRoot = path.resolve(APP_ROOT, "..");
+    const files = [
+      ...collectFiles(path.join(APP_ROOT, "ops"), ".ts"),
+      ...collectFiles(path.join(repoRoot, "scripts"), ".ts"),
+      ...collectFiles(path.join(repoRoot, "tests"), ".ts"),
+    ];
+    const violations: Violation[] = [];
+    for (const f of files) {
+      const rel = path.relative(repoRoot, f).replace(/\\/g, "/");
+      for (const spec of extractSpecs(readSource(f))) {
+        const v = checkArkhubFacade(rel, spec);
+        if (v) violations.push(v);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("负样本：R5/R6 检查器能识别反向依赖与子路径越门面", () => {
+    expect(
+      checkImport("app/game/modules/activities/arkhub/domain/pixel", "@ops/admin/arkhub-pixel"),
+    ).toMatchObject({ rule: /^R5/ });
+    expect(
+      checkArkhubFacade("app/ops/admin/arkhub-pets", "@game/modules/activities/arkhub/domain/dex"),
+    ).toMatchObject({ rule: /^R6/ });
+    expect(
+      checkArkhubFacade("app/ops/admin/arkhub-pets", "@game/modules/activities/arkhub/public"),
+    ).toBeNull();
+    // 模块内自引用不受 R6 约束
+    expect(
+      checkArkhubFacade("app/game/modules/activities/arkhub/session/server", "./handlers/hub"),
+    ).toBeNull();
+    // 非 arkhub 模块不受 R6 影响
+    expect(checkArkhubFacade("app/ops/admin/x", "@game/modules/gacha/logic")).toBeNull();
   });
 
   it("负样本：检查器能检出越界 import（自证有效性）", () => {

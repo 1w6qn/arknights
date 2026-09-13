@@ -1597,12 +1597,20 @@ mitmproxy map remote 设置 URL 时会同步改写 Host 头为 `127.0.0.1:8443`�
 
 **登录链路**：客户端经本地 network_config 连到本代理 → `/user/auth/*`、`/u8/*`、`/user/oauth2/*` 转发 as 域拿到**官服真实 token** → `/account/login` 等 gs 请求带真实 secret 转发 `ak-gs-gf` 由官服校验。转发命中后不 `next()`，私服 authMiddleware/游戏路由不参与，故不受单例 secret 强制影响。
 
-### 17.5 arkhub 网关特殊适配（app/proxy/arkhub-gateway.ts）
+### 17.5 arkhub 网关特殊适配（app/game/modules/activities/arkhub/capture/proxy.ts）
+
+> **模块分层（2026-09-13 重构）**：arkhub 活动族已按 enemyDuel 样式重组为
+> `domain/`（状态 / ARKDEX / 像素格式）+ `session/`（长连接协议栈 `messages → codec → contract → dispatch → handlers → server`，
+> 启动绑定 `session/bindings.ts`）+ `capture/`（本节转发器与帧解析）；
+> 模块外（`app/server.ts`、`app/ops/**`、`scripts/**`、`tests/**`）一律经 `public.ts` 门面，
+> 守卫见 `tests/unit/architecture/module-boundary.test.ts` 的 R5/R6，
+> 完整记录见 `docs/arkhub-重构-2026-09-13.md`。
+
 阿卡狄亚（arkhub）是独立实时网关玩法：`POST /activity/arkhub/enterHall` 响应返回 `{ result, endpoint: "arkhub-gateway.hypergryph.com", port: 30000 }`，客户端随后用 BestHTTP WebSocket 连该网关（私有协议，明文 TCP；TLS 握手被直接断开、明文 WS 握手无响应）。capture 模式两项适配（2026-08-09）：
 1. **enterHall 响应改写**：`createOfficialForwarder` 收到 `arkhubGateway` 选项且路径为 `/activity/arkhub/enterHall` 时，把 `endpoint` 改写为 `config.Host` 去 scheme、`port` 保持网关端口——否则客户端直连官服网关（hosts 重写时连 127.0.0.1:30000 无监听而失败，且网关流量不经过代理）。非网关形状响应（如 401）原样透传。
 2. **TCP 转发器（端口自动避让 + ODC 帧解析）**：`startArkhubGatewayProxy` 首选 `config.capture.gatewayPort`（缺省 30000），被占时自动尝试下一个空闲端口（port, port+1, ... 最多 50 次）——多实例并存时每个实例各拿一个空闲端口（如 30000/30001/30002），enterHall 改写用**实际监听端口**，客户端互不干扰。返回 `{ server, port, exhausted, adjusted }`：全部避让端口被占（exhausted，极罕见）时仍改写指向配置端口（其上大概率有另一实例转发器）。每个连接建立到官服网关的透传管道（纯 TCP pipe，客户端自带上层握手/鉴权），双向字节流落盘 `tmp/capture/records/{connectionId}/`（统一抓包存储的网关记录目录：up.bin=客户端→官服、down.bin=官服→客户端、meta.json；connectionId 即记录 rid），连接关闭时按 **奇象巡展（arkhub）网关帧协议**（见下）解析写 `parsed.json`/`messages.json`，并提交一条 direction=gateway-bidi 的抓包记录（source=gateway）。实现注意：每次尝试**新建 server**（复用同一 server 重 listen 有回调错乱问题，实测 adjusted 结果错乱）。
 
-**奇象巡展（arkhub）网关帧协议**（app/proxy/arkhub-gateway-protocol.ts，2026-08-11）：帧 = `[4B 大端总长度][4B 大端消息 ID][8B 头字段（8-11 疑 seq、12-15 疑 flag/会话ID）][protobuf payload]`。`decodeProtobuf` 通用解码（varint/fixed64/length-delimited/fixed32 + 嵌套消息，嵌套启发式：首字段 wire 0/2 且非可读文本——避免 uid 等 ASCII 串误判）。MSG_NAMES 观测映射：1=MoveReq（8B 非 protobuf）、2=MoveNotify、4=Login（UserLoginReq up / UserLoginResp down）、8=NetProbeData（心跳 08 00 / 探针 10 80 02+15B / 玩家数据 0a 变体）。实测 up 流 3176 帧零断帧；**down 流部分会话登录后为连续 protobuf/自定义封装**（长度前缀不可切，余量 hex 如实记录——该变体仅在特定玩法触发，需进一步逆向）。离线重解析：`pnpm exec tsx scripts/parse-arkhub-gateway.ts [rid]`（从统一抓包存储读取，缺省解析全部 gateway-bidi 记录）。
+**奇象巡展（arkhub）网关帧协议**（app/game/modules/activities/arkhub/capture/protocol.ts，2026-08-11）：帧 = `[4B 大端总长度][4B 大端消息 ID][8B 头字段（8-11 疑 seq、12-15 疑 flag/会话ID）][protobuf payload]`。`decodeProtobuf` 通用解码（varint/fixed64/length-delimited/fixed32 + 嵌套消息，嵌套启发式：首字段 wire 0/2 且非可读文本——避免 uid 等 ASCII 串误判）。MSG_NAMES 观测映射：1=MoveReq（8B 非 protobuf）、2=MoveNotify、4=Login（UserLoginReq up / UserLoginResp down）、8=NetProbeData（心跳 08 00 / 探针 10 80 02+15B / 玩家数据 0a 变体）。实测 up 流 3176 帧零断帧；**down 流部分会话登录后为连续 protobuf/自定义封装**（长度前缀不可切，余量 hex 如实记录——该变体仅在特定玩法触发，需进一步逆向）。离线重解析：`pnpm exec tsx scripts/parse-arkhub-gateway.ts [rid]`（从统一抓包存储读取，缺省解析全部 gateway-bidi 记录）。
 
 **网关协议完全解析**（docs/arkhub-gateway-protocol.md，2026-08-11）：帧格式/消息族（msgId1/2=定长二进制 type+param 移动协议、msgId4=Login 双向字段号实测验证、msgId8=位置/探针通道）/down 记录流恢复/37 类消息字段名清单/剩余未知项精确定位（msgId8 位置块布局、记录流帧边界、msgId 注册表）。工具：`pnpm exec tsx scripts/dump-gateway-dict.ts` 输出协议字典。
 
@@ -1611,11 +1619,11 @@ mitmproxy map remote 设置 URL 时会同步改写 Host 头为 `127.0.0.1:8443`�
 ### 17.6 管理后台像素画工具 + 上传官服（2026-08-09）
 Dashboard 新增「像素画」Tab（app/admin/dashboard/index.html `loadPixelPane`）：24×24 画布编辑器（40 色调色板绘制/橡皮擦/清空/示例），下载 PNG / 像素数据，上传官服。
 
-**像素数据格式**（逆向确认）：24×24×3 RGB 共 1728 字节，空白 (255,255,255) 为透明背景；md5 即 1728 字节的 md5（`RequestPixelArtUploadTokenReq` 的 Md5 字段）。工具模块 `app/admin/arkhub-pixel.ts`（PIXEL_PALETTE 默认 40 色——官服热更 display_meta_table.pixelMapData.paramMap.htmlColors 本地为空，可替换）。
+**像素数据格式**（逆向确认）：24×24×3 RGB 共 1728 字节，空白 (255,255,255) 为透明背景；md5 即 1728 字节的 md5（`RequestPixelArtUploadTokenReq` 的 Md5 字段）。工具模块 `app/ops/admin/arkhub-pixel.ts`（PIXEL_PALETTE 默认 40 色——官服热更 display_meta_table.pixelMapData.paramMap.htmlColors 本地为空，可替换）。
 
 **上传官服流程**（`official-ops.uploadPixelArt`，`/admin/api/pixel/upload-official`）：
 1. `OfficialSession.login`（HTTP 会话）→ uid/secret
-2. **网关**（app/admin/arkhub-gateway-client.ts）申请上传 token：帧 `[4B 大端总长含自身][4B mainID][8B subID][protobuf]`；UserLoginReq mainID=4 subID=0x0fa1（HTTP secret 可直接网关登录，code 100=OK、112=RelayLoginSuccess 表示账号已有活动会话）；RequestPixelArtUploadTokenReq mainID=8 subID=0x00029CE231D603B3，消息体 `[4B 递增序列前缀][field2=Md5]`，响应 subID=0x00029CE231D60CF6 `[前缀][Code][Credential{pixelArtId,uploadToken,expireTime}]`
+2. **网关**（app/ops/admin/arkhub-gateway-client.ts）申请上传 token：帧 `[4B 大端总长含自身][4B mainID][8B subID][protobuf]`；UserLoginReq mainID=4 subID=0x0fa1（HTTP secret 可直接网关登录，code 100=OK、112=RelayLoginSuccess 表示账号已有活动会话）；RequestPixelArtUploadTokenReq mainID=8 subID=0x00029CE231D603B3，消息体 `[4B 递增序列前缀][field2=Md5]`，响应 subID=0x00029CE231D60CF6 `[前缀][Code][Credential{pixelArtId,uploadToken,expireTime}]`
 3. **HTTP multipart 上传** `POST /activity/arkhub/savePixelArt`（与真实客户端字节级一致）：`json` part（name="json" filename="json_info"，body=`{"brief":{"activityId":"act1arkhub","token":"<token>"}}`）+ `pixelData` part（name="pixelData" filename="pixelDataFile" Content-Type=multipart/form-data，1728B）
 4. **网关保存确认** SavePixelArtReq mainID=8 subID=0x00029CE231D674D5 `[PixelArtId][UploadSuccess=1][DoPublish=0]`
 
@@ -1640,7 +1648,7 @@ tmp/capture/
 ```
 
 - **来源统一**（records.source）：`private`（私服 traffic-recorder）/ `official`（capture 官服转发）/ `harness`（独立代理 proxy-harness）/ `gateway`（arkhub 网关连接）/ `ops`（官服操作 official-ops）。无显式会话的记录自动归入「自动-{yyyyMMdd}」默认会话（每源每天一个，保持全量记录旧行为）。
-- **写入方改造**：`traffic-recorder.ts` 改为调 `captureManager.addRecordAsync`（中间件不落散文件；source 由 index.ts 传入）；**默认排除本地管理/资源/配置噪音**——`/admin`（管理页面 + API + 30s 轮询）、`/assetbundle`（资源大文件）、`/pcSdk`、`/config`、`/api`（launcher/remote_config）、`/audit`、`/batch_event`（事件上报）不记录（与 official-forward 的 LOCAL_ONLY_PREFIXES 对齐），可用 `debug.recordTrafficExclude` 覆盖（`[]` = 全部记录）；`scripts/proxy-harness.ts` 弃 console.*/printJson，改用 logger + captureManager（支持 `--session <名称>`）；`arkhub-gateway.ts` 连接关闭时提交 gateway-bidi 记录（记录目录即统一 records/ 子目录，rid=connectionId）；`official-ops.ts` 官服调用记录 source=ops（保留 secret 脱敏）。
+- **写入方改造**：`traffic-recorder.ts` 改为调 `captureManager.addRecordAsync`（中间件不落散文件；source 由 index.ts 传入）；**默认排除本地管理/资源/配置噪音**——`/admin`（管理页面 + API + 30s 轮询）、`/assetbundle`（资源大文件）、`/pcSdk`、`/config`、`/api`（launcher/remote_config）、`/audit`、`/batch_event`（事件上报）不记录（与 official-forward 的 LOCAL_ONLY_PREFIXES 对齐），可用 `debug.recordTrafficExclude` 覆盖（`[]` = 全部记录）；`scripts/proxy-harness.ts` 弃 console.*/printJson，改用 logger + captureManager（支持 `--session <名称>`）；`app/game/modules/activities/arkhub/capture/proxy.ts` 连接关闭时提交 gateway-bidi 记录（记录目录即统一 records/ 子目录，rid=connectionId）；`official-ops.ts` 官服调用记录 source=ops（保留 secret 脱敏）。
 - **查询/管理**：`captureManager.query()`（sessionId/source/method/path/module/endpoint/status/direction/from/to/q + 分页 + total）、`getRecordDetail()`（JSON body 解析对象、bin body 返回 base64/hexPreview、缺失文件标记 missingFiles）、会话 start/stop/delete（级联删记录目录）、`clearAll(CLEAR)`、`exportSession(id)`/`exportRecord(id)`（jszip）、`stats()`（来源/状态码/按天）、`subscribe()`（新记录事件 → SSE 实时尾随）。
 - **旧格式迁移**：原 `tmp/{module}/{endpoint}/{ts}.json` 散文件格式废弃；`scripts/extract-arkhub-pixel.ts`（从 store 查最近 savePixelArt 记录读 req.bin）、`scripts/parse-arkhub-gateway.ts`、`scripts/dump-gateway-dict.ts`（从 store 读 gateway-bidi 记录）已迁移；测试真实抓包期望值归档 `tests/fixtures/rlv2-finishEvent.json`。**存量旧数据合并**：`pnpm exec tsx scripts/migrate-capture-legacy.ts [--dry-run] [--keep]` 把历史散文件（记录器目录格式 + 顶层扁平 `{模块}_{接口}_req|res_{id}.json` + official + arkhub-gateway 连接）合并进统一存储（归入「旧格式迁移」会话，note 记录源路径，成功即删源文件）——旧代理 req/res 序号存在 n↔n-1 偏移，扁平配对按此规则；无法还原路径的顶层旧文件（getAllProductList*/tokenpass*/v2grant* 等）跳过保留。
 - **测试**：`tests/unit/capture/capture-manager.test.ts`（11 用例：CRUD/过滤/会话/clear/导出/订阅/惰性 init，临时根目录注入，不碰真实 tmp/capture/）。
@@ -1982,7 +1990,7 @@ auth: `/u8/user/auth/v1/agreement_version` POST 别名（响应同 GET）
 
 - ODC 地图 actor 显示由 `arkventDataMap[topicId].taskData.actorData[].actorShowCondition`（VARSEQ EQ 语义，缺失键=0）驱动；空 varSeqs（新账号播种）→ 初始 5 名 NPC（阿米娅/九色鹿/博士家/博士宿舍/森蚺）应显示，完成态 → 5 名 q003 角色（aosta/broca/firwhl/chiave/ray，均为默认皮肤）应显示——与官服行为一致，无服务端数据缺陷。
 - **方舟枢纽广场玩家模型缺失（实锤根因，2026-08-16 二次排查）**：对比官服网关真实抓包（`tmp/capture/records/2026-08-09T04-29-12-534Z/parsed.json`），官服 EnterSceneNotify 的 `PlayerSyncData.PlayerBrief` 含 `4:level、5:avatarId、6:charId、7:skinId`，本地应答器原实现只发 uid/nickname/nicknumber → 客户端**无法渲染广场玩家模型**（"不显示人物模型"）。另缺 `AvatarInfo`（f2）与 `GuideFlags`（f3，area_*_block/guard、arkhub_login 等 hub 区域/引导状态）→ 区域引导状态缺失。
-- **修复**（`arkhub-gateway-local.ts` + `index.ts`）：PlayerBrief 补 level/avatarId/charId/skinId（char/skin 取 `status.secretary`/`secretarySkinId`，即主界面秘书干员——与官服网关一致）；补 AvatarInfo；GuideFlags 一次性标记 hub 区域/引导全部完成（私服不模拟逐步解锁）；`enterHall` 回报实际监听端口（端口被占自动避让，仿转发器）。
+- **修复**（`app/game/modules/activities/arkhub/session/server.ts` + `index.ts`）：PlayerBrief 补 level/avatarId/charId/skinId（char/skin 取 `status.secretary`/`secretarySkinId`，即主界面秘书干员——与官服网关一致）；补 AvatarInfo；GuideFlags 一次性标记 hub 区域/引导全部完成（私服不模拟逐步解锁）；`enterHall` 回报实际监听端口（端口被占自动避让，仿转发器）。
 - 用户实机日志佐证：`logs/server-20260816.log` 16:19:36 客户端登录本地网关 + 场景 hello 后无后续动作（卡在枢纽场景）。
 
 ### 25.2b 枢纽引导对话重复（GuideFlags 编码 bug，2026-08-16 第三轮）
@@ -2073,7 +2081,7 @@ auth: `/u8/user/auth/v1/agreement_version` POST 别名（响应同 GET）
 - 响应序列：先 ACK `0x38b3a5a8 {1:9}`，再发新场景 `EnterSceneNotify 0x38b37d3d`（HallInfo.map_id = 目标）
 - 场景 map_id（activity.sceneTypeMap）：TOWN=-1520665757，CAPTURE 1/2/3=-820616879/-820813487/-820747951
 
-**修复**（`arkhub-gateway-local.ts`）：
+**修复**（`app/game/modules/activities/arkhub/session/server.ts`）：
 - `buildEnterScene` 参数化 map_id；切场景请求按 low32 匹配、解析 f2 目标 map_id → 回 ACK + 新场景 EnterSceneNotify（TOWN/CAPTURE 双向均可）；场景状态按连接维护
 - **完整帧日志**：全部收发帧记录 `[arkhub-gateway]`（方向/mainID/subID/长度/hex 预览）；心跳与位置同步为高频噪音 → DEBUG，其余（登录/场景/交互/战斗）→ INFO
 - 回归测试：单连接全流程（登录→TOWN 场景→切场景→ACK+CAPTURE 场景），断言 TOWN/CAPTURE map_id varint 与官服一致
@@ -2344,7 +2352,7 @@ ARKDEX 状态层不依赖生物数值，但**客户端实际游玩**仍缺以下
 - 端到端验证：转发器 → canary 透传登录帧收到响应 ✓。
 
 **方案修订（替代 §33.2 的 enterHall 本地化）**：
-- `arkhub-gateway.ts`：转发目标**动态化**——`updateGatewayTarget(host, port)` + `getGatewayTarget()`，
+- `app/game/modules/activities/arkhub/capture/proxy.ts`：转发目标**动态化**——`updateGatewayTarget(host, port)` + `getGatewayTarget()`，
   初始缺省 `arkhub-gateway-canary.hypergryph.com:30000`（`OFFICIAL_ARKHUB_GATEWAY_CANARY_HOST`），
   handleConnection 每连接实时读取目标；
 - `official-forward.ts`：enterHall 响应处理时**先 updateGatewayTarget 跟随官服 endpoint**（域名再变

@@ -113,12 +113,6 @@ export const confirmCharVoiceRecordRewardSchema = z.object({
   nodeId: z.string(),
 });
 
-/** 像素画审核请求（服务端自定义 { uid?, status? }） */
-export const pixelArtReviewSchema = z.object({
-  uid: z.string().optional(),
-  status: z.number().optional(),
-});
-
 /** 演出剧情开始请求（CS: PerformanceStoryRequest { storyId }） */
 export const startStorySchema = z.object({
   storyId: z.string(),

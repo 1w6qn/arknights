@@ -1,7 +1,7 @@
 # 奇象巡展（arkhub）网关协议完全解析
 
 > 文档对象：官服 arkhub 网关 `arkhub-gateway.hypergryph.com:30000` 的 TCP 私有协议。
-> 解析器：`app/ops/proxy/arkhub-gateway-protocol.ts`；工具：`scripts/parse-arkhub-gateway.ts`（重解析抓包）、
+> 解析器：`app/game/modules/activities/arkhub/capture/protocol.ts`；工具：`scripts/parse-arkhub-gateway.ts`（重解析抓包）、
 > `scripts/dump-gateway-dict.ts`（协议字典）。
 > 数据来源：capture 模式经 30000 转发器抓取的 12+ 个会话（up.bin/down.bin + parsed.json）。
 
@@ -70,7 +70,7 @@
 | 2 | PlayerSyncData | `{1: PlayerBrief{1:uid,2:nickname,3:nicknumber}, 4: attrDoc{1:attributes[]}}`——**必须是自己的玩家条目**，缺失 → `selfUnitInfo.Fill` NPE → 30s 超时 → 客户端弹「网络状态异常」（ARKHUB_REQ_FAILED_CONTENT） |
 | 3 | PlayerHallBrief | `{1: unique_id(ulong), 2: pos(Vector3)}` |
 
-> 2026-08-13 修复（`app/ops/proxy/arkhub-gateway-local.ts`）：原应答器场景帧 field2 为空、field3 形状错
+> 2026-08-13 修复（`app/game/modules/activities/arkhub/session/server.ts`）：原应答器场景帧 field2 为空、field3 形状错
 > （`{1:ts,2:""}`）、登录 uid 未追踪（恒传 `""`）→ 客户端无法识别自己 → 广场进不去。现改为
 > 按登录帧 field1 追踪 uid，构建合法 EnterSceneNotify；`index.ts` 传 `resolveNickname` 用玩家真实昵称。
 
@@ -1227,7 +1227,7 @@ string→菜单名映射在客户端热更）→ 菜单项激活/置灰。
 
 > `名字 / 方向 / 业务对象 / 本地网关处理`。subID 取低 32，完整值见 §9。
 > 对齐状态：🟢=结构与应答已按官方对齐；🟡=仅名称/方向确认，body 待核或为占位 ack；🔴=本地误用（须按本表归位）。
-> 本地处理列对应 `app/ops/proxy/arkhub-gateway-local.ts` 分支。
+> 本地处理列对应 `app/game/modules/activities/arkhub/session/server.ts` 分支。
 
 ### 场景 / 输入 / 通知（前缀 0x2c89b3 / 0x1ffd3）
 

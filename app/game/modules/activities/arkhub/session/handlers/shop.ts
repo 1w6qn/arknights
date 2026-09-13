@@ -11,12 +11,8 @@ import {
   encodeFieldVarint as fv,
   ProtoReader,
 } from "../codec";
-import { GW_CODE_OK } from "../router";
-import type {
-  ArkhubFrameRouter,
-  ArkhubGatewayHandlerContext,
-  ArkhubGatewayFrame,
-} from "../router";
+import type { ArkhubSessionFrameRouter } from "../dispatch";
+import type { ArkhubSessionHandlerContext, ArkhubSessionFrame } from "../contract";
 import {
   allocPixelArtId,
   pixelMeta,
@@ -24,38 +20,31 @@ import {
   deletePixel,
   listPixelsByUid,
   ARKPIXEL_MAX_PUBLISH,
-} from "@game/modules/activities/arkhub/arkpixel";
-import { ARKDEX_PROPS, arkhubDailyShopIds } from "@game/modules/activities/arkhub/arkdex";
+} from "../../domain/pixel";
+import { ARKDEX_PROPS, arkhubDailyShopIds } from "../../domain/dex";
+import {
+  GW_BUY_ITEM_REQ,
+  GW_BUY_ITEM_RESP,
+  GW_CODE_OK,
+  GW_COLLECT_PIXEL_REQ,
+  GW_DELETE_PIXEL_COLLECTION_REQ,
+  GW_DELETE_PIXEL_COLLECTION_RESP,
+  GW_DELETE_PIXEL_REQ,
+  GW_DELETE_PIXEL_RESP,
+  GW_DUEL_SHOP_REQ,
+  GW_DUEL_SHOP_RESP,
+  GW_ERROR_CODE_NOTIFY,
+  GW_PIXEL_DATA_ALTER_NOTIFY,
+  GW_PIXEL_UPLOAD_TOKEN_REQ,
+  GW_PIXEL_UPLOAD_TOKEN_RESP,
+  GW_SAVE_PIXEL_ART_REQ,
+  GW_SYNC_ALTER_NOTIFY,
+  GW_USE_ITEM_REQ,
+  GW_USE_ITEM_RESP,
+  GW_ERROR_PREFIX,
+  GW_SCENE_PREFIX,
+} from "../messages";
 
-/* ---------- 帧 subID（low32，见 docs/arkhub-gateway-protocol.md §9.4/§9.5） ---------- */
-
-/** ARKDUEL 商店请求（打开对战道具商店；请求体 [4B seq]）→ 0x28f5229c 价格表 */
-const GW_DUEL_SHOP_REQ = BigInt(0x28f5ba6f);
-const GW_DUEL_SHOP_RESP = BigInt(0x28f5229c);
-/**
- * 道具购买（BuyItemReq → 店铺按序号）→ 0x28f5568f 购买响应（[4B seq回显]
- * {1:100, 2:商店序号, 3:道具, 4:数量, 5:价格, 6:剩余券数}）——28f56f2c：
- * [4B seq] {1:count, 2:index}（BuyShopItemReq f1=index/f2=count，抓包实锤修正），
- * 接 arkhubBuyProp（扣券 + 道具箱 + 生效次数 + 每日库存限购）。用道具另见 GW_USE_ITEM_REQ(28f5b1ab)。
- */
-const GW_BUY_ITEM_REQ = BigInt(0x28f56f2c);
-const GW_BUY_ITEM_RESP = BigInt(0x28f5568f);
-/** 使用道具（UseItemReq：{1:item_id, 2:count}）→ UseItemResp 0x28f5de74 {1:code=100} */
-const GW_USE_ITEM_REQ = BigInt(0x28f5b1ab);
-const GW_USE_ITEM_RESP = BigInt(0x28f5de74);
-/**
- * 状态变更广播（SyncAlterDataNotify 0x38b36462）：购买成功后推送道具变更，
- * 客户端据此弹“获得物品”提示并刷新道具箱。官服样本（08-18 购买后紧跟购买响应）：
- * `120a 08ce01 1205088e271001` = f2=ItemChangeNotify{1:剩余券, 2:[{1:道具,2:数量}]}。
- */
-const GW_SYNC_ALTER_NOTIFY = BigInt(0x38b36462);
-/**
- * 错误提示通知（NotifyErrorMessageNotify 0x30009df1，段前缀 0x1ffd3）：
- * ErrorCodeNotify{1:error_code}——客户端 ActArkhubGamePlayModule 收后 emit ON_ERROR_CODE →
- * ActArkhubErrorCodeUtil.ShowErrorToast 按码弹官方文案（反编译消费链路实锤）。
- * 响应 f1 错误码与本帧双通道，保证提示必达。
- */
-const GW_ERROR_CODE_NOTIFY = BigInt(0x30009df1);
 
 /**
  * 道具变更通知（购买后推送；官服字节对齐：仅 f2=ItemChangeNotify{1:coin, 2:items[]}）
@@ -78,27 +67,6 @@ function buildItemAlterNotify(remainCoin: number, itemNumId: number, count: numb
 function buildErrorCodeNotify(code: number): Buffer {
   return fv(1, code);
 }
-/** 像素上传 token 请求（RequestPixelArtUploadTokenReq：{1:pixel_art_id, 2:md5}）→ 0x31d60cf6 凭据 */
-const GW_PIXEL_UPLOAD_TOKEN_REQ = BigInt(0x31d603b3);
-const GW_PIXEL_UPLOAD_TOKEN_RESP = BigInt(0x31d60cf6);
-/**
- * 像素保存确认（SavePixelArtReq：{1:pixel_art_id, 2:upload_success, 3:do_publish}，
- * HTTP savePixelArt 成功后客户端发——官方 fire-and-forget 无 ACK）→ 随后服务端
- * 主动推 PixelArtDataAlterNotify（0x31d62bbd）通知像素数据变更，客户端据此确认保存。
- */
-const GW_SAVE_PIXEL_ART_REQ = BigInt(0x31d674d5);
-const GW_PIXEL_DATA_ALTER_NOTIFY = BigInt(0x31d62bbd);
-/** 收集画像（CollectPixelArtReq：{1:target_uid, 2:pixel_art_id}）——单机无真实匿名画像，
- * 记录日志后回 {1:100} ACK（subID+1）。 */
-const GW_COLLECT_PIXEL_REQ = BigInt(0x31d61490);
-/**
- * 删除像素 / 删除像素收藏（DeletePixelArtReq / DeletePixelArtCollectionReq，均
- * {1:pixel_art_id}）→ 各自独立的 Resp（{1:code=100}）。
- */
-const GW_DELETE_PIXEL_REQ = BigInt(0x31d6d13b);
-const GW_DELETE_PIXEL_RESP = BigInt(0x31d67d3e);
-const GW_DELETE_PIXEL_COLLECTION_REQ = BigInt(0x31d65453);
-const GW_DELETE_PIXEL_COLLECTION_RESP = BigInt(0x31d6ea56);
 
 /**
  * ARKDUEL 商店价格表（0x28f5ba6f → 0x28f5229c）
@@ -109,7 +77,7 @@ const GW_DELETE_PIXEL_COLLECTION_RESP = BigInt(0x31d6ea56);
  */
 
 /** 当日货架 numId（resolveShopIds 落盘值优先 → 确定性生成） */
-function shopItemIdsFor(ctx: ArkhubGatewayHandlerContext): number[] {
+function shopItemIdsFor(ctx: ArkhubSessionHandlerContext): number[] {
   return ctx.opts.resolveShopIds?.(ctx.state.uid) ?? arkhubDailyShopIds();
 }
 
@@ -324,7 +292,7 @@ function buildDeletePixelCollectionResp(seq: number): Buffer {
 /* ---------- 帧处理 ---------- */
 
 /** ARKDUEL 商店：请求体为 [4B seq] → 返回当日价格表（0x28f5229c）；同步触发货架落盘 */
-function handleGetShopInfo(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleGetShopInfo(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const seq = frame.body.length >= 4 ? frame.body.readUInt32BE(0) : 0;
   const ids = shopItemIdsFor(ctx);
   try {
@@ -342,7 +310,7 @@ function handleGetShopInfo(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewa
  * `08031001` = 买 1 件 3 号位，现字段语义按官服抓包修正）。
  * 响应时序：先 await 业务（扣券/库存校验）再按结果组响应，避免"回成功但实际没扣钱"。
  */
-async function handleBuyItem(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): Promise<void> {
+async function handleBuyItem(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): Promise<void> {
   const body = frame.body;
   const seq = body.length >= 4 ? body.readUInt32BE(0) : 0;
   const reader = new ProtoReader(body.subarray(4));
@@ -378,7 +346,7 @@ async function handleBuyItem(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGate
       // 注意：该广播属场景段（前缀 0x2c89b3），不沿用购买帧的商店段前缀。
       ctx.send(
         8,
-        (BigInt("0x2c89b3") << BigInt(32)) | GW_SYNC_ALTER_NOTIFY,
+        (GW_SCENE_PREFIX << BigInt(32)) | GW_SYNC_ALTER_NOTIFY,
         buildItemAlterNotify(remainCoin, itemNumId, Math.max(1, count)),
       );
       return;
@@ -389,7 +357,7 @@ async function handleBuyItem(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGate
     ctx.send(8, (frame.subID & ~0xffffffffn) | GW_BUY_ITEM_RESP, buildPropErrorResp(seq, errCode));
     ctx.send(
       8,
-      (BigInt("0x1ffd3") << BigInt(32)) | GW_ERROR_CODE_NOTIFY,
+      (GW_ERROR_PREFIX << BigInt(32)) | GW_ERROR_CODE_NOTIFY,
       buildErrorCodeNotify(errCode),
     );
     return;
@@ -398,7 +366,7 @@ async function handleBuyItem(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGate
   ctx.send(8, (frame.subID & ~0xffffffffn) | GW_BUY_ITEM_RESP, buildPropErrorResp(seq, 606));
   ctx.send(
     8,
-    (BigInt("0x1ffd3") << BigInt(32)) | GW_ERROR_CODE_NOTIFY,
+    (GW_ERROR_PREFIX << BigInt(32)) | GW_ERROR_CODE_NOTIFY,
     buildErrorCodeNotify(606),
   );
 }
@@ -407,7 +375,7 @@ async function handleBuyItem(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGate
  * 业务接线：诱引剂 → arkhubUseProp（写 activeLure 定向遭遇池）；信息素 →
  * arkhubUseProp 扣生效次数 + arkhubPheromoneScan（任务 15）。
  */
-async function handleUseItem(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): Promise<void> {
+async function handleUseItem(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): Promise<void> {
   const body = frame.body;
   const seq = body.length >= 4 ? body.readUInt32BE(0) : 0;
   const reader = new ProtoReader(body.subarray(4));
@@ -435,7 +403,7 @@ async function handleUseItem(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGate
       ctx.send(8, (frame.subID & ~0xffffffffn) | GW_USE_ITEM_RESP, buildPropErrorResp(seq, errCode));
       ctx.send(
         8,
-        (BigInt("0x1ffd3") << BigInt(32)) | GW_ERROR_CODE_NOTIFY,
+        (GW_ERROR_PREFIX << BigInt(32)) | GW_ERROR_CODE_NOTIFY,
         buildErrorCodeNotify(errCode),
       );
       return;
@@ -452,7 +420,7 @@ async function handleUseItem(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGate
  * 同时登记上传 token → 分配的 id（HTTP savePixelArt 消费），保证客户端用该 id
  * 调 getPixelArt 加载画像时命中（上传后无法加载的根因：token id 与落盘 id 不一致）。
  */
-function handlePixelUploadToken(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handlePixelUploadToken(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const body = frame.body;
   const seq = body.length >= 4 ? body.readUInt32BE(0) : 0;
   const reader = new ProtoReader(body.subarray(4));
@@ -484,7 +452,7 @@ function handlePixelUploadToken(ctx: ArkhubGatewayHandlerContext, frame: ArkhubG
  * 服务端随后主动推 PixelArtDataAlterNotify（31d62bbd），客户端据此匹配 id+md5
  * 确认保存成功并刷新列表（缺此推送客户端会判定保存失败）。
  */
-function handleSavePixelArt(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleSavePixelArt(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const reader = new ProtoReader(frame.body);
   let pixelArtId = 0;
   for (;;) {
@@ -514,7 +482,7 @@ function handleSavePixelArt(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatew
  * 收集画像（CollectPixelArtReq：{1:target_uid, 2:pixel_art_id}）——单机无真实
  * 匿名画像，解析后记录日志，回 {1:100} ACK（subID+1）。
  */
-function handleCollectPixelArt(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleCollectPixelArt(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const reader = new ProtoReader(frame.body);
   let targetUid = "";
   let pixelArtId = 0;
@@ -542,7 +510,7 @@ function handleCollectPixelArt(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGa
  * ⚠️ 此前按纯 protobuf 从 body[0] 解析把 seq 当 id（解析为 0）→ 删不掉；
  * 成功后同时删除本地像素文件（deletePixel：移除 .bin + 索引）并推变更通知。
  */
-function handleDeletePixel(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewayFrame): void {
+function handleDeletePixel(ctx: ArkhubSessionHandlerContext, frame: ArkhubSessionFrame): void {
   const body = frame.body;
   const seq = body.length >= 4 ? body.readUInt32BE(0) : 0;
   let pixelArtId = 0;
@@ -575,8 +543,8 @@ function handleDeletePixel(ctx: ArkhubGatewayHandlerContext, frame: ArkhubGatewa
  * （收藏他人画像不删本地文件，仅回 ACK。）
  */
 function handleDeletePixelCollection(
-  ctx: ArkhubGatewayHandlerContext,
-  frame: ArkhubGatewayFrame,
+  ctx: ArkhubSessionHandlerContext,
+  frame: ArkhubSessionFrame,
 ): void {
   const body = frame.body;
   const seq = body.length >= 4 ? body.readUInt32BE(0) : 0;
@@ -593,7 +561,7 @@ function handleDeletePixelCollection(
 }
 
 /** 注册商店/道具/像素画路由 */
-export function registerShopHandlers(router: ArkhubFrameRouter): void {
+export function registerShopHandlers(router: ArkhubSessionFrameRouter): void {
   router.registerLow(8, GW_DUEL_SHOP_REQ, "商店信息(GetShopInfoReq)", handleGetShopInfo);
   router.registerLow(8, GW_BUY_ITEM_REQ, "购买道具(BuyItemReq)", handleBuyItem);
   router.registerLow(8, GW_USE_ITEM_REQ, "使用道具(UseItemReq)", handleUseItem);

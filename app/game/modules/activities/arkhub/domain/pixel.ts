@@ -20,8 +20,9 @@ import {
   validatePixelData,
   PIXEL_DATA_LEN,
   PIXEL_PALETTE,
-} from "@ops/admin/arkhub-pixel";
-import { BadRequestError } from "../../../kernel/http/errors";
+  type PixelInput,
+} from "./pixel-format";
+import { BadRequestError } from "../../../../kernel/http/errors";
 
 /** 像素存储目录（gitignored 运行时数据；index.json 为元数据索引；测试可注入临时目录） */
 export let PIXELS_DIR = path.resolve("data/arkhub/pixels");
@@ -127,7 +128,7 @@ const PALETTE_SET: Set<string> = new Set(PIXEL_PALETTE.map((h) => h.toLowerCase(
  * @returns 分配的 pixelArtId
  * @throws 像素数据非法（长度/调色板）抛 Error
  */
-export function savePixel(uid: string, pixelData: unknown, pixelArtId?: number): number {
+export function savePixel(uid: string, pixelData: PixelInput, pixelArtId?: number): number {
   const buf = validatePixelData(pixelData);
   if (buf.length !== PIXEL_DATA_LEN) {
     throw new BadRequestError(`pixel data length ${buf.length} != ${PIXEL_DATA_LEN}`);

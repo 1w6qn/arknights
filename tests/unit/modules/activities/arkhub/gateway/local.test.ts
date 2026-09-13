@@ -1,15 +1,15 @@
 import { describe, it, expect, afterEach } from "vitest";
 import net from "net";
 import {
-  startArkhubLocalGateway,
-  isArkhubLocalGatewayActive,
-  setArkhubLocalGatewayActive,
-  getArkhubLocalGatewayPort,
+  startArkhubSessionServer,
+  isArkhubSessionActive,
+  setArkhubSessionActive,
+  getArkhubSessionPort,
 } from "@game/modules/activities/arkhub/public";
 
 const servers: net.Server[] = [];
 afterEach(() => {
-  setArkhubLocalGatewayActive(false);
+  setArkhubSessionActive(false);
   for (const s of servers.splice(0)) s.close();
 });
 
@@ -40,7 +40,7 @@ function roundTrip(port: number, payload: Buffer): Promise<Buffer> {
 }
 
 async function startServer(): Promise<number> {
-  const server = (await startArkhubLocalGateway({ port: 0 }))!;
+  const server = (await startArkhubSessionServer({ port: 0 }))!;
   servers.push(server);
   return (server.address() as net.AddressInfo).port;
 }
@@ -207,7 +207,7 @@ describe("arkhub 本地网关应答器", () => {
   });
 
   it("EnterSceneNotify 的 PlayerBrief 含 charId/skinId（广场玩家模型渲染所需）", async () => {
-    const server = (await startArkhubLocalGateway({
+    const server = (await startArkhubSessionServer({
       port: 0,
       resolvePlayerProfile: () => ({
         nickname: "博士2222",
@@ -315,7 +315,7 @@ describe("arkhub 本地网关应答器", () => {
   });
 
   it("EnterSceneNotify 的 GuideFlags 为重复 f1 条目且含全部 hub 引导/区域标记（防引导重复）", async () => {
-    const server = (await startArkhubLocalGateway({ port: 0 }))!;
+    const server = (await startArkhubSessionServer({ port: 0 }))!;
     servers.push(server);
     const port = (server.address() as net.AddressInfo).port;
     const login = Buffer.concat([
@@ -414,7 +414,7 @@ describe("arkhub 本地网关应答器", () => {
   });
 
   it("配置 resolveArkdexDocs：EnterSceneNotify 的 PlayerSyncData 含 f5-f9 户籍（生物图鉴/道具/功能位）", async () => {
-    const server = (await startArkhubLocalGateway({
+    const server = (await startArkhubSessionServer({
       port: 0,
       resolveArkdexDocs: () => ({
         dex: { "19001": 1, "19002": 1 },
@@ -508,23 +508,23 @@ describe("arkhub 本地网关应答器", () => {
     expect(present.has(9)).toBe(false);
   });
 
-  it("启动后 isArkhubLocalGatewayActive 为 true（enterHall 据此指向本服）", async () => {
+  it("启动后 isArkhubSessionActive 为 true（enterHall 据此指向本服）", async () => {
     await startServer();
-    expect(isArkhubLocalGatewayActive()).toBe(true);
+    expect(isArkhubSessionActive()).toBe(true);
   });
 
-  it("端口被占时自动避让到下一个空闲端口，getArkhubLocalGatewayPort 回报实际端口", async () => {
+  it("端口被占时自动避让到下一个空闲端口，getArkhubSessionPort 回报实际端口", async () => {
     // 先占用一个端口（与网关同样监听全部接口——Windows 上 127.0.0.1 占用不阻塞全局端口），
     // 再让本地网关以该端口为首选 → 应避让到下一个空闲端口
     const blocker = net.createServer();
     await new Promise<void>((r) => blocker.listen(0, r));
     const blockedPort = (blocker.address() as net.AddressInfo).port;
-    const server = (await startArkhubLocalGateway({ port: blockedPort }))!;
+    const server = (await startArkhubSessionServer({ port: blockedPort }))!;
     servers.push(server);
     const actualPort = (server.address() as net.AddressInfo).port;
     expect(actualPort).toBeGreaterThan(blockedPort);
-    expect(getArkhubLocalGatewayPort()).toBe(actualPort);
-    expect(isArkhubLocalGatewayActive()).toBe(true);
+    expect(getArkhubSessionPort()).toBe(actualPort);
+    expect(isArkhubSessionActive()).toBe(true);
     blocker.close();
   });
 
@@ -533,9 +533,9 @@ describe("arkhub 本地网关应答器", () => {
     await new Promise<void>((r) => blocker.listen(0, r));
     const port = (blocker.address() as net.AddressInfo).port;
     // maxPortTries=1：仅尝试首选端口，被占即放弃
-    const result = await startArkhubLocalGateway({ port, maxPortTries: 1 });
+    const result = await startArkhubSessionServer({ port, maxPortTries: 1 });
     expect(result).toBeNull();
-    expect(isArkhubLocalGatewayActive()).toBe(false);
+    expect(isArkhubSessionActive()).toBe(false);
     blocker.close();
   });
 
@@ -586,7 +586,7 @@ describe("arkhub 本地网关应答器", () => {
     it("捕捉链路：StartCaptureReq(捕捉区) → StartCaptureResp+EncounterCreatureNotify；EndCaptureReq → EndCaptureResp+onScanStart/onScanSettle", async () => {
       const onScanStart = vi.fn();
       const onScanSettle = vi.fn();
-      const server = (await startArkhubLocalGateway({
+      const server = (await startArkhubSessionServer({
         port: 0,
         onScanStart,
         onScanSettle,
@@ -658,7 +658,7 @@ describe("arkhub 本地网关应答器", () => {
 
     it("捕捉结束官服形状（[seq]{battle_id, param{complete_state=3, captured 槽位}}）→ 按槽位取捕获子集", async () => {
       const onScanSettle = vi.fn();
-      const server = (await startArkhubLocalGateway({
+      const server = (await startArkhubSessionServer({
         port: 0,
         onScanStart: () => ({ creatures: [19001, 19002, 19003] }),
         onScanSettle,
@@ -742,7 +742,7 @@ describe("arkhub 本地网关应答器", () => {
 
     it("对局链路：JoinDuel → JoinDuelResp+OnJoinDuelNotify；StartDuel → StartDuelResp；DuelRoundResultReport → onDuelSettle", async () => {
       const onDuelSettle = vi.fn();
-      const server = (await startArkhubLocalGateway({ port: 0, onDuelSettle }))!;
+      const server = (await startArkhubSessionServer({ port: 0, onDuelSettle }))!;
       servers.push(server);
       const port = (server.address() as net.AddressInfo).port;
       const { sock, next, sendFrame } = await openConn(port);
@@ -792,7 +792,7 @@ describe("arkhub 本地网关应答器", () => {
 
     it("回合结算胜负判定：胜局带胜者 uid / 负局仅终局报；同 battle_id 去重", async () => {
       const onDuelSettle = vi.fn();
-      const server = (await startArkhubLocalGateway({ port: 0, onDuelSettle }))!;
+      const server = (await startArkhubSessionServer({ port: 0, onDuelSettle }))!;
       servers.push(server);
       const port = (server.address() as net.AddressInfo).port;
       const { sock, next, sendFrame } = await openConn(port);
@@ -885,7 +885,7 @@ describe("arkhub 本地网关应答器", () => {
       const onDuelSettle = vi.fn();
       const onStateMaskChanged = vi.fn();
       const onDuelSettled = vi.fn();
-      const server = (await startArkhubLocalGateway({
+      const server = (await startArkhubSessionServer({
         port: 0,
         onDuelSettle,
         onStateMaskChanged,
@@ -951,7 +951,7 @@ describe("arkhub 本地网关应答器", () => {
 
     it("交换信息查询 → f2 回显请求 exchange_type（官服样本 `1001`）；预设交换 → onTradePreset + ACK", async () => {
       const onTradePreset = vi.fn();
-      const server = (await startArkhubLocalGateway({ port: 0, onTradePreset }))!;
+      const server = (await startArkhubSessionServer({ port: 0, onTradePreset }))!;
       servers.push(server);
       const port = (server.address() as net.AddressInfo).port;
       const { sock, next, sendFrame } = await openConn(port);
@@ -980,7 +980,7 @@ describe("arkhub 本地网关应答器", () => {
     });
 
     it("交换信息查询（配置 resolveTrade）→ requests 按挂单回填（CreatureExchangeRequest 反编译字段）", async () => {
-      const server = (await startArkhubLocalGateway({
+      const server = (await startArkhubSessionServer({
         port: 0,
         resolveTrade: () => ({ wantSpecies: 19058, offeringUniqueId: 4, ts: 1786000000000 }),
       }))!;
@@ -1001,7 +1001,7 @@ describe("arkhub 本地网关应答器", () => {
 
     it("使用道具（0x28f5b1ab [seq]{item_id=5006, count=1}）→ UseItemResp（[seq回显]{1:100}）+ onUseProp", async () => {
       const onUseProp = vi.fn();
-      const server = (await startArkhubLocalGateway({ port: 0, onUseProp }))!;
+      const server = (await startArkhubSessionServer({ port: 0, onUseProp }))!;
       servers.push(server);
       const port = (server.address() as net.AddressInfo).port;
       const { sock, next, sendFrame } = await openConn(port);
@@ -1021,7 +1021,7 @@ describe("arkhub 本地网关应答器", () => {
 
     it("商店序号购买（0x28f56f2c [seq]{count=1, index=1}）→ 官服形状响应 + 道具变更广播 + onBuyProp；业务拒绝 → 错误码", async () => {
       const onBuyProp = vi.fn();
-      const server = (await startArkhubLocalGateway({ port: 0, onBuyProp }))!;
+      const server = (await startArkhubSessionServer({ port: 0, onBuyProp }))!;
       servers.push(server);
       const port = (server.address() as net.AddressInfo).port;
       const { sock, next, sendFrame } = await openConn(port);
@@ -1298,7 +1298,7 @@ describe("arkhub 本地网关应答器", () => {
         .fn()
         .mockReturnValueOnce(true) // 首次：可领（已记录）
         .mockReturnValueOnce(false); // 二次：已领过
-      const server = (await startArkhubLocalGateway({ port: 0, claimActorReward }))!;
+      const server = (await startArkhubSessionServer({ port: 0, claimActorReward }))!;
       servers.push(server);
       const port = (server.address() as net.AddressInfo).port;
       const { sock, next, sendFrame } = await openConn(port);

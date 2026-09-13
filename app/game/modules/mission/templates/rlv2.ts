@@ -657,9 +657,5 @@ export const rlv2Templates: MissionTemplateGroup = {
       },
     },
   },
-
-  // ==================== 奇象巡展（ARK_HUB）任务模板 ====================
-  // ActivityTable.missionData 的 template（1arkhubActivity_1..23，共 8 类）。
-  // param 语义（对齐官服）：param[0]=参数类型位(恒"0")，param[1]=activityId("act1arkhub")，
-  // 其余位随模板不同（见各模板注释）。事件名 = 模板名，由 arkhub 玩法/网关回调 emit。
+  // 奇象巡展（ARK_HUB）任务模板不在此文件：见 ./arkhub.ts（arkhubTemplates）
 };

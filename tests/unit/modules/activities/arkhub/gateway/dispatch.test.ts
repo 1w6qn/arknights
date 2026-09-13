@@ -1,22 +1,22 @@
 /**
- * arkhub 网关帧路由器（ArkhubFrameRouter）单元测试
+ * arkhub 网关帧路由器（ArkhubSessionFrameRouter）单元测试
  *
  * 验证路由分发优先级（main 级 > full 匹配 > low32 匹配 > fallback）与帧名查询。
  */
 import { describe, it, expect } from "vitest";
-import { ArkhubFrameRouter, GW_CODE_OK } from "@game/modules/activities/arkhub/public";
+import { ArkhubSessionFrameRouter, GW_CODE_OK } from "@game/modules/activities/arkhub/public";
 import type {
-  ArkhubGatewayHandlerContext,
-  ArkhubGatewayFrame,
+  ArkhubSessionHandlerContext,
+  ArkhubSessionFrame,
 } from "@game/modules/activities/arkhub/public";
 
 /** 构造一个带发送捕获的测试上下文 */
 function makeCtx(): {
-  ctx: ArkhubGatewayHandlerContext;
+  ctx: ArkhubSessionHandlerContext;
   sent: Array<{ mainID: number; subID: bigint; body: Buffer }>;
 } {
   const sent: Array<{ mainID: number; subID: bigint; body: Buffer }> = [];
-  const ctx: ArkhubGatewayHandlerContext = {
+  const ctx: ArkhubSessionHandlerContext = {
     state: { uid: "", currentMapId: 0, guideState: {}, settledDuelBattles: new Set<string>(), stateMask: 0 },
     opts: {},
     send: (mainID, subID, body) => sent.push({ mainID, subID, body }),
@@ -25,13 +25,13 @@ function makeCtx(): {
 }
 
 /** 构造一帧 */
-function frame(mainID: number, subID: bigint, body: Buffer = Buffer.alloc(0)): ArkhubGatewayFrame {
+function frame(mainID: number, subID: bigint, body: Buffer = Buffer.alloc(0)): ArkhubSessionFrame {
   return { mainID, subID, low32: subID & 0xffffffffn, body };
 }
 
 describe("arkhub 网关帧路由器", () => {
   it("main 级路由：main=1 心跳分发给 main handler", () => {
-    const router = new ArkhubFrameRouter();
+    const router = new ArkhubSessionFrameRouter();
     let handled = false;
     router.registerMain(1, "心跳(Ping)", () => {
       handled = true;
@@ -41,7 +41,7 @@ describe("arkhub 网关帧路由器", () => {
   });
 
   it("full 匹配：登录 0x0fa1 精确分发（不误命中其它 main=4）", () => {
-    const router = new ArkhubFrameRouter();
+    const router = new ArkhubSessionFrameRouter();
     let handled = 0;
     router.register(4, BigInt(0x0fa1), "登录", () => {
       handled++;
@@ -52,7 +52,7 @@ describe("arkhub 网关帧路由器", () => {
   });
 
   it("low32 匹配：切场景带会话前缀（高 32 位变化）仍命中", () => {
-    const router = new ArkhubFrameRouter();
+    const router = new ArkhubSessionFrameRouter();
     let handled = false;
     router.registerLow(8, BigInt(0x38b3b60b), "切场景", () => {
       handled = true;
@@ -63,7 +63,7 @@ describe("arkhub 网关帧路由器", () => {
   });
 
   it("full 匹配优先于 low32 匹配（同低 32 位时整 64 位路由胜出）", () => {
-    const router = new ArkhubFrameRouter();
+    const router = new ArkhubSessionFrameRouter();
     let winner = "";
     router.register(8, BigInt("0x00018fb64de29cdb"), "场景hello", () => {
       winner = "full";
@@ -77,7 +77,7 @@ describe("arkhub 网关帧路由器", () => {
   });
 
   it("fallback：main=8 未注册帧回通用 ACK {1:100}（subID+1）", () => {
-    const router = new ArkhubFrameRouter();
+    const router = new ArkhubSessionFrameRouter();
     router.setFallback("通用ACK", (ctx, f) => {
       if (f.mainID === 8) ctx.send(8, f.subID + BigInt(1), Buffer.from([0x08, GW_CODE_OK]));
     });
@@ -89,7 +89,7 @@ describe("arkhub 网关帧路由器", () => {
   });
 
   it("fallback：main≠8 未注册帧静默（不响应）", () => {
-    const router = new ArkhubFrameRouter();
+    const router = new ArkhubSessionFrameRouter();
     router.setFallback("通用ACK", (ctx, f) => {
       if (f.mainID === 8) ctx.send(8, f.subID + BigInt(1), Buffer.from([0x08, GW_CODE_OK]));
     });
@@ -99,14 +99,14 @@ describe("arkhub 网关帧路由器", () => {
   });
 
   it("未注册路由时 dispatch 不抛错（静默忽略）", () => {
-    const router = new ArkhubFrameRouter();
+    const router = new ArkhubSessionFrameRouter();
     const { ctx, sent } = makeCtx();
     expect(() => router.dispatch(ctx, frame(8, BigInt(0xffffffff)))).not.toThrow();
     expect(sent).toHaveLength(0);
   });
 
   it("nameOf：已注册路由名 / FRAME_NAMES / 未知 三级回退", () => {
-    const router = new ArkhubFrameRouter();
+    const router = new ArkhubSessionFrameRouter();
     router.register(4, BigInt(0x0fa1), "登录(UserLoginReq)", () => {});
     // 已注册路由
     expect(router.nameOf(4, BigInt(0x0fa1))).toBe("登录(UserLoginReq)");
@@ -117,7 +117,7 @@ describe("arkhub 网关帧路由器", () => {
   });
 
   it("routes()：导出已注册路由表（自检/文档）", () => {
-    const router = new ArkhubFrameRouter();
+    const router = new ArkhubSessionFrameRouter();
     router.registerMain(1, "心跳(Ping)", () => {});
     router.register(4, BigInt(0x0fa1), "登录(UserLoginReq)", () => {});
     router.registerLow(8, BigInt(0x38b3b60b), "切场景(ChangeSceneReq)", () => {});

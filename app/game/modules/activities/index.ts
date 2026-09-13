@@ -29,7 +29,7 @@ import act25sideRouter, { rootRouter as act25sideRootRouter } from "./act25side/
 import act29sideRouter, { rootRouter as act29sideRootRouter } from "./act29side/router";
 import act36sideRouter, { rootRouter as act36sideRootRouter } from "./act36side/router";
 import trainingGroundRouter, { rootRouter as trainingGroundRootRouter } from "./trainingGround/router";
-import arkhubRouter from "./arkhub/router";
+import arkhubRouter, { rootRouter as arkhubRootRouter } from "./arkhub/router";
 import interlockRefreshRouter from "./interlockRefresh/router";
 
 const router = Router();
@@ -64,6 +64,7 @@ rootRouter.use(act25sideRootRouter);
 rootRouter.use(act29sideRootRouter);
 rootRouter.use(act36sideRootRouter);
 rootRouter.use(trainingGroundRootRouter);
+rootRouter.use(arkhubRootRouter);
 
 export default router;
 export { rootRouter };

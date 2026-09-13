@@ -1,7 +1,7 @@
 {
   "totals": {
     "any": 0,
-    "unknown": 350,
+    "unknown": 331,
     "object": 6
   },
   "counts": {
@@ -155,29 +155,9 @@
       "unknown": 4,
       "object": 0
     },
-    "app/game/modules/activities/arkhub/arkpixel.ts": {
-      "any": 0,
-      "unknown": 1,
-      "object": 0
-    },
-    "app/game/modules/activities/arkhub/gateway/gateway.ts": {
+    "app/game/modules/activities/arkhub/capture/proxy.ts": {
       "any": 0,
       "unknown": 6,
-      "object": 0
-    },
-    "app/game/modules/activities/arkhub/gateway/handlers/session.ts": {
-      "any": 0,
-      "unknown": 1,
-      "object": 0
-    },
-    "app/game/modules/activities/arkhub/gateway/protocol.ts": {
-      "any": 0,
-      "unknown": 14,
-      "object": 0
-    },
-    "app/game/modules/activities/arkhub/logic.ts": {
-      "any": 0,
-      "unknown": 1,
       "object": 0
     },
     "app/game/modules/activities/milestone/logic.ts": {
@@ -415,11 +395,6 @@
       "unknown": 4,
       "object": 0
     },
-    "app/ops/admin/arkhub-pixel.ts": {
-      "any": 0,
-      "unknown": 2,
-      "object": 0
-    },
     "app/ops/admin/cli-exec.ts": {
       "any": 0,
       "unknown": 4,
@@ -495,11 +470,6 @@
       "unknown": 1,
       "object": 0
     },
-    "tests/unit/game/modules/activities/arkhub/gateway/gateway.test.ts": {
-      "any": 0,
-      "unknown": 1,
-      "object": 0
-    },
     "tests/unit/manager/freshPlayer.test.ts": {
       "any": 0,
       "unknown": 1,
@@ -511,6 +481,11 @@
       "object": 0
     },
     "tests/unit/manager/playerdata-excel-port.test.ts": {
+      "any": 0,
+      "unknown": 1,
+      "object": 0
+    },
+    "tests/unit/modules/activities/arkhub/gateway/gateway.test.ts": {
       "any": 0,
       "unknown": 1,
       "object": 0

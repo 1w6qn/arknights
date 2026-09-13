@@ -147,9 +147,4 @@ rootRouter.post("/trainingGround/battleFinish", validateBody(ReqSchema.trainingG
   res.send(player.delta satisfies TrainingGroundBattleFinishResponse);
 });
 
-/* ===== 方舟枢纽（arkhub，客户端 /activity/arkhub/*；数据在 activity.ARK_HUB）===== */
-// 抓包形状：enterHall → gateway 地址；setSecretary/setSquad → 更新 ARK_HUB[act1arkhub]；
-// syncInfo → 空增量；getPixelArt → OSS 地址（私服空）；savePixelArt → 转发 gateway（私服记录）
-
-/** 方舟枢纽进入大厅（抓包：返回 gateway 端点 + 端口） */
 export default router;

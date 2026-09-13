@@ -13,7 +13,7 @@
  *   FRAME_NAMES
  *     —— low32 subID → 帧名注册表（日志可读化；请求/响应 subID 均收录）
  */
-import { GATEWAY_HEADER_SIZE } from "./protocol";
+import { GATEWAY_HEADER_SIZE } from "./messages";
 
 /**
  * 无符号 varint 编码（支持 64 位 BigInt）

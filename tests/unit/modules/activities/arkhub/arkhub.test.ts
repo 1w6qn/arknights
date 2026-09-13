@@ -95,7 +95,7 @@ import {
   mockPlayerData,
   mockTypedEventEmitter,
   type MockPlayerDataManager,
-} from "../../helpers";
+} from "../../../../helpers";
 import { unlockActivity } from "@game/modules/activities/shared/unlockActivity";
 import { MissionProgress } from "@game/modules/mission/logic";
 import { MedalProgress } from "@game/modules/medal/medal";
@@ -117,8 +117,8 @@ import {
   arkhubReadGatewayState,
   arkhubIsRewardClaimed,
   arkhubMarkRewardClaimed,
-} from "@game/modules/activities/arkhub/arkhub";
-import { arkhubBuyProp, arkhubUseProp } from "@game/modules/activities/arkhub/arkdex";
+} from "@game/modules/activities/arkhub/public";
+import { arkhubBuyProp, arkhubUseProp } from "@game/modules/activities/arkhub/public";
 
 /** 冻结时间（2026-08-15 12:00 +8：活动窗口内、8/18 更新前） */
 const FROZEN_TS = 1786766400;
@@ -693,5 +693,57 @@ describe("unlockActivity 播种 × 渐进引导开关（config.arkhub.guideProgr
     expect(am["1arkhubActivity_1"]).toEqual({ state: 2, progress: [{ value: 1, target: 1 }] });
     expect(am["1arkhubActivity_2"]).toEqual({ state: 2, progress: [{ value: 1, target: 1 }] });
     expect(am["1arkhubActivity_3"]).toEqual({ state: 2, progress: [{ value: 1, target: 1 }] });
+  });
+});
+
+describe("public 门面导出面（模块外唯一入口）", () => {
+  it("domain / session / capture 三组关键符号均可从 public 取得（防门面腐化）", async () => {
+    const facade = await import("@game/modules/activities/arkhub/public");
+    // domain：玩法域
+    for (const name of [
+      "ARKHUB_ACT_ID",
+      "ARKHUB_ERR",
+      "ARKHUB_SHOP_ID",
+      "arkhubOnDuelSettle",
+      "arkhubBuyProp",
+      "arkhubSyncMissionCoin",
+      "arkhubCoinRef",
+      "savePixel",
+      "validatePixelData",
+      "PIXEL_DATA_LEN",
+    ]) {
+      expect(facade, `缺 domain 导出 ${name}`).toHaveProperty(name);
+    }
+    // session：长连接会话协议栈
+    for (const name of [
+      "startArkhubSessionServer",
+      "createArkhubSessionBindings",
+      "ArkhubSessionFrameRouter",
+      "GW_CODE_OK",
+      "GW_USER_LOGIN_REQ",
+      "buildFrame",
+      "ProtoReader",
+      "GW_SCENE_PREFIX",
+    ]) {
+      expect(facade, `缺 session 导出 ${name}`).toHaveProperty(name);
+    }
+    // capture：抓包模式官服网关适配
+    for (const name of [
+      "startArkhubGatewayProxy",
+      "setGatewayRecordSink",
+      "adaptArkhubEnterHallResponse",
+      "isArkhubEnterHall",
+      "parseGatewayStream",
+      "OFFICIAL_ARKHUB_GATEWAY_PORT",
+    ]) {
+      expect(facade, `缺 capture 导出 ${name}`).toHaveProperty(name);
+    }
+    // 类型导出面（运行期无实体，由编译期校验；此处用元组实例化确保类型仍在门面上）
+    const facadeTypes: [
+      import("@game/modules/activities/arkhub/public").ArkhubSessionServerOptions,
+      import("@game/modules/activities/arkhub/public").ArkhubSessionFrame,
+      import("@game/modules/activities/arkhub/public").PixelInput,
+    ] | null = null;
+    expect(facadeTypes).toBeNull();
   });
 });
