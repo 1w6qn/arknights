@@ -36,9 +36,18 @@ function readBaseline(): ItemsDirectBaseline {
   return JSON.parse(fs.readFileSync(BASELINE_FILE, "utf-8")) as ItemsDirectBaseline;
 }
 
-/** 当前扫描结果 */
+/**
+ * 当前扫描结果（惰性缓存）
+ *
+ * `scanDirectItemEmits` 会遍历全仓（app/scripts/tests/hook + index.ts，约 785 个文件）逐个读盘，
+ * 单次扫描在本机（9p/drvfs）约 10 秒。此前 4 个用例各扫一遍 → 单文件 54 秒，是全套件最慢的一项。
+ * 源码在单次测试运行内不会被改写，故一次扫描结果在所有用例间共享（口径不变，只是不重复读盘）。
+ */
+let cachedScan: Record<string, number> | null = null;
+
+/** 当前扫描结果（首次调用时扫描，后续复用） */
 function currentScan(): Record<string, number> {
-  return scanDirectItemEmits(REPO_ROOT);
+  return (cachedScan ??= scanDirectItemEmits(REPO_ROOT));
 }
 
 describe("物品事件直发守卫（棘轮：只减不增）", () => {

@@ -9,8 +9,8 @@
  * 守卫真实生效后任何新增越界引用将直接红。裁决明细与重构建议见 docs/architecture-coupling-adjudication.md。
  */
 import { describe, it, expect } from "vitest";
-import fs from "node:fs";
 import path from "node:path";
+import { collectFiles, readSource } from "../../helpers/fs-scan";
 
 
 const APP_ROOT = path.resolve(__dirname, "../../../app");
@@ -19,17 +19,6 @@ const ALIASES: Record<string, string> = {
   "@capture": "app/ops/capture", "@logs": "app/core/logs", "@plugin": "app/ops/plugin",
   "@asset": "app/ops/assets/asset-registry", "@core": "app/core", "@ops": "app/ops",
 };
-
-function collectFiles(dir: string): string[] {
-  const out: string[] = [];
-  if (!fs.existsSync(dir)) return out;
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) out.push(...collectFiles(p));
-    else if (p.endsWith(".ts")) out.push(p);
-  }
-  return out;
-}
 
 /** 提取一个 TS 源文件的全部 import 说明符（含动态 import 与 type import） */
 export function extractSpecs(src: string): string[] {
@@ -138,10 +127,12 @@ export function checkImport(fileRepoRel: string, spec: string): Violation | null
 }
 
 describe("模块边界守卫", () => {
+  // 只收 `.ts`（与原实现一致）：app/ 下另有 dashboard 的 svg/html/webmanifest，
+  // 它们不是模块图的一部分，纳入扫描只会引入误读。
   const allFiles = [
-    ...collectFiles(path.join(APP_ROOT, "core")),
-    ...collectFiles(path.join(APP_ROOT, "game")),
-    ...collectFiles(path.join(APP_ROOT, "ops")),
+    ...collectFiles(path.join(APP_ROOT, "core"), ".ts"),
+    ...collectFiles(path.join(APP_ROOT, "game"), ".ts"),
+    ...collectFiles(path.join(APP_ROOT, "ops"), ".ts"),
   ];
 
   it("R1-R3：全量扫描无非法规界 import", () => {
@@ -149,7 +140,7 @@ describe("模块边界守卫", () => {
     for (const f of allFiles) {
       // ????????? app/ ????checkImport/modOf ????????
       const rel = path.relative(path.resolve(APP_ROOT, ".."), f).replace(/\\/g, "/");
-      for (const spec of extractSpecs(fs.readFileSync(f, "utf-8"))) {
+      for (const spec of extractSpecs(readSource(f))) {
         const v = checkImport(rel, spec);
         if (v) violations.push(v);
       }
@@ -168,7 +159,7 @@ describe("模块边界守卫", () => {
       if (rel === "game/routes.ts" || rel === "game/app.ts") return false;
       if (R4_EXEMPTIONS.some((e) => e.file === rel)) return false;
       if (conventionRouteFile.test(rel)) return false;
-      return /express\.Router\(\)|\bRouter\(\)\s*;/.test(fs.readFileSync(f, "utf-8"));
+      return /express\.Router\(\)|\bRouter\(\)\s*;/.test(readSource(f));
     });
     expect(offenders).toEqual([]);
   });

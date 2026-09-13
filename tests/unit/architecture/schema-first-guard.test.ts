@@ -6,21 +6,10 @@
  * GET 路由（无 body）豁免；plugin-heartbeat 为内部 GET 端点豁免。
  */
 import { describe, it, expect } from "vitest";
-import fs from "node:fs";
 import path from "node:path";
+import { collectFiles, readLines } from "../../helpers/fs-scan";
 
 const APP_ROOT = path.join(__dirname, "../../../app");
-
-function collectFiles(dir: string): string[] {
-  const out: string[] = [];
-  if (!fs.existsSync(dir)) return out;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...collectFiles(p));
-    else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) out.push(p);
-  }
-  return out;
-}
 
 describe("契约先行守卫", () => {
   it("router 层 POST 路由必须经 validateBody 校验（契约先行）", () => {
@@ -29,12 +18,15 @@ describe("契约先行守卫", () => {
     // 注意：building/gacha 等 handler.ts 在旧守卫（仅扫 domain/router + domain/activity）中不在册，
     // 维持 HEAD 等价范围不纳入；是否扩展到 handler 面留待 T4 边界守卫裁决。
     const ROUTER_FACE = /(?:^|[\\/])routes\.ts$|(?:^|[\\/])[\w-]+\.routes\.ts$|(?:^|[\\/])plugin-heartbeat\.ts$/;
-    const files = [
-      ...collectFiles(path.join(APP_ROOT, "game/modules")).filter((f) => ROUTER_FACE.test(f)),
-      ...collectFiles(path.join(APP_ROOT, "game/modules/activities")),
-    ];
+    const MODULES_DIR = path.join(APP_ROOT, "game/modules");
+    const ACTIVITIES_DIR = path.join(MODULES_DIR, "activities");
+    // 原实现先扫一遍 modules 取 routes 面、再整扫一遍 activities（activities 是 modules 的子目录，
+    // 等于把活动族文件读两遍）。这里单次遍历取两者并集，读盘走 fs-scan 缓存，判定范围不变。
+    const files = collectFiles(MODULES_DIR, ".ts").filter(
+      (f) => ROUTER_FACE.test(f) || f.startsWith(ACTIVITIES_DIR + path.sep),
+    );
     for (const file of files) {
-      const lines = fs.readFileSync(file, "utf-8").split(/\r?\n/);
+      const lines = readLines(file);
       for (let i = 0; i < lines.length; i++) {
         const m = lines[i].match(/\.(post|put|patch)\(/);
         if (!m) continue;

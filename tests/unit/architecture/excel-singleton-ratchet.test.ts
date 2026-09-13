@@ -78,10 +78,16 @@ function collectTs(dir: string): string[] {
 }
 
 /**
- * 扫描 app/game 下的单例直连情况
+ * 扫描 app/game 下的单例直连情况（惰性缓存）
+ *
+ * 全树约 365 个文件，单次扫描在本机（9p/drvfs）约 9 秒；此前 4 个用例各扫一遍 →
+ * 单文件 37 秒。源码在单次测试运行内不会被改写，故一次结果在所有用例间共享。
  * @returns 仓库相对路径 → 默认导入次数
  */
+let cachedScan: Record<string, number> | null = null;
+
 export function scanSingletonImports(): Record<string, number> {
+  if (cachedScan) return cachedScan;
   const counts: Record<string, number> = {};
   for (const file of collectTs(GAME_ROOT)) {
     const rel = path.relative(path.resolve(APP_ROOT, ".."), file).split(path.sep).join("/");
@@ -93,6 +99,7 @@ export function scanSingletonImports(): Record<string, number> {
       .filter((l) => isSingletonDefaultImport(l)).length;
     if (n > 0) counts[rel] = n;
   }
+  cachedScan = counts;
   return counts;
 }
 

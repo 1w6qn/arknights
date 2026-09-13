@@ -6,28 +6,18 @@
  * （语义未知 → 一律 500 INTERNAL_ERROR，客户端无法区分可修正的错误）。
  */
 import { describe, expect, it } from "vitest";
-import * as fs from "node:fs";
 import * as path from "node:path";
+import { collectFiles, readLines, readSource } from "../../helpers/fs-scan";
 
 const APP_ROOT = path.resolve(__dirname, "../../..");
 const MODULES_DIR = path.join(APP_ROOT, "app", "game", "modules");
 const KERNEL_DIR = path.join(APP_ROOT, "app", "game", "kernel");
 
-function collectFiles(dir: string, ext: string): string[] {
-  const out: string[] = [];
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) out.push(...collectFiles(p, ext));
-    else if (e.name.endsWith(ext)) out.push(p);
-  }
-  return out;
-}
-
 describe("统一业务异常体系（errors-guard）", () => {
   it("业务模块内禁止裸 throw new Error（应抛 GameError 子类）", () => {
     const offenders: string[] = [];
     for (const file of [...collectFiles(MODULES_DIR, ".ts"), ...collectFiles(KERNEL_DIR, ".ts")]) {
-      const lines = fs.readFileSync(file, "utf-8").split(/\r?\n/);
+      const lines = readLines(file);
       for (let i = 0; i < lines.length; i++) {
         const l = lines[i].trim();
         if (l.startsWith("//") || l.startsWith("*")) continue;
@@ -41,7 +31,7 @@ describe("统一业务异常体系（errors-guard）", () => {
 
   it("GameError 子类语义正确（状态码/错误码/文案）", () => {
     // 类型层面保证：业务层引用的错误类从 kernel/http/errors 导出
-    const errorsFile = fs.readFileSync(path.join(KERNEL_DIR, "http", "errors.ts"), "utf-8");
+    const errorsFile = readSource(path.join(KERNEL_DIR, "http", "errors.ts"));
     for (const cls of ["GameError", "BadRequestError", "ForbiddenError", "NotFoundError", "InternalError", "isGameError"]) {
       expect(errorsFile).toContain(`export class ${cls}`.replace("export class isGameError", "export function isGameError"));
     }

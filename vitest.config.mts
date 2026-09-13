@@ -17,6 +17,12 @@ export default defineConfig({
     // 测试期间日志落盘到 tmp/（gitignored），避免污染 logs/
     env: { LOG_DIR: 'tmp/test-logs' },
     include: ['tests/**/*.test.ts'],
+    // 磁盘模块缓存（vitest 4 experimental）：把 esbuild 转换结果按「内容哈希」落到
+    // node_modules/.experimental-vitest-cache，供**同一次运行的多个 worker 之间**以及
+    // 多次运行之间复用。本仓在 WSL 9p/drvfs 上，每个测试文件都要重新转换其整张依赖图，
+    // 实测 30 文件的探针组 transform 从 310s 降到 99s（-68%），整组耗时 50.1s → 38.0s（热缓存）。
+    // 关闭方式：删掉本项，或 `vitest --clearCache` 清缓存。缓存目录在 node_modules 下，已被 gitignore。
+    experimental: { fsModuleCache: true },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json', 'lcov'],

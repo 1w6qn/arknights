@@ -13,32 +13,16 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
+import { collectFiles, readLines } from "../../helpers/fs-scan";
 
 /** app 根目录（相对本文件：tests/unit/architecture/ 上溯 3 级） */
 const APP_ROOT = path.resolve(__dirname, "../../../app");
 
 /**
- * 递归枚举某目录下所有指定扩展名的文件
- * @param dir - 目录路径
- * @param ext - 文件扩展名（含点号，如 ".ts"）
- * @returns 文件绝对路径数组
- */
-function collectFiles(dir: string, ext: string): string[] {
-  const out: string[] = [];
-  if (!fs.existsSync(dir)) return out;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      out.push(...collectFiles(full, ext));
-    } else if (entry.isFile() && entry.name.endsWith(ext)) {
-      out.push(full);
-    }
-  }
-  return out;
-}
-
-/**
  * 断言某文件不含匹配给定正则的代码行
+ *
+ * 逐行读取走 `tests/helpers/fs-scan` 的进程内缓存：本文件有 6 个用例扫描
+ * `app/game` 全树（365 个文件），不缓存则同一批文件要被读 3 遍（实测本文件 45 秒）。
  * @param file - 文件绝对路径
  * @param re - 非法模式
  * @returns 命中非法模式的起始行（1 起）
@@ -47,7 +31,7 @@ function firstOffendingLine(
   file: string,
   re: RegExp,
 ): number | null {
-  const lines = fs.readFileSync(file, "utf-8").split(/\r?\n/);
+  const lines = readLines(file);
   for (let i = 0; i < lines.length; i++) {
     if (re.test(lines[i])) return i + 1;
   }
@@ -183,45 +167,11 @@ describe("架构解耦守卫", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("domain 层不得依赖 service 路由/适配面（router/handler/activity；数据面 player/、组合根、events、shared、util 允许）", () => {
-    const domainDir = path.join(APP_ROOT, "game", "domain");
-    const offenders: string[] = [];
-    // 业务逻辑迁 domain 后（分层语义：domain=业务逻辑，service=数据/路由适配），
-    // domain 允许依赖 service 数据面（player 子模块/组合根/事件总线/共享件/IO 工具），
-    // 但不得依赖路由/适配面（router/activity/handler——HTTP 层应反向依赖 domain）
-    const DATA_FACE = /service\/(player\/|PlayerDataManager|PlayerStatus|player-composition|events|shared\/|util\/)/;
-    for (const file of collectFiles(domainDir, ".ts")) {
-      const lines = fs.readFileSync(file, "utf-8").split(/\r?\n/);
-      for (let i = 0; i < lines.length; i++) {
-        const l = lines[i];
-        if (l.trim().startsWith("import type")) continue; // type-only 无运行时依赖,放行
-        if (/from\s+["'](@game\/service|.*service\/)/.test(l) && !DATA_FACE.test(l)) {
-          offenders.push(`${path.relative(APP_ROOT, file)}:${i + 1} domain 依赖 service 路由/适配面（仅允许数据面）`);
-          break;
-        }
-      }
-    }
-    expect(offenders).toEqual([]);
-  });
-
-  it("domain 纯领域不得引用根基础设施（路由/处理面 router/activity/handler 允许经 request-context 取上下文）", () => {
-    const domainDir = path.join(APP_ROOT, "game", "domain");
-    const offenders: string[] = [];
-    // 路由及处理迁 domain 后：domain/router、domain/activity、domain/<玩法>/handler 为 HTTP 适配面，
-    // 允许引用 request-context（getPlayer 等）；纯领域文件（其余路径）仍禁引用根基础设施
-    const HTTP_FACE = /domain[\\/](router[\\/]|activity[\\/]|(building|gacha|mission|rlv2|shop)[\\/]handler)/;
-    for (const file of collectFiles(domainDir, ".ts")) {
-      if (HTTP_FACE.test(file)) continue;
-      const line = firstOffendingLine(
-        file,
-        /from\s+["'](@game\/request-context|@game\/routes|@game\/app|@game\/resp-schema|@game\/auth-strategy|.*request-context.*|.*\/routes["'])/,
-      );
-      if (line !== null) {
-        offenders.push(`${path.relative(APP_ROOT, file)}:${line} domain 纯领域引用根基础设施`);
-      }
-    }
-    expect(offenders).toEqual([]);
-  });
+  // 说明（2026-09-13 精简）：此处原有两条「domain 层不得依赖 service 路由/适配面」「domain 纯领域
+  // 不得引用根基础设施」用例，均在 `app/game/domain` 下扫描。该目录已随分层重构删除，`collectFiles`
+  // 恒返回空数组 → 两条用例的 `expect(offenders).toEqual([])` 永远成立（零覆盖的真空断言）。
+  // domain/service 层已不存在这一点由上面那条用例（`existsSync` 为 false + 全树无引用）覆盖，
+  // 故删除这两条空转用例，不损失任何检查能力。
 
   it("admin 层不得依赖 game 的 router 层（admin → @game/router 计数为 0）", () => {
     const adminDir = path.join(APP_ROOT, "ops", "admin");
@@ -247,7 +197,7 @@ describe("架构解耦守卫", () => {
     const offenders: string[] = [];
     for (const file of collectFiles(adminDir, ".ts")) {
       if (path.basename(file) === "game-gateway.ts") continue;
-      const lines = fs.readFileSync(file, "utf-8").split(/\r?\n/);
+      const lines = readLines(file);
       for (let i = 0; i < lines.length; i++) {
         if (lines[i].trim().startsWith("import type")) continue;
         if (gameValueModules.test(lines[i])) {

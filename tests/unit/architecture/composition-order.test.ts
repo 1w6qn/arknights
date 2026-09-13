@@ -9,13 +9,13 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
+import { readLines } from "../../helpers/fs-scan";
 
 const APP_ROOT = path.resolve(__dirname, "../../../app");
 
 /** 提取文件中匹配正则的行（trim 后），用于顺序断言 */
 function collectMatchingLines(file: string, re: RegExp): string[] {
-  const lines = fs.readFileSync(file, "utf-8").split(/\r?\n/);
-  return lines
+  return readLines(file)
     .filter((l) => re.test(l))
     .map((l) => l.trim().replace(/,$/, ""));
 }

@@ -38,7 +38,7 @@ pnpm run decompile         # 官服客户端反编译工作流（Cpp2IL→ilspyc
 
 No lint script exists（ESLint 配置在仓但 `typescript-eslint` 8 尚不支持 TS 7，跑不起来）. Verification order: `pnpm run typecheck` (= `tsc -p tsconfig.json`, app+index) → `pnpm run typecheck:scripts` (= `tsc -p tsconfig.scripts.json`, app+index+scripts) → `pnpm run typecheck:tests` (= `tsc -p tsconfig.tests.json`, 含 `tests/**`) → `pnpm exec vitest run`。（`tsc` 增量模式会吞掉未变更文件的错误——判 0 错误时加 `--incremental false`，或先删 `.tsbuildinfo`。）
 
-**类型债棘轮**：`pnpm run type:debt` 报告全仓（`app`+`scripts`+`tests`+`hook`+`index.ts`）的 `any`/`unknown`/`object` 计数与 Top 违规文件，守卫是 `tests/unit/architecture/type-debt-ratchet.test.ts`（逐文件只减不增；新文件必须零模糊类型）。**全仓 `any` 已清零（7131 → 0），并由守卫的「全仓 `any === 0`」用例固化——不得回退**；`unknown`/`object` 仍走逐文件棘轮（存量 unknown 413 / object 26）。收敛后刷新基线 `pnpm run type:debt -- --write`；**扫描范围扩容**时才用 `pnpm run type:debt -- --write --expand-scope`（只放行新增文件）。策略、四种归宿与集中 suppression 政策见 `docs/type-system-audit.md`。
+**类型债棘轮**：`pnpm run type:debt` 报告全仓（`app`+`scripts`+`tests`+`hook`+`index.ts`）的 `any`/`unknown`/`object` 计数与 Top 违规文件，守卫是 `tests/unit/architecture/type-debt-ratchet.test.ts`（逐文件只减不增；新文件必须零模糊类型）。**全仓 `any` 已清零（7131 → 0），并由守卫的「全仓 `any === 0`」用例固化——不得回退**；`unknown`/`object` 仍走逐文件棘轮（存量计数以 `tests/unit/architecture/type-debt-baseline.json` 为准）。收敛后刷新基线 `pnpm run type:debt -- --write`；**扫描范围扩容**时才用 `pnpm run type:debt -- --write --expand-scope`（只放行新增文件）。策略、四种归宿与集中 suppression 政策见 `docs/type-system-audit.md`。
 
 ## Generated files — never hand-edit
 
@@ -81,6 +81,10 @@ Game-data update (`scripts/update-data.ts`) 调用官方热更管线 `scripts/of
 
 - Vitest, globals on, node env. `tests/unit/**` mirrors `app/` layout（模块级单测放 `tests/unit/modules/<mod>/`，路由/manager 测试按原镜像路径）。**Do not add tests under `test/`** (`test/` is gitignored, `scripts/proxy-harness.ts` 是官服代理抓包 harness).
 - Helpers in `tests/helpers/`: `mockPlayerData`, `mockExcel`, `mockEventBus`, `mocks` — use these instead of loading real excel/user data.
+- **测试性能不变量（2026-09-13 实测）**：本仓在 WSL 的 9p/drvfs（`/mnt/d`）上，单次 `fs.readFileSync` 约 **36ms/文件**，因此耗时由「读盘次数」而非「断言数」决定：
+  - 架构守卫（`tests/unit/architecture/**`）扫全树时必须经 `tests/helpers/fs-scan` 的 `readSource/readLines/collectFiles`（进程内缓存）。同一测试文件内把同一批源码读N遍，代价是线性叠加的：同窗口 A/B 实测 `excel-singleton-ratchet` 17.0s→1.1s（4 次扫描→1 次）、`decoupling` 15.2s→1.9s、`inventory-pipeline-ratchet` 4.8s→1.0s。
+  - **每新增一个测试文件**都要重新加载整张 app 模块图（实测每个文件约 10~20s 的 worker 时间，而该文件的断言通常只需 1~50ms）。给已有模块加用例应优先并入既有文件，不要为每条小用例新建文件。
+  - 详证与配置对比见 `docs/test-performance-2026-09-13.md`。
 
 ## Known constraints (documented in design-spec.md)
 
