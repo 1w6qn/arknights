@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import moment from 'moment';
-import { now, checkBetween, checkNew, userTimestamp } from '@utils/time';
+import { now, realNow, virtualNow, parseVirtualTime, checkBetween, checkNew, userTimestamp } from '@utils/time';
 import config from '@core/config/index';
 
 describe('now', () => {
@@ -154,5 +154,100 @@ describe('userTimestamp（activity 切换 developer.timestamp）', () => {
     config.developer = { timestamp: now() + 999999 };
     const ts = userTimestamp();
     expect(Math.abs(ts - now())).toBeLessThan(5);
+  });
+});
+
+describe('virtualtime（DoctoratePy server.virtualtime 移植）', () => {
+  const originalVirtualTime = config.virtualtime;
+  const originalDeveloper = config.developer;
+
+  afterEach(() => {
+    config.virtualtime = originalVirtualTime;
+    config.developer = originalDeveloper;
+  });
+
+  /** 本地时区期望值（与解析实现同源，避免测试机时区差异） */
+  const localTs = (y: number, mo: number, d: number, h = 0, mi = 0, s = 0) =>
+    Math.floor(new Date(y, mo - 1, d, h, mi, s).getTime() / 1000);
+
+  it('缺省 / 负数 / 0 / 非有限数 → 未启用（回退真实时间）', () => {
+    for (const value of [undefined, -1, -114514, 0, Number.NaN, Number.POSITIVE_INFINITY]) {
+      config.virtualtime = value;
+      expect(parseVirtualTime(value)).toBeNull();
+      expect(Math.abs(virtualNow() - realNow())).toBeLessThan(5);
+      expect(Math.abs(now() - realNow())).toBeLessThan(5);
+    }
+  });
+
+  it('数值 > 0 → 冻结该时间戳（now/virtualNow 同源，realNow 不受影响）', () => {
+    config.virtualtime = 1597132800;
+    expect(virtualNow()).toBe(1597132800);
+    expect(now()).toBe(1597132800);
+    expect(Math.abs(realNow() - Date.now() / 1000)).toBeLessThan(5);
+  });
+
+  it('允许未来时间戳（推进到后续卡池/活动）', () => {
+    const future = realNow() + 86400 * 30;
+    config.virtualtime = future;
+    expect(now()).toBe(future);
+  });
+
+  it('五种字符串日期格式均按本地时区解析', () => {
+    const expected = localTs(2024, 6, 13, 12, 12, 12);
+    for (const text of [
+      '2024/06/13 12:12:12',
+      '13062024 12:12:12',
+      '13-06-2024 12:12:12',
+      '2024-06-13 12:12:12',
+      '20240613 12:12:12',
+    ]) {
+      config.virtualtime = text;
+      expect(virtualNow()).toBe(expected);
+    }
+  });
+
+  it('月/日/时/分/秒允许 1~2 位（对齐 Python strptime）', () => {
+    config.virtualtime = '2024/6/3 1:2:3';
+    expect(virtualNow()).toBe(localTs(2024, 6, 3, 1, 2, 3));
+  });
+
+  it('空白归一：首尾空白与多空格不影响解析', () => {
+    config.virtualtime = '  2024/06/13    12:12:12  ';
+    expect(virtualNow()).toBe(localTs(2024, 6, 13, 12, 12, 12));
+  });
+
+  it('非法字符串 / 空串 / 缺时间 / 越界日期 → 回退真实时间', () => {
+    for (const text of ['', '   ', 'not-a-time', '2024/06/13', '2024-13-45 99:99:99', '2024-02-31 00:00:00']) {
+      config.virtualtime = text;
+      expect(parseVirtualTime(text)).toBeNull();
+      expect(Math.abs(virtualNow() - realNow())).toBeLessThan(5);
+    }
+  });
+
+  it('布尔/null → 回退真实时间（手工改坏 config 不抛错）', () => {
+    delete config.virtualtime;
+    for (const value of [true, false, null]) {
+      expect(parseVirtualTime(value)).toBeNull();
+    }
+    expect(Math.abs(virtualNow() - realNow())).toBeLessThan(5);
+  });
+
+  it('纯数字串视同数值配置（> 0 冻结，0 视为未启用）', () => {
+    config.virtualtime = '1597132800';
+    expect(virtualNow()).toBe(1597132800);
+    config.virtualtime = '0';
+    expect(parseVirtualTime('0')).toBeNull();
+  });
+
+  it('userTimestamp 无 developer.timestamp 时跟随虚拟时钟', () => {
+    delete config.developer;
+    config.virtualtime = 1597132800;
+    expect(userTimestamp()).toBe(1597132800);
+  });
+
+  it('developer.timestamp 优先于虚拟时钟（真实过去、虚拟未来仍生效）', () => {
+    config.virtualtime = 1597132800;
+    config.developer = { timestamp: 1700000000 };
+    expect(userTimestamp()).toBe(1700000000);
   });
 });

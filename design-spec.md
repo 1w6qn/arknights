@@ -2431,3 +2431,32 @@ room-speed / dorm-recovery / mood-cost）：声明式扩展点，value 与既有
   业务编排在 controller/composition；battle.ts 等零散落直操（current.<sub> 直接改字段为 0 处）
 - 新玩法子模块按此组织：每类实体一个实例类；状态迁移/持久化/事件触发收敛到类方法；
   编排层（manager/composition）只做流程组织，不直接操作兄弟实体状态。
+
+## 36. 虚拟时钟（DoctoratePy `server.virtualtime` 移植，2026-09-13）
+
+### 36.1 定位
+`config.virtualtime` 是全局业务时间基准：`@utils/time` 的 `now()`（= `virtualNow()`，见
+`app/core/utils/time.ts`）读取之，游戏/账号/基建/活动逻辑与客户端可见 serverTime
+（`/general/v1/server_time`、config gate、syncData）统一生效；典型用途是开启旧卡池/旧活动。
+未启用时行为与历史版本完全一致。`realNow()` 是显式的真实时钟出口（基础设施/校验基准用）。
+
+### 36.2 取值语义
+| 取值 | 行为 |
+| --- | --- |
+| 缺省 / ≤ 0 / 非有限数 | 未启用（真实时间）；**0 亦按未启用**——odpy 原语义返回 1970，基建等按流逝时间结算的系统会得到数十年时长而溢出，属防呆收敛 |
+| 数值 > 0 | 冻结到该秒级时间戳（允许未来值——可用于推进到后续卡池；odpy 警示勿随意调小，大幅回退会让按流逝时间结算的系统出现异常时长） |
+| 字符串 | 纯数字串视同数值；或 `YYYY/MM/DD HH:mm:ss`、`DDMMYYYY HH:mm:ss`、`DD-MM-YYYY HH:mm:ss`、`YYYY-MM-DD HH:mm:ss`、`YYYYMMDD HH:mm:ss`（本地时区，月/日/时/分/秒 1~2 位可，空白归一）；解析失败回退真实时间 |
+| 其他（布尔/null 等） | 回退真实时间（手工改坏 config 不抛错） |
+
+解析实现为 `parseVirtualTime()` 纯函数（正则 + 本地时区构造 + 字段范围/日期回卷校验，
+不接受 JS Date 的宽松回卷如 `2024-02-31`），五种格式按 odpy 声明顺序逐个尝试。
+
+### 36.3 与 `developer.timestamp` 的关系
+`userTimestamp()` 优先 `developer.timestamp`（admin 活动切换：仅允许过去时间，按**真实**时钟
+校验，未来值回退），未设置时跟随虚拟时钟。故 admin `switchActivity` 的未来校验基准改用
+`realNow()`——虚拟时钟冻结在过去时，若仍用 `now()` 会把「真实时间的过去」误判为未来而拒绝。
+
+### 36.4 注意
+冻结是**常量时钟**：`checkNew` 日/周/月刷新、基建产能/心情、AP 与信赖恢复等依赖时间流逝的
+结算在冻结期间不推进；启动时若启用会打印 WARN 提示。config 于启动读入内存，修改后需重启；
+测试请用 `vi.mock("@utils/time")` 或临时改写 `config.virtualtime`（`afterEach` 复原）。

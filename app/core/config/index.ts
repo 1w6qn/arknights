@@ -236,6 +236,21 @@ interface UserConfig {
   singleUid?: string;
   /** 单例模式是否自动生成满配账号（全干员/全物品，随版本刷新——默认开启） */
   singleAutoMaxAccount?: boolean;
+  /**
+   * 虚拟时钟（DoctoratePy `server.virtualtime` 移植）——全局业务时间基准，
+   * 由 `@utils/time` 的 `now()` 读取（游戏逻辑/账号同步/客户端可见 serverTime 全部生效）。
+   *
+   * - 缺省 / ≤ 0：未启用，等价真实时间（保持历史行为；0 亦按未启用处理，避免 1970）
+   * - 数值 > 0：冻结到该秒级时间戳（可用于开启旧卡池/旧活动；允许未来值，
+   *   但大幅回退会让基建等「按流逝时间结算」的系统出现异常时长，确定后勿随意调小）
+   * - 字符串：纯数字串视同数值；或 `YYYY/MM/DD HH:mm:ss`、`DDMMYYYY HH:mm:ss`、
+   *   `DD-MM-YYYY HH:mm:ss`、`YYYY-MM-DD HH:mm:ss`、`YYYYMMDD HH:mm:ss`
+   *   （本地时区，1~2 位月/日/时/分/秒均接受）；无法解析时回退真实时间
+   *
+   * 提示：冻结为常量时钟，依赖时间流逝的结算（每日刷新/基建产能/AP 与信赖恢复）
+   * 在冻结期间不推进；修改后需重启（config 启动时读入内存）。
+   */
+  virtualtime?: number | string;
   /** 开发者调试配置 */
   developer?: {
     /**

@@ -40,7 +40,7 @@ import type {
 } from "./official-ops";
 import { MAIL_TEMPLATES } from "./mail-templates";
 import { exists, size, readJson, readJsonSync, writeJson } from "@utils/file";
-import { now, userTimestamp } from "@utils/time";
+import { now, realNow, userTimestamp } from "@utils/time";
 import { logger } from "@utils/logger";
 import { logService } from "@logs/log-service";
 import {
@@ -2172,7 +2172,9 @@ export class AdminService {
       if (!Number.isFinite(timestamp)) {
         throw new Error(`时间戳非法: ${timestamp}`);
       }
-      const timeNow = now();
+      // 校验基准取真实时钟：虚拟时钟（config.virtualtime）可能已冻结到过去，
+      // 用 now() 会把「真实时间的过去」误判为未来而拒绝（开发者覆盖恒优先于虚拟时钟）
+      const timeNow = realNow();
       if (timestamp > timeNow) {
         throw new Error(
           `不能设置未来时间（${timestamp} > 当前 ${timeNow}）；仅支持冻结到过去时间`,
