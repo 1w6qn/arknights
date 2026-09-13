@@ -522,6 +522,21 @@ export async function main(): Promise<void> {
         return hub?.dailySupplyLastDay === new Date().toDateString();
       },
     });
+    // 怪猎对决实时会话服（TCP + 长度前缀帧）：HTTP 侧 queryMatch/createTeam 回报
+    // serverAddress=本服:port，客户端据此连上来跑 Waiting→…→Finish 六态流程。
+    // 缺省开启（config.multiplayer.enabled=false 关闭）；capture 模式不启动。
+    if (config.multiplayer?.enabled !== false) {
+      const { startEnemyDuelSessionServer } = await import(
+        "@game/modules/activities/enemyDuel/public"
+      );
+      const mpPort = config.multiplayer?.port ?? 8543;
+      await startEnemyDuelSessionServer({
+        port: mpPort,
+        publicHost: String(config.Host).replace(/^https?:\/\//, ""),
+        singlePlayer: config.multiplayer?.singlePlayer ?? true,
+        waitSec: config.multiplayer?.waitSec ?? 30,
+      });
+    }
   }
   // auth 挂根路径：as 域接口（/user/*、/u8/*、/app/* 等）直接命中（用户最终决定，勿改回 /auth）
   app.use("/", auth);

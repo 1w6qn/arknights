@@ -115,6 +115,27 @@ describe("FBO schema 不变量", () => {
     expect(bad).toEqual([]);
   });
 
+  it("I5 中部插入样本：ItemData 的 reslockStatus/canReslock 位于 hideInItemGet 与 classifyType 之间", () => {
+    // obs 2.7.61 基线里这两个字段不存在，2.7.71 插在中部（其后 slot 全体 +2）。
+    // 该顺序是 CS 声明序 = FBO vtable slot 序的活样本；若生成器丢字段/插错位，这里会红。
+    // 详见 docs/fbs-schema-repair-2026-09-12.md「obs 历史 FBS 基线」一节。
+    const item = files.find((f) => f.name === "item_table.json");
+    expect(item).toBeDefined();
+    const fields = item?.schema.tables["clz_Torappu_ItemData"];
+    expect(fields).toBeDefined();
+    const byName = new Map((fields ?? []).map((f) => [f.name, f]));
+    const names = ["HideInItemGet", "ReslockStatus", "CanReslock", "ClassifyType", "ItemType"];
+    const slots = names.map((n) => {
+      const f = byName.get(n);
+      expect(f, `ItemData 缺少字段 ${n}`).toBeDefined();
+      return f?.slot ?? -1;
+    });
+    // 严格递增且步长为 2（相邻 slot），即插入未被挤到尾部
+    for (let i = 1; i < slots.length; i += 1) {
+      expect(slots[i] - slots[i - 1]).toBe(2);
+    }
+  });
+
   it("负样本自证：悬空引用能被检出（守卫有效性）", () => {
     const fake: Schema = {
       root: "clz_Root",

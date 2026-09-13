@@ -55,6 +55,8 @@
     "schema:write": "tsx scripts/cs2schema.ts --write",
     "schema:diff": "tsx scripts/cs2schema.ts --check --diff 20",
     "schema:crosscheck": "tsx scripts/fbs-crosscheck.ts",
+    "schema:timeline": "tsx scripts/fbs-field-timeline.ts",
+    "routes:diff": "tsx scripts/route-diff.ts",
     "schema:audit": "tsx scripts/schema-audit.ts",
     "pack:mod": "tsx scripts/pack-mod.ts",
     "inject:lua": "tsx scripts/inject-lua-inplace.ts",

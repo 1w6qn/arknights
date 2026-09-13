@@ -201,6 +201,31 @@ export const bossRushRelicUpgradeSchema = z.object({
 
 /* ===== 怪猎对决（enemyDuel） ===== */
 
+/**
+ * 怪猎对决单回合存活单位（CS: Torappu.EnemyDuel.SurviveUnitInfo）
+ *
+ * 真值来自官方客户端抓包（`reference/obs` 的 Insight `data/*.jsonl`）：
+ * `[{ round, unitIds: { <enemyId>: <count> } }]`，round 0..9 每回合一条。
+ * 服务端当前只校验结构、不读值，但按协议收紧后解锁结算校验/统计能力。
+ */
+export const enemyDuelSurviveUnitSchema = z.object({
+  round: z.number(),
+  unitIds: z.record(z.string(), z.number()),
+});
+
+/**
+ * 怪猎对决单回合出生单位（CS: Torappu.EnemyDuel.BornUnitInfo）
+ *
+ * 抓包真值：`[{ round, leftUnitIds: { <enemyId>: <count> }, rightUnitIds: {...} }]`；
+ * Insight 另把右阵营计负数合并为单一 `<enemyId> → ±count` 映射（`reader.ts:21-29`），
+ * 那是它自己的展示口径，不是请求线格式——请求里左右分开。
+ */
+export const enemyDuelBornUnitSchema = z.object({
+  round: z.number(),
+  leftUnitIds: z.record(z.string(), z.number()),
+  rightUnitIds: z.record(z.string(), z.number()),
+});
+
 /** 怪猎对决单人开始战斗（CS: EnemyDuelSingleBattleStartRequest；服务端不读 body） */
 export const enemyDuelSingleBattleStartSchema = z.object({
   activityId: z.string().optional(),
@@ -218,11 +243,12 @@ export const enemyDuelSingleBattleFinishSchema = z.object({
     })
     .passthrough()
     .optional(),
-  // 服务端不读 data/battleData/surviveUnits/bornUnits，标可选
+  // 服务端不读 data/battleData，标可选
   data: z.string().optional(),
   battleData: z.json().optional(),
-  surviveUnits: z.array(z.json()).optional(),
-  bornUnits: z.array(z.json()).optional(),
+  // surviveUnits/bornUnits 结构已由抓包真值确定，按协议收紧（不再透传任意 JSON）
+  surviveUnits: z.array(enemyDuelSurviveUnitSchema).optional(),
+  bornUnits: z.array(enemyDuelBornUnitSchema).optional(),
 });
 
 /** 怪猎对决开始匹配（CS: EnemyDuelStartMatchRequest；服务端读 activityId/modeId） */
@@ -262,8 +288,8 @@ export const enemyDuelMultiBattleFinishSchema = z.object({
   sceneId: z.string().optional(),
   data: z.string().optional(),
   battleData: z.json().optional(),
-  surviveUnits: z.array(z.json()).optional(),
-  bornUnits: z.array(z.json()).optional(),
+  surviveUnits: z.array(enemyDuelSurviveUnitSchema).optional(),
+  bornUnits: z.array(enemyDuelBornUnitSchema).optional(),
 });
 
 /* ===== 怪猎（act24side） ===== */

@@ -31,8 +31,10 @@ pnpm run generate:mapviz   # scripts/generate-mapviz-data.ts → data/mapviz/gam
 pnpm run schema:check      # FBO schema 漂移检查（与 reference/ 最新 CS 签名逐字段比对；有 slot 位移则非 0 退出）
 pnpm run schema:diff       # 同上 + 打印前 20 处差异明细
 pnpm run schema:write      # 按 CS 签名重写 scripts/vendor/fbs-schemas/*.json（改动即生效，谨慎）
-pnpm run schema:crosscheck # 与 reference/OpenArknightsFBS-main/FBS 交叉校验（缺表/缺字段/悬空引用/读宽）；-- --md <path> 出报告，-- --strict 有硬漂移时非 0 退出
+pnpm run schema:crosscheck # 与 reference/OpenArknightsFBS-main/FBS 交叉校验（缺表/缺字段/悬空引用/读宽）；-- --md <path> 出报告，-- --strict 有硬漂移时非 0 退出；-- --fbs-zip reference/obs/OpenBachelorM-master.zip --fbs-version 2.7.61 现抽 obs 历史版本再比对
+pnpm run schema:timeline   # 逐版本字段时间线（哪个字段哪个版本冒出来）：-- --table item_table [--struct clz_Torappu_ItemData] [--versions a,b]
 pnpm run schema:audit      # 报文真值审计：解码官方 bundle 比对 vtable 声明字段数 vs schema 字段数（缺字段/多字段）；-- --json <path> 落盘
+pnpm run routes:diff       # OBS(OpenBachelorS) ⇄ 本仓路由差集（挂载感知，静态近似）；-- --json <path> 落盘
 pnpm run decompile         # 官服客户端反编译工作流（Cpp2IL→ilspycmd→dump-cs-signature.py），产出 reference/arknights-<版本>-csharp/（含方法体的 C# 源码）+ reference/com.hypergryph.arknights_<版本>.cs（签名文件，供 generate:types 再生类型；均 gitignored）；末尾自动跑 schema:check 门禁
 ```
 

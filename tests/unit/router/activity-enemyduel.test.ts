@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { JsonValue } from "@excel/json-value";
 
 vi.mock("express-http-context2", () => ({
   default: { get: vi.fn(), set: vi.fn() },
@@ -57,13 +58,30 @@ interface EnemyDuelBody {
   needLeave?: boolean;
   battleData?: { isCheat?: string; completeTime?: number };
   settle?: { rankList?: { id?: string; rank?: number; score?: number; isPlayer?: number }[] };
+  /** 抓包真值形状：`[{ round, unitIds: { <enemyId>: count } }]` */
+  surviveUnits?: { round: number; unitIds: Record<string, number> }[];
+  /** 抓包真值形状：`[{ round, leftUnitIds, rightUnitIds }]`（右阵营为正数，非 Insight 的负数合并口径） */
+  bornUnits?: {
+    round: number;
+    leftUnitIds: Record<string, number>;
+    rightUnitIds: Record<string, number>;
+  }[];
 }
+
+/**
+ * 路由测试请求体
+ *
+ * 除合法请求外，还要能发**故意非法**的 JSON（用于覆盖 zod 拒绝分支，如
+ * `surviveUnits[].unitIds` 给字符串）——故走 HTTP 边界的原始 JSON 形态，
+ * 而不是给非法夹具套 `as unknown as` 断言（那会掩盖夹具本身的类型错误）。
+ */
+type TestBody = EnemyDuelBody | Record<string, JsonValue>;
 
 /** 路由测试请求视图（只声明被测分支读到的三个成员） */
 interface MockReq {
   method: string;
   url: string;
-  body: EnemyDuelBody;
+  body: TestBody;
 }
 
 /** 路由测试响应视图（只声明被测分支读到的四个方法） */
@@ -121,7 +139,7 @@ describe("enemyDuel（怪猎对决）路由", () => {
     vi.mocked(httpContext.get).mockReturnValue(player);
   });
 
-  async function call(url: string, body: EnemyDuelBody) {
+  async function call(url: string, body: TestBody) {
     const req: MockReq = { method: "POST", url, body };
     // mock 请求/响应只覆盖被测分支用到的成员，故按窄视图断言为 express Request/Response
     activityRouter(req as RouterReq, res as Response, () => {});
@@ -202,5 +220,64 @@ describe("enemyDuel（怪猎对决）路由", () => {
     expect(finishSent.result).toBe(0);
     expect(finishSent.rankList.length).toBeGreaterThanOrEqual(1);
     expect(finishSent.rankList[0].isPlayer).toBe(1);
+  });
+
+  // 真值样本取自参考包 Insight 的抓包 jsonl（act3enemyduel_01a），字段名与嵌套形状一字不改
+  const REAL_SURVIVE_UNITS: NonNullable<EnemyDuelBody["surviveUnits"]> = [
+    { round: 0, unitIds: { enemy_15013_dqsnsl: 1 } },
+    { round: 1, unitIds: { enemy_15018_dqskzc: 2 } },
+    { round: 2, unitIds: { enemy_5030_dqpro_3: 22, enemy_15026_dqmtrf: 2 } },
+  ];
+  const REAL_BORN_UNITS: NonNullable<EnemyDuelBody["bornUnits"]> = [
+    {
+      round: 0,
+      leftUnitIds: { enemy_15013_dqsnsl: 12 },
+      rightUnitIds: { enemy_5055_dqkill: 1 },
+    },
+    {
+      round: 1,
+      leftUnitIds: { enemy_15002_dqwing: 4 },
+      rightUnitIds: { enemy_15018_dqskzc: 3 },
+    },
+  ];
+
+  it("singleBattleFinish 应接受抓包真值形状的 surviveUnits/bornUnits", async () => {
+    await call("/enemyDuel/singleBattleFinish", {
+      activityId: "act1enemyduel",
+      data: "x",
+      battleData: { isCheat: "0", completeTime: 1 },
+      surviveUnits: REAL_SURVIVE_UNITS,
+      bornUnits: REAL_BORN_UNITS,
+    });
+    expect(res.status).not.toHaveBeenCalledWith(422);
+    const sent = vi.mocked(res.send).mock.calls[0][0];
+    expect(sent.result).toBe(0);
+  });
+
+  it("multiBattleFinish 应接受抓包真值形状的 surviveUnits/bornUnits", async () => {
+    await call("/enemyDuel/multiBattleFinish", {
+      activityId: "act1enemyduel",
+      sceneId: "scene_1",
+      data: "x",
+      battleData: { isCheat: "0", completeTime: 1 },
+      surviveUnits: REAL_SURVIVE_UNITS,
+      bornUnits: REAL_BORN_UNITS,
+    });
+    expect(res.status).not.toHaveBeenCalledWith(422);
+    const sent = vi.mocked(res.send).mock.calls[0][0];
+    expect(sent.result).toBe(0);
+  });
+
+  it("singleBattleFinish 遇结构不符的 surviveUnits 应被 422 拦下（不再透传任意 JSON）", async () => {
+    await call("/enemyDuel/singleBattleFinish", {
+      activityId: "act1enemyduel",
+      data: "x",
+      battleData: { isCheat: "0", completeTime: 1 },
+      // 数量为字符串（旧 z.json() 会放行），类型化后应拒绝
+      surviveUnits: [{ round: 0, unitIds: { enemy_1: "1" } }],
+    });
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.send).not.toHaveBeenCalled();
+    expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ result: -1 });
   });
 });

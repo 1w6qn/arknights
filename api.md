@@ -1606,6 +1606,17 @@ OAuth2 授权
 
 以下端点从 `reference/OpenBachelorS-master` 移植，参考对应 bp 蓝图实现（响应体以 OBS 为基准，简化为私服可用形式）。
 
+> **现状（2026-09-13 复核）**：参考目录 `reference/OpenBachelorS-master/` 与当时的比对脚本 `scripts/_diff-routes.py`
+> **都已不在工作区**（`_diff-routes.py` 的挂载前缀是硬编码的，模块拆分后会产生假阴性）。参考包现保留为
+> `reference/obs/OpenBachelorS-master.zip`（需 python `zipfile` 抽，本机无 unzip/7z）。
+> 挂载感知的差集工具已重建为 `pnpm run routes:diff`（`scripts/route-diff.ts`：从 `app/game/routes.ts`
+> 声明式路由表 + `app/server.ts` 的 `app.use` 现场推导挂载前缀，并处理 `for...of` 数组注册、URL 重写别名、
+> 路径参数通配与大小写不敏感）。当前结果：OBS 265 条路径**全部覆盖（0 缺口）**——
+> 原先疑似缺口的 `/shop/getRepGoodList` 实为本仓 `/shop/getREPGoodList`（Express 大小写不敏感），
+> `/sandboxPerm/sandboxV2/racing/battleStart|battleFinish` 已补别名路由（`sandbox/routes.ts` 的
+> `/v2/racing/battleStart|battleFinish`，同为 202 stub）。
+> 该工具仅作静态近似，新增 `rewrite` 函数或非常规注册（模板变量拼路径等）需同步其别名表/展开规则。
+
 ### 修正（原有契约对齐）
 
 | 方法 | 路径 | 说明 |

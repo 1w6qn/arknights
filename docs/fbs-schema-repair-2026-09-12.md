@@ -89,3 +89,58 @@ pnpm exec vitest run tests/unit/scripts/fbs-schema-invariants.test.ts tests/unit
 
 客户端更新后：`pnpm run decompile` → `pnpm run schema:write` → `pnpm run schema:audit`（三条口径互为交叉验证；
 `schema:check` 仍作为 slot 位移的入口门禁）。
+
+## 五、obs 历史 FBS 基线（2.0.01 → 2.7.61）
+
+2026-09-13 加入。参考包 `reference/obs/OpenBachelorM-master.zip` 内 `fbs/<版本>/*.fbs` 保留了
+**38 个历史版本、1816 个 `.fbs`**（与 `reference/OpenArknightsFBS-main` 同一上游 OpenArknightsFBS），
+可当「某个字段/结构在哪个版本出现」的历史真值源。
+
+**取数命令**（`--fbs-zip` / `--fbs-version` 为本轮给 `schema:crosscheck` 新增的选项，会现抽到 gitignore 的 `tmp/obs-fbs/<版本>/`）：
+
+```bash
+pnpm run schema:crosscheck -- --fbs-zip reference/obs/OpenBachelorM-master.zip --fbs-version 2.7.61
+```
+
+**2.7.61 基线实测**（与本地 schema 比对；本地对应 2.7.71 CS 签名）：
+
+```
+比对 61 组 schema（FBS 2940 表 / 本地 2953 表）
+表集合: FBS 独有 3（另有 11 张 list_ 向量包装表，本地内联为 vec:，非缺口） / 本地独有 29
+表内字段: 本地缺字段 3 表；同槽位改名 41 表；本地多字段 22 表；序不一致 0 表；类型宽度不一致 8 表
+悬空引用: 本地 0 处 / FBS 0 处
+本地未解析类型 token(unknown): 5 处
+slot 自洽性异常: 0 处；root 不一致: 0 处
+```
+
+即：**2.7.61 与本地没有任何「序不一致」或 slot 异常**，版本差只体现为参考副本落后（FBS 独有表 / 本地多字段），
+与本项目「schema 由 2.7.71 CS 签名生成」的定位一致。可作后续漂移对比的固定基线。
+
+**`clz_Torappu_ItemData` 中部插入活样本**（R3 那类「中间插入 → 其后 slot 全体位移」的真实版本样本）：
+
+| 版本 | hideInItemGet | 其后字段（顺序） |
+| --- | --- | --- |
+| obs 2.7.61（基线） | 有 | `classifyType → itemType → stageDropList → buildingProductList → voucherRelateList → shopRelateInfoList` |
+| CS 2.7.71 / 本地 schema | 有（slot 24） | `reslockStatus(26) → canReslock(28) → classifyType(30) → itemType(32) → …`（全部后移 2 槽） |
+
+即 `reslockStatus`/`canReslock` 是在 2.7.71 插在 `hideInItemGet` 与 `classifyType` **之间**；
+用 2.7.71 schema 解 2.7.61 报文（或反之）会从 `classifyType` 起整体错位——这正是 `schema:check` 门禁要拦的形态。
+
+**字段引入归因**（新增工具 `pnpm run schema:timeline`，逐版本打印字段数与相对上一版的增删）：
+
+```bash
+pnpm run schema:timeline -- --table item_table --struct clz_Torappu_ItemData
+pnpm run schema:timeline -- --table stage_table            # 省略 --struct 时读 fbs 的 root_type
+```
+
+实测数据点（`+` 为该版本新增字段）：
+
+| 表.结构 | 2.0.40 | 2.1.01 | 2.5.04 | 2.5.80 | 2.6.61 | 2.7.01 | 2.7.61 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `item_table.clz_Torappu_ItemData` | 15 | 16（+voucherRelateList） | 16 | 17（+shopRelateInfoList） | 17 | 17 | 17 |
+| `stage_table.clz_Torappu_StageTable`（root） | 17 | 18 | 27 | 27 | 28（+conditionalDropInfo） | 31（+cgGalleryDisplays/Groups/Cgs） | 31 |
+
+（`item_table.fbs` 最早出现在 2.0.40；2.0.01/2.0.11 无此文件。`stage_table.fbs` 38 版齐全。）
+
+**边界**：obs 最高只到 **2.7.61**，**不含 2.7.71**，不能替代 CS 反编译签名链路（`pnpm run decompile` → `schema:check/write`），
+只能作历史真值源与回归数据源。

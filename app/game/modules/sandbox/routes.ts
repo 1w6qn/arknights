@@ -1119,6 +1119,29 @@ router.post("/racingBattleStart", validateBody(ReqSchema.racingBattleStartSchema
 });
 
 /**
+ * 沙盒竞速战斗开始/结束（OBS 客户端路径形态，2026-09-13 补别名）
+ *
+ * OBS `bp_sandboxPerm.py` 声明的路径是 `/sandboxPerm/sandboxV2/racing/battleStart|battleFinish`
+ * （经 routes.ts 的 `sandboxPermRewrite` 映射为 router 内 `/v2/racing/battleStart|battleFinish`）；
+ * 本模块历史命名为 `/racingBattleStart|Finish`，两者并存以对齐客户端实际调用。
+ * @route POST /sandbox/v2/racing/battleStart
+ * @returns 空响应（202）
+ */
+router.post("/v2/racing/battleStart", validateBody(ReqSchema.racingBattleStartSchema), async (req, res) => {
+  req.body as SandboxV2RacingBattleStartRequest;
+  res.sendStatus(202);
+});
+
+/**
+ * 沙盒竞速战斗结束（OBS 客户端路径形态）
+ * @route POST /sandbox/v2/racing/battleFinish
+ * @returns 空响应（202）
+ */
+router.post("/v2/racing/battleFinish", validateBody(ReqSchema.racingBattleFinishSchema), async (_req, res) => {
+  res.sendStatus(202);
+});
+
+/**
  * 沙盒竞速学习天赋
  * @route POST /sandbox/racingLearnTalent
  * @returns 空响应（202）

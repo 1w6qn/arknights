@@ -180,6 +180,23 @@ interface UserConfig {
      */
     guideProgressive?: boolean;
   };
+  /**
+   * 怪猎对决（EnemyDuel）实时会话服配置
+   *
+   * 对应参考实现 OpenBachelorSS（TCP + 长度前缀二进制帧，见
+   * `app/game/modules/activities/enemyDuel/session/`）。HTTP 侧 enemyDuel
+   * 路由把 `serverAddress` 回报为 `${Host}:${port}`，客户端据此连本服。
+   */
+  multiplayer?: {
+    /** 是否启动会话服（缺省 true；false 时 serverAddress 回退 HTTP 端口，客户端连不上即超时） */
+    enabled?: boolean;
+    /** 监听端口（缺省 8543，对齐参考实现） */
+    port?: number;
+    /** 单人模式：所需人数压成 1，单人也能开局（缺省 true，首版只走单人链路） */
+    singlePlayer?: boolean;
+    /** 等待开局超时秒数（Waiting 态上限，缺省 30） */
+    waitSec?: number;
+  };
   /** 调试配置 */
   debug?: {
     /** 是否记录请求/响应到统一抓包存储 tmp/capture/（traffic-recorder 中间件） */

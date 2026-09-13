@@ -461,14 +461,33 @@ export interface EnemyDuelRankInfo {
   playerBrief?: unknown;
 }
 
+/**
+ * 怪猎对决单回合存活单位（CS: Torappu.EnemyDuel.SurviveUnitInfo）
+ * `unitIds` 为 `<enemyId, 数量>` 映射，round 0..9；真值见抓包（Insight `data/*.jsonl`）
+ */
+export interface EnemyDuelSurviveUnit {
+  round: number;
+  unitIds: Record<string, number>;
+}
+
+/**
+ * 怪猎对决单回合出生单位（CS: Torappu.EnemyDuel.BornUnitInfo）
+ * 左右阵营分别给出 `<enemyId, 数量>` 映射（右阵营在请求里是正数，非 Insight 的负数合并口径）
+ */
+export interface EnemyDuelBornUnit {
+  round: number;
+  leftUnitIds: Record<string, number>;
+  rightUnitIds: Record<string, number>;
+}
+
 /** 怪猎对决单人结算请求（CS: EnemyDuelSingleBattleFinishRequest : CommonFinishBattleRequest） */
 export interface EnemyDuelSingleBattleFinishRequest {
   activityId: string;
   data: string;
   battleData: { isCheat: string; completeTime: number };
   settle?: { rankList?: EnemyDuelRankInfo[] };
-  surviveUnits?: unknown[];
-  bornUnits?: unknown[];
+  surviveUnits?: EnemyDuelSurviveUnit[];
+  bornUnits?: EnemyDuelBornUnit[];
 }
 
 /** 怪猎对决多人结算请求（CS: EnemyDuelMultiBattleFinishRequest : CommonFinishBattleRequest） */
@@ -477,8 +496,8 @@ export interface EnemyDuelMultiBattleFinishRequest {
   sceneId: string;
   data: string;
   battleData: { isCheat: string; completeTime: number };
-  surviveUnits?: unknown[];
-  bornUnits?: unknown[];
+  surviveUnits?: EnemyDuelSurviveUnit[];
+  bornUnits?: EnemyDuelBornUnit[];
 }
 
 /**

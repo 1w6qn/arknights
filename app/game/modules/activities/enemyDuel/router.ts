@@ -133,6 +133,7 @@ import {
   ActivityStubResponse,
 } from "../shared/activity";
 import { validateBody } from "../../../kernel/http/validate-body";
+import { getEnemyDuelSessionAddress } from "./public";
 
 let enemyDuelMatchState: { activityId: string; modeId: string } | null = null;
 
@@ -147,8 +148,17 @@ function genEnemyDuelId(): string {
   )}-${out.slice(20)}`;
 }
 
+/**
+ * 会话服对外地址（客户端拿 serverAddress 后 TCP 连过去）
+ *
+ * 会话服已启动时用其实际监听端口（端口避让后仍正确）；未启动回退配置端口/HTTP 端口
+ * （客户端连不上会超时，等价旧的 stub 行为）。
+ */
 function enemyDuelServerAddress(): string {
-  return `${String(config.Host).replace(/^https?:\/\//, "")}:${config.PORT}`;
+  const running = getEnemyDuelSessionAddress();
+  if (running) return running;
+  const host = String(config.Host).replace(/^https?:\/\//, "");
+  return `${host}:${config.multiplayer?.port ?? config.PORT}`;
 }
 
 function buildEnemyDuelFinishResponse(

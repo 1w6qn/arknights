@@ -15,12 +15,21 @@
  *   pnpm run schema:crosscheck -- --json tmp/crosscheck.json    # 机器可读全量结果
  *   pnpm run schema:crosscheck -- --table item_table            # 只看某张表
  *   pnpm run schema:crosscheck -- --strict                      # 有硬漂移时非 0 退出
+ *   pnpm run schema:crosscheck -- --fbs-zip reference/obs/OpenBachelorM-master.zip --fbs-version 2.7.61
+ *                                                               # 从 obs 参考包 zip 现抽历史版本 FBS 再比对
  *
  * 输入目录均可覆盖：`--fbs <dir>` / `--schema <dir>`。`reference/` 被 gitignore，
  * 参考副本缺失时本工具跳过并提示，不报错。
+ *
+ * 历史基线：`reference/obs/OpenBachelorM-master.zip` 内 `fbs/<版本>/*.fbs` 保留了
+ * 2.0.01→2.7.61 共 38 个版本的 FBS（与 `reference/OpenArknightsFBS-main` 同一上游）。
+ * 其中 2.7.61 是 `clz_Torappu_ItemData.reslockStatus/canReslock` 在 2.7.71 插入前的基线，
+ * 用作「中间插入 → 其后 slot 全体位移」的回归数据源；详见
+ * `docs/fbs-schema-repair-2026-09-12.md` 的「obs 历史 FBS 基线」一节。
  */
 import * as fs from "fs";
 import * as path from "path";
+import JSZip from "jszip";
 
 const ROOT = path.join(__dirname, "..");
 const DEFAULT_FBS_DIR = path.join(ROOT, "reference", "OpenArknightsFBS-main", "FBS");
@@ -37,8 +46,11 @@ function flag(name: string): boolean {
   return argv.includes(name);
 }
 
-const FBS_DIR = opt("--fbs") ?? DEFAULT_FBS_DIR;
+const FBS_DIR_OPT = opt("--fbs");
+let FBS_DIR = FBS_DIR_OPT ?? DEFAULT_FBS_DIR;
 const SCHEMA_DIR = opt("--schema") ?? DEFAULT_SCHEMA_DIR;
+const FBS_ZIP = opt("--fbs-zip");
+const FBS_VERSION = opt("--fbs-version");
 const TABLE_FILTER = opt("--table");
 const SAMPLES = Number(opt("--samples") ?? 5);
 const STRICT = flag("--strict");
@@ -413,8 +425,49 @@ function diffTable(
   };
 }
 
+/**
+ * 从参考包 zip 中抽出指定版本的历史 FBS 到 `tmp/obs-fbs/<版本>/`
+ *
+ * zip 内路径约定 `<repo>-master/fbs/<版本>/*.fbs`（`reference/obs/OpenBachelorM-master.zip`）。
+ * `tmp/` 被 gitignore，抽出结果是一次性产物；每次调用覆盖同名文件。
+ *
+ * @param zipRel  参考包路径（相对仓库根，或绝对路径）
+ * @param version 客户端版本号，如 `2.7.61`
+ * @returns 抽出目录的绝对路径；参考包缺失或该版本不存在时返回 `null`（按既有约定跳过而非报错）
+ */
+async function extractFbsFromZip(zipRel: string, version: string): Promise<string | null> {
+  const zipPath = path.isAbsolute(zipRel) ? zipRel : path.join(ROOT, zipRel);
+  if (!fs.existsSync(zipPath)) {
+    console.log(`[SKIP] 参考包不存在：${zipRel}`);
+    console.log("       历史 FBS 基线需要 reference/obs/OpenBachelorM-master.zip（gitignore 目录）。");
+    return null;
+  }
+  const zip = await JSZip.loadAsync(fs.readFileSync(zipPath));
+  const outDir = path.join(ROOT, "tmp", "obs-fbs", version);
+  const marker = `/fbs/${version}/`;
+  let count = 0;
+  for (const [name, entry] of Object.entries(zip.files)) {
+    if (entry.dir || !name.includes(marker) || !name.endsWith(".fbs")) continue;
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(path.join(outDir, path.basename(name)), await entry.async("nodebuffer"));
+    count += 1;
+  }
+  if (count === 0) {
+    console.log(`[SKIP] 参考包 ${zipRel} 中未找到 fbs/${version}/*.fbs`);
+    return null;
+  }
+  console.log(`[INFO] 已从 ${zipRel} 抽出 ${count} 个 .fbs → ${path.relative(ROOT, outDir)}`);
+  return outDir;
+}
+
 /** 主流程：解析两侧、逐表比对、产出报告 */
-function main(): void {
+async function main(): Promise<void> {
+  // obs 历史 FBS 以 zip 形式随参考包保留，需要时现抽到 tmp/obs-fbs/<版本>/
+  if (FBS_ZIP && FBS_VERSION) {
+    const extracted = await extractFbsFromZip(FBS_ZIP, FBS_VERSION);
+    if (!extracted) return;
+    FBS_DIR = extracted;
+  }
   if (!fs.existsSync(FBS_DIR)) {
     console.log(`[SKIP] 参考副本不存在：${path.relative(ROOT, FBS_DIR)}`);
     console.log("       这是 gitignore 目录，需要本地放一份 OpenArknightsFBS（或 --fbs 指定路径）。");
@@ -803,4 +856,7 @@ function renderMarkdown(r: Report): string {
   return L.join("\n");
 }
 
-main();
+main().catch((err: unknown) => {
+  console.error(err);
+  process.exitCode = 1;
+});
