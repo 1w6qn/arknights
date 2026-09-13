@@ -58,6 +58,7 @@
     "schema:timeline": "tsx scripts/fbs-field-timeline.ts",
     "routes:diff": "tsx scripts/route-diff.ts",
     "schema:audit": "tsx scripts/schema-audit.ts",
+    "fetch:hotupdate-history": "tsx scripts/fetch-hotupdate-history.ts",
     "pack:mod": "tsx scripts/pack-mod.ts",
     "inject:lua": "tsx scripts/inject-lua-inplace.ts",
     "apk:lua": "tsx scripts/apk-lua.ts",
