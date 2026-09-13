@@ -20,7 +20,7 @@ import type {
   StatusExt,
   TradingOrder,
 } from "@game/modules/building/logic/ext-types";
-import type { FriendDataWithNameCard } from "@game/modules/social/social-model";
+import type { FriendDataWithNameCard } from "@game/kernel/social-model";
 
 /** excel mock 行形状（本文件用到的字段即可） */
 interface ExcelRowMock { name?: string }

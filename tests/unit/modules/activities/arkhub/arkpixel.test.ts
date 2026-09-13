@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { parseMultipartForm } from "@game/kernel/util/multipart";
+import { parseMultipartForm } from "@utils/multipart";
 import {
   setPixelsDirForTest,
   savePixel,

@@ -6,7 +6,7 @@
  */
 
 import { readJson, readJsonSync } from "@utils/file";
-import { excelFilePath } from "./excel-data-dir";
+import { excelFilePath } from "@core/data/excel-data-dir";
 import { logger } from "@utils/logger";
 import {
   ActivityTable,
@@ -233,7 +233,7 @@ import {
 
 import { buildRoguelikeConsts } from "./roguelike_consts_gen";
 import { normalizeRoguelikeTopicTable } from "./roguelike-keys";
-import { verifyLoadedDataVersion } from "./data-version";
+import { verifyLoadedDataVersion } from "@core/data/data-version";
 import type { JsonObject, JsonValue } from "./json-value";
 
 /**

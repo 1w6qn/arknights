@@ -12,7 +12,7 @@ import { getPlayer, getPlayerOptional } from "../../kernel/http/request-context"
 import { PlayerDataManager } from "../../kernel/PlayerDataManager";
 import type { PlayerDataModel } from "../../kernel/playerdata";
 import type { PlayerMainlineExplore_PlayerExploreOuterContext } from "@excel/types-playerdata";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   confirmMissionListSchema,
   confirmMissionSchema,

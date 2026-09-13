@@ -9,7 +9,7 @@
 import type {
   PlayerRoguelikeV2,
   RoguelikeItemBundle,
-} from "../../modules/roguelike/rlv2-model";
+} from "../rlv2-model";
 import type { RoguelikeBuff } from "@excel/excel";
 import type { BattleData } from "../battle-model";
 

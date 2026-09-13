@@ -1,6 +1,6 @@
 import { ItemBundle } from "@excel/excel";
 import type { ShopSkinItemViewModel } from "@excel/excel";
-import { getIn } from "../../kernel/util/json-path";
+import { getIn } from "@utils/json-path";
 import { isJsonObject, type JsonValue } from "@excel/json-value";
 /**
  * 商店路由模块
@@ -102,7 +102,7 @@ import {
   getGoodPurchaseStateSchema,
   useVoucherSkinSchema,
 } from "./schemas";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 const router = Router();
 

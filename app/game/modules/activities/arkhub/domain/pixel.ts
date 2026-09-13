@@ -22,7 +22,7 @@ import {
   PIXEL_PALETTE,
   type PixelInput,
 } from "./pixel-format";
-import { BadRequestError } from "../../../../kernel/http/errors";
+import { BadRequestError } from "@core/http/errors";
 
 /** 像素存储目录（gitignored 运行时数据；index.json 为元数据索引；测试可注入临时目录） */
 export let PIXELS_DIR = path.resolve("data/arkhub/pixels");

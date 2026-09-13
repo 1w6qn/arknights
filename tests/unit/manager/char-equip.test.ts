@@ -137,7 +137,7 @@ import { mockPlayerData, mockTypedEventEmitter, asPlayerManager } from "../../he
 import type { PlayerCharacter } from "@game/kernel/model";
 import { CharManager } from "@game/modules/character/char";
 import { EquipmentMissionManager } from "@game/modules/equipmentMission/equipmentMission";
-import { reconcileCharEquips } from "@game/modules/character/char-skills";
+import { reconcileCharEquips } from "@game/kernel/char-skills";
 
 /** 构造一份基础干员夹具（可覆盖局部字段；缺省字段由被测实现的惰性分支承受） */
 function makeChar(overrides: Partial<PlayerCharacter> = {}): PlayerCharacter {

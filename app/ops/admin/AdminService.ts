@@ -16,7 +16,7 @@ import { getRoomPhase } from "@excel/building_excel";
 import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
 import { PlayerDataModel } from "@game/kernel/playerdata";
 import type { PlayerCharEquipInfo, PlayerCharacter } from "@game/kernel/model";
-import { acceptJsonValue, delIn, getIn, incIn, setIn } from "@game/kernel/util/json-path";
+import { acceptJsonValue, delIn, getIn, incIn, setIn } from "@utils/json-path";
 import { isJsonObject } from "@excel/json-value";
 import type { JsonValue } from "@excel/json-value";
 import type { RoguelikeV2Manager } from "@game/modules/roguelike/logic";
@@ -42,7 +42,7 @@ import { MAIL_TEMPLATES } from "./mail-templates";
 import { exists, size, readJson, readJsonSync, writeJson } from "@utils/file";
 import { now, realNow, userTimestamp } from "@utils/time";
 import { logger } from "@utils/logger";
-import { logService } from "@logs/log-service";
+import { logService, registerAuditLogSource } from "@logs/log-service";
 import {
   startBackfillTask,
   getBackfillTask as getAssetBackfillTask,
@@ -362,7 +362,7 @@ function rlv2AuthoritativeRoot(
 /**
  * 沿 JSON 路径对 rlv2 current 子树应用单个补丁（set/del/inc）。
  *
- * 路径遍历收敛在 `@game/kernel/util/json-path`（严格 `JsonValue` 域，容器形态
+ * 路径遍历收敛在 `@utils/json-path`（严格 `JsonValue` 域，容器形态
  * 分派只在该模块内做一次）。修改对象（含数组）须为可变——rlv2 是 autoFreeze
  * 兼容的可写孤岛，直接改即可。
  * @param root  - 权威根对象（管理器实例或其 JSON 子树，形状由调用方保证）
@@ -396,7 +396,7 @@ export function applyRlv2Patch<T>(
  * 补齐阿米娅升变模板（currentTmpl + 三形态 tmpl 映射）
  *
  * `buildMaxedChar`（scripts/generate-max-account）返回 `Record<string, unknown>`
- * ——动态 JSON 产物。这里经 `@game/kernel/util/json-path` 的 JSON 域接纳点
+ * ——动态 JSON 产物。这里经 `@utils/json-path` 的 JSON 域接纳点
  * （{@link acceptJsonValue} + {@link setIn}）写回，避免为动态结构写 `as any` 断言；
  * `currentTmpl` 按字符串收窄后直接赋值（非字符串即不写，与迁移前写 undefined 的
  * 可序列化结果一致，见 save-health 的模板字段归一化规则）。
@@ -495,6 +495,12 @@ function pickRlv2SimSnapshot(data: JsonValue): Rlv2SimSnapshot | null {
 }
 
 export class AdminService {
+  constructor() {
+    // 审计日志源注册（2026-09-13）：core 的 log-service 不再反向 import 本模块（R1），
+    // 改由本类构造时经 @logs/log-service 的 AuditLogSource 端口注入自身。
+    registerAuditLogSource(this);
+  }
+
   /** 玩家数据快照（grant 等写操作后的落盘：存档 + 账号配置，并清 debounce） */
   private async savePlayer(uid: string): Promise<void> {
     await accountManager.flushSave(uid);

@@ -11,7 +11,7 @@ import { logger } from "@utils/logger";
 import { Draft } from "mutative";
 import { PlayerDataModel } from "../../../kernel/playerdata";
 import { PlayerBuildingMeetingClue, PlayerPushFlags } from "../../../kernel/playerdata";
-import { accountManager } from "../../account/AccountManager";
+import { accountManager } from "../../account/public";
 import { getManufactFormula, getWorkshopFormula, getBuildingConstant, getRoomPhase, getGoldRate, getManufactPhase, getDormPhase, getFurnitureInfo, getRoomMaxLevel, getManufactFormulaType, getRoomElectricity, getMeetingPhase, getHirePhase, getClueExpiredDays, getMessageLeaveBoardConst, getClueConstant, getClueReceiveBonus } from "@excel/building_excel";
 import {
   CharBuffSource,
@@ -22,7 +22,7 @@ import {
   parseVupValue,
   phaseRank,
 } from "../buff";
-import { random } from "../../../kernel/util/random";
+import { random } from "@utils/random";
 import { OWN_CLUE_LIMIT } from "../clue-speed";
 import type { GetDailyClueRequest, PutClueToTheBoardAutoRequest, SendClueAutoRequest } from "../models";
 import type { MeetingRoom } from "./ext-types";

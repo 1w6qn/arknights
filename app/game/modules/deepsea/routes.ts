@@ -22,7 +22,7 @@ import {
   DeepSeaSelectChoiceRequest,
   DeepSeaUnlockTechTreeRequest,
 } from "./deepsea";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   activateNodeSchema,
   activeTechTreeSchema,

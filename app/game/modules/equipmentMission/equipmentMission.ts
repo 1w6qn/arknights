@@ -32,7 +32,7 @@ import { logger } from "@utils/logger";
 import { PlayerDataManager } from "../../kernel/PlayerDataManager";
 import { BattleInfo } from "../../kernel/battle-info-store";
 import { BattleData, BattleStats } from "../../kernel/battle-model";
-import { BadRequestError } from "../../kernel/http/errors";
+import { BadRequestError } from "@core/http/errors";
 
 /** 模组任务进度条目（playerdata.equipment.missions 的单项） */
 interface EquipmentMissionEntry {

@@ -24,7 +24,7 @@ import {
   Act7FunBattleStartRequest,
   Act7FunBattleStartResponse,
 } from "./aprilFool";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   act3funBattleFinishSchema,
   act3funBattleStartSchema,
@@ -60,7 +60,7 @@ async function tryDecryptBattle(
   data: string,
 ): Promise<BattleData | null> {
   try {
-    return await decryptBattleData(data, player._playerdata.pushFlags.status);
+    return await decryptBattleData<BattleData>(data, player._playerdata.pushFlags.status);
   } catch {
     return null;
   }

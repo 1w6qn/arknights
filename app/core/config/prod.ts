@@ -2,20 +2,13 @@ import { Router } from "express";
 import config from "./index";
 import { readJson } from "@utils/file";
 import { buildNetworkConfigContent } from "./remote-config";
-import { ensureModsLoaded, getModVersionSuffix, refreshModsIfChanged } from "../../ops/assets/asset";
-import { assetRegistry } from "@asset/asset-service";
+import { getAssetHooks } from "./asset-hooks";
 import { resolveRegion, resolveRegionVersion } from "./region";
 
 /** 版本端点签发溯源（fire-and-forget，不阻断响应） */
 function traceVersionIssued(platform: string, resVersion: string): void {
-  void assetRegistry
-    .recordEvent({
-      asset: { name: "version", category: "version", source: platform, version: resVersion },
-      action: "deliver",
-      actor: "version-endpoint",
-      source: platform,
-      version: resVersion,
-    })
+  void getAssetHooks()
+    .traceVersionIssued({ platform, resVersion })
     .catch(() => undefined);
 }
 
@@ -48,10 +41,11 @@ router.get("/official/Windows/version", async (req, res) => {
   const win = version.windows;
   let modPatch: { resVersion?: string } = {};
   if (config.assets.enableMods) {
-    await ensureModsLoaded("Windows");
+    const hooks = getAssetHooks();
+    await hooks.ensureModsLoaded("Windows");
     // 运行时检测 mod 变更（重打包后无需重启即可让 resVersion 变化 → 客户端重新拉取下载）
-    await refreshModsIfChanged("Windows");
-    const sig = getModVersionSuffix("Windows");
+    await hooks.refreshModsIfChanged("Windows");
+    const sig = hooks.getModVersionSuffix("Windows");
     // Windows 与 Android 均需各自平台 mod 签名：resVersion 变更才能触发客户端重新拉取热更清单
     if (sig) modPatch = { resVersion: withModSig(win?.resVersion || version.resVersion, sig) };
   }
@@ -62,10 +56,11 @@ router.get("/official/Android/version", async (req, res) => {
   const version = servedVersion();
   let modPatch: { resVersion?: string } = {};
   if (config.assets.enableMods) {
-    await ensureModsLoaded("Android");
+    const hooks = getAssetHooks();
+    await hooks.ensureModsLoaded("Android");
     // 运行时检测 mod 变更（重打包后无需重启即可让 resVersion 变化 → 客户端重新拉取下载）
-    await refreshModsIfChanged("Android");
-    const sig = getModVersionSuffix("Android");
+    await hooks.refreshModsIfChanged("Android");
+    const sig = hooks.getModVersionSuffix("Android");
     // 确定性签名：mod 不变则版本稳定（避免随机 +0..99 每次启动全量重下），mod 变更才变
     if (sig) modPatch = { resVersion: withModSig(version.resVersion, sig) };
   }
@@ -78,10 +73,11 @@ router.get("/official/:version/version", async (req, res) => {
   let modPatch: { resVersion?: string } = {};
   if (config.assets.enableMods) {
     // 通用版本端点无法判定平台，回退 Android mod 集
-    await ensureModsLoaded("Android");
+    const hooks = getAssetHooks();
+    await hooks.ensureModsLoaded("Android");
     // 运行时检测 mod 变更（重打包后无需重启即可让 resVersion 变化 → 客户端重新拉取下载）
-    await refreshModsIfChanged("Android");
-    const sig = getModVersionSuffix("Android");
+    await hooks.refreshModsIfChanged("Android");
+    const sig = hooks.getModVersionSuffix("Android");
     if (sig) modPatch = { resVersion: withModSig(version.resVersion, sig) };
   }
   traceVersionIssued("Android", modPatch.resVersion ?? version.resVersion);

@@ -7,7 +7,7 @@
  */
 import { FriendRepository } from "./friend-repo";
 import type { SqlDatabase } from "./types";
-import { UserConfig } from "@game/modules/account/AccountManager";
+import type { UserConfig } from "./types";
 
 /**
  * UserConfig 的历史遗留社交字段（旧 users.json 内嵌 friends/friendRequests/visited）

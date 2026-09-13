@@ -18,7 +18,7 @@ import {
   isDiamondStrategyUnlocked,
   FormulaUnlockCtx,
 } from "../unlocks";
-import { random } from "../../../kernel/util/random";
+import { random } from "@utils/random";
 
   /**
    * 内部方法：制造站生产时间推进（deltaTime 驱动）

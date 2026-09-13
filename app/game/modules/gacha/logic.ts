@@ -10,15 +10,15 @@ import { GachaResult, GachaType, GACHA_RULE_TYPE, resolveGachaRank } from "./gac
 import { GachaDetailData, GachaDetailTable, GachaPerChar, ItemType } from "@excel/excel";
 import { GachaPoolClientData, NewbeeGachaPoolClientData } from "@excel/excel";
 import excel from "@excel/excel";
-import { accountManager } from "../account/AccountManager";
+import { accountManager } from "../account/public";
 import { ItemBundle } from "@excel/excel";
 import { randomChoice } from "@utils/random";
 import { domainLogger } from "@utils/logger";
 import { PlayerDataManager } from "../../kernel/PlayerDataManager";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
-import { random } from "../../kernel/util/random";
-import { getIn } from "../../kernel/util/json-path";
-import { buildFallbackGachaDetail, resolveEffectiveUpPerCharList } from "./gacha-up-list";
+import { random } from "@utils/random";
+import { getIn } from "@utils/json-path";
+import { buildFallbackGachaDetail, resolveEffectiveUpPerCharList } from "../../kernel/util/gacha-up-list";
 import type { ItemBundleInput } from "../../kernel/inventory-pipeline";
 import {
   LIMIT_FREE_GACHA_THRESHOLD,
@@ -26,7 +26,7 @@ import {
   refreshLimitFree,
 } from "./limit-gacha";
 import { now } from "@utils/time";
-import { BadRequestError, InternalError } from "../../kernel/http/errors";
+import { BadRequestError, InternalError } from "@core/http/errors";
 
 /** 寻访域日志（域标签固定为 GachaManager，Dashboard 可按域过滤） */
 const log = domainLogger("GachaManager");

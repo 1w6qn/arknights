@@ -7,7 +7,7 @@ import {
   checkDataVersion,
   parseDataVersionFile,
   verifyLocalDataVersion,
-} from "@excel/data-version";
+} from "@core/data/data-version";
 
 /**
  * 数据版本一致性校验（S10）：data_version.txt 的 VersionControl vs gamedata_const.dataVersion

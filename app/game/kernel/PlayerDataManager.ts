@@ -27,7 +27,7 @@ import { SocialManager } from "../modules/social/SocialManager";
 import { DexNavManager } from "../modules/dexnav/dexnav";
 import { MedalManager } from "../modules/medal/medal";
 import { BuildingManager } from "../modules/building/logic";
-import { FriendDataWithNameCard, FriendMedalBoard } from "../modules/social/social-model";
+import { FriendDataWithNameCard, FriendMedalBoard } from "./social-model";
 import { OpenServerManager } from "../modules/activities/checkin/openServer";
 import { PlayerStatus } from "./PlayerStatus";
 import {

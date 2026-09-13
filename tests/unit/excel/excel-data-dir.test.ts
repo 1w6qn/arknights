@@ -1,7 +1,7 @@
 /**
  * excel 数据目录解析测试
  *
- * 验证 app/game/excel/excel-data-dir.ts：数据目录可覆写（分服 / 测试夹具），
+ * 验证 app/core/data/excel-data-dir.ts：数据目录可覆写（分服 / 测试夹具），
  * 且 Excel 的懒加载表确实按当前目录读盘。
  */
 import { describe, it, expect, afterEach } from "vitest";
@@ -13,7 +13,7 @@ import {
   excelFilePath,
   getExcelDataDir,
   setExcelDataDir,
-} from "@excel/excel-data-dir";
+} from "@core/data/excel-data-dir";
 
 afterEach(() => {
   setExcelDataDir(null);

@@ -7,7 +7,7 @@
  * 路径：POST /batch_event（游戏域 ak-gs-* 根级接口，mitmweb 重定向后 Host 为 127.0.0.1）
  */
 import { Router } from "express";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import { BatchEventRequest, BatchEventResponse } from "./batchEvent";
 import { batchEventSchema } from "./batchEvent.schema";
 

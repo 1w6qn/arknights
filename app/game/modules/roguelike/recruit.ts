@@ -1,12 +1,11 @@
 import excel from "@excel/excel";
-import { TroopManager } from "../character/troop";
 import { PlayerRoguelikeV2 } from "./rlv2";
 import { RoguelikeV2Manager } from "./logic";
 import { now } from "@utils/time";
 import { rarityToIndex } from "@utils/rarity";
 import { logger } from "@utils/logger";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
 /**
  * 招募候选/结果干员（官方 activeRecruitTicket/recruitChar 的运行时形状）
@@ -40,14 +39,12 @@ type Rlv2RecruitInitialChar = Omit<
 
 export class RoguelikeRecruitManager {
   tickets: { [key: string]: PlayerRoguelikeV2.CurrentData.Recruit };
-  _troop: TroopManager;
   _player: RoguelikeV2Manager;
   _trigger: TypedEventEmitter;
 
   constructor(player: RoguelikeV2Manager, _trigger: TypedEventEmitter) {
     this._index = 0;
     this.tickets = player.current.inventory?.recruit || {};
-    this._troop = player._troop;
     this._player = player;
     this._trigger = _trigger;
     this._trigger.on("rlv2:init", () => {

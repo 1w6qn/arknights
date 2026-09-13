@@ -13,7 +13,7 @@ import type {
 } from "@excel/excel";
 import { now } from "@utils/time";
 import { PlayerDataModel } from "../../kernel/playerdata";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
   /**
    * 规范化 rlv2 持久态为可写（autoFreeze 兼容）

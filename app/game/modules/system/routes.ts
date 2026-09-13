@@ -6,7 +6,7 @@
  */
 import { Router } from "express";
 import { z } from "zod";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 /** 审计端点均为 stub（handler 不读 body），请求体校验为空对象 */
 const auditStubSchema = z.object({});

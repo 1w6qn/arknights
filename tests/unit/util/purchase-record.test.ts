@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { recordPurchase, PurchaseRecord } from "@game/modules/pay/purchase-record";
+import { recordPurchase, PurchaseRecord } from "@game/kernel/util/purchase-record";
 
 describe("recordPurchase（商店购买记录单点实现）", () => {
   it("空数组：追加新记录", () => {

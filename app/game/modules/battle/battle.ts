@@ -1,4 +1,4 @@
-import { accountManager } from "../account/AccountManager";
+import { accountManager } from "../account/public";
 
 import excel from "@excel/excel";
 import { decryptBattleData } from "@utils/crypt";
@@ -559,7 +559,7 @@ export class BattleManager {
     // 防止战斗中途 syncData 刷新 pushFlags.status 导致 key 漂移（bad decrypt）
     const loginTime =
       battleLoginTimes.get(this._player.uid) ?? this._player._playerdata.pushFlags.status;
-    const battleData = await decryptBattleData(data, loginTime);
+    const battleData = await decryptBattleData<BattleData>(data, loginTime);
     const fetchedInfo = await accountManager.getBattleInfo(
       this._player.uid,
       battleData.battleId,

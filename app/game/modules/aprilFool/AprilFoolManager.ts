@@ -1,6 +1,7 @@
 import { PlayerDataManager } from "../../kernel/PlayerDataManager";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import { decryptBattleData } from "@utils/crypt";
+import type { BattleData } from "../../kernel/battle-model";
 
 export class AprilFoolManager {
   _player: PlayerDataManager;
@@ -19,7 +20,7 @@ export class AprilFoolManager {
       const { data } = args;
       let score = 0;
       let totalWin = 0;
-      const battleLog = await decryptBattleData(data, draft.pushFlags.status);
+      const battleLog = await decryptBattleData<BattleData>(data, draft.pushFlags.status);
       // 防御：stats.extraBattleInfo 缺失（异常/旧版战斗数据）时不 500
       const extra = battleLog?.battleData?.stats?.extraBattleInfo;
       if (extra && typeof extra === "object") {

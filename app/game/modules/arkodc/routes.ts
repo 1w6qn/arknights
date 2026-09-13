@@ -13,9 +13,10 @@ import { ItemBundle } from "@excel/excel";
 import excel from "@excel/excel";
 import type { PlayerArkOdcTopic } from "@excel/types-playerdata";
 import { decryptBattleData } from "@utils/crypt";
+import type { BattleData } from "../../kernel/battle-model";
 import { now } from "@utils/time";
 import { PlayerDeltaResponse } from "../../kernel/http/common";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   arkOdcBattleFinishSchema,
   arkOdcBattleStartSchema,
@@ -182,7 +183,7 @@ router.post("/battleFinish", validateBody(arkOdcBattleFinishSchema), async (req,
 
   let complete = false;
   try {
-    const battleData = await decryptBattleData(
+    const battleData = await decryptBattleData<BattleData>(
       body.data,
       player._playerdata.pushFlags.status,
     );

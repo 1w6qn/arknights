@@ -20,7 +20,7 @@ interface SocialAccountAccess {
   data: { [key: string]: PlayerDataManager };
   getPlayerData(uid: string): Promise<PlayerDataManager>;
 }
-import { BadRequestError } from "../../kernel/http/errors";
+import { BadRequestError } from "@core/http/errors";
 import excel from "@excel/excel";
 import { now } from "@utils/time";
 

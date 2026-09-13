@@ -12,7 +12,7 @@
  * 反向经模块 public 出口消费。
  */
 import type { JsonValue } from "@excel/json-value";
-import { BadRequestError } from "../../../../kernel/http/errors";
+import { BadRequestError } from "@core/http/errors";
 
 /** 画布宽 */
 export const PIXEL_CANVAS_W = 24;

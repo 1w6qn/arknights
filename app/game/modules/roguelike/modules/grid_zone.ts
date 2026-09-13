@@ -36,7 +36,7 @@ import {
   BLACKSTREAM_THEME,
   isBlackstream,
 } from "../theme-rules";
-import { random } from "../../../kernel/util/random";
+import { random } from "@utils/random";
 
 // 节点类型数值统一由 theme-rules 提供（单一事实来源）；此处 re-export 保持既有
 // `import { ROGUE6_NODE } from "./modules/grid_zone"` 调用方不变。

@@ -4,7 +4,7 @@ import { execSync } from "child_process";
 import { getResVersion, CONF_API } from "./official-api";
 import { resolveCsFile } from "./lib/cs-source";
 import { assetRegistry } from "@asset/asset-service";
-import { verifyLocalDataVersion, verifyTableFreshness } from "@excel/data-version";
+import { verifyLocalDataVersion, verifyTableFreshness } from "@core/data/data-version";
 
 const EXCEL_TARGET_DIR = path.join(__dirname, "../data/excel");
 

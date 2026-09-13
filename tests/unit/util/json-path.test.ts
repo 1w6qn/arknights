@@ -1,5 +1,5 @@
 /**
- * JSON 路径读写工具单测（app/game/kernel/util/json-path.ts）
+ * JSON 路径读写工具单测（app/core/utils/json-path.ts）
  *
  * 覆盖 get/set/del/inc 的路径语义、数组下标处理、中间容器自动补建，
  * 以及「数组非数字段不写入」这一相对旧实现的收紧行为。
@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from "vitest";
 import type { JsonValue } from "@excel/json-value";
-import { acceptJsonValue, delIn, getIn, incIn, setIn } from "@game/kernel/util/json-path";
+import { acceptJsonValue, delIn, getIn, incIn, setIn } from "@utils/json-path";
 
 describe("json-path 路径读写", () => {
   it("getIn 按路径读取，路径不可达或根非容器时返回 undefined", () => {

@@ -3,7 +3,7 @@ import { randomChoice } from "@utils/random";
 import { RoguelikeBuff } from "../rlv2";
 import { RoguelikeV2Manager } from "../logic";
 import { TypedEventEmitter } from "../../../kernel/events/runtime";
-import { random } from "../../../kernel/util/random";
+import { random } from "@utils/random";
 
 export class RoguelikeDisasterManager {
   _player: RoguelikeV2Manager;

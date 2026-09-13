@@ -10,7 +10,7 @@
 import { RoguelikeV2Manager } from "../logic";
 import excel from "@excel/excel";
 import { TypedEventEmitter } from "../../../kernel/events/runtime";
-import { random } from "../../../kernel/util/random";
+import { random } from "@utils/random";
 
 export class RoguelikeChaosManager {
   value: number;

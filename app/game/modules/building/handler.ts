@@ -131,7 +131,7 @@ import {
   TakeClueFromBoardResponse,
 } from "./models";
 import * as B from "./schemas";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 const router = Router();
 

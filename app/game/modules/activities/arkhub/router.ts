@@ -8,7 +8,7 @@ import * as ReqSchema from "../shared/activity.schema";
 import { getPlayer } from "../../../kernel/http/request-context";
 import config from "@core/config/index";
 import { arkhubPixelPublished } from "./domain/state";
-import { parseMultipartForm } from "../../../kernel/util/multipart";
+import { parseMultipartForm } from "@utils/multipart";
 import {
   savePixel,
   loadPixelBytes,
@@ -16,7 +16,7 @@ import {
   ARKPIXEL_MAX_PUBLISH,
 } from "./domain/pixel";
 import { ActivityStubRequest } from "../shared/activity";
-import { validateBody } from "../../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   handleArkhubenterHall,
   handleArkhubgetFriendUidList,

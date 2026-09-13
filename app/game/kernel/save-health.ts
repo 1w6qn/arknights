@@ -24,12 +24,12 @@ import type {
   PlayerCharPatch,
   PlayerDungeon,
 } from "./playerdata";
-import type { CharEquipsLike, CharSkillsLike } from "../modules/character/char-skills";
+import type { CharEquipsLike, CharSkillsLike } from "./char-skills";
 import {
   reconcileCharEquips,
   reconcileCharSkills,
   unlockedSkillIds,
-} from "../modules/character/char-skills";
+} from "./char-skills";
 
 /** 存档问题记录 */
 export interface SaveIssue {

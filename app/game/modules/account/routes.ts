@@ -14,7 +14,7 @@ import {
   SyncStatusRequest,
   SyncStatusResponse,
 } from "./account";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   loginSchema,
   syncDataSchema,

@@ -13,7 +13,7 @@
  */
 
 import { readJsonSync } from "@utils/file";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
 /**
  * 贸易站订单概率配置（data/building/trade-order-dist.json，启动时一次性加载）。

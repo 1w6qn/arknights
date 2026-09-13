@@ -14,7 +14,7 @@ import {
   UnlockStoryByCoinRequest,
   UnlockStoryByCoinResponse,
 } from "./storyreview";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   markStoryAcceKnownSchema,
   readStorySchema,

@@ -17,8 +17,11 @@
  *  - `delIn` 对数组用 `splice`（元素前移，与旧实现一致），对对象用 `delete`；
  *  - `incIn` 以 `Number(旧值 ?? 0) + delta` 写回（旧值非数值时结果为 `NaN`，与旧实现一致）；
  *  - 全部为**原地修改**：调用方传入的子树会被直接改写（RLV2 是 autoFreeze 兼容的可写孤岛）。
+ *
+ * 位置：2026-09-13 由 `app/game/kernel/util/json-path.ts` 下沉 `app/core/utils/`（仅依赖
+ * 同为 core 的 `@utils/json-value`，零 game 语义），使 ops/scripts 复用不再经 game。
  */
-import type { JsonObject, JsonValue } from "@excel/json-value";
+import type { JsonObject, JsonValue } from "./json-value";
 
 /** 路径段数组（如 `["player", "property", "hp", "current"]`） */
 export type JsonPath = readonly string[];

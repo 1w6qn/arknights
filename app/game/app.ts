@@ -8,7 +8,7 @@ import httpContext from "express-http-context2";
 import express from "express";
 import bodyParser from "body-parser";
 import { accountManager } from "./modules/account/AccountManager";
-import { isGameError } from "./kernel/http/errors";
+import { isGameError } from "@core/http/errors";
 import { PlayerDataManager } from "./kernel/PlayerDataManager";
 import { setPlayer, getPlayerOptional } from "./kernel/http/request-context";
 import { acquireLock } from "@utils/mutex";

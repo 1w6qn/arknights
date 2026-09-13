@@ -8,7 +8,7 @@
  *
  * 说明：类型（TS 纯类型）不具运行时依赖，admin 仍允许直接 `import type` 自 game。
  */
-import { buildMaxedSkills, buildMaxedEquip } from "@game/kernel/util/maxout";
+import { buildMaxedSkills, buildMaxedEquip } from "@ops/admin/maxout";
 import { GACHA_RULE_TYPE } from "@game/modules/gacha/gacha";
 import { accountManager } from "@game/modules/account/AccountManager";
 import { mailManager } from "@game/modules/mail/MailManager";

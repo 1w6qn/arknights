@@ -24,7 +24,7 @@ import { now } from "@utils/time";
 import { readJsonSync } from "@utils/file";
 import { logger } from "@utils/logger";
 import config from "@core/config/index";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   confirmOrderAlipaySchema,
   confirmOrderSchema,

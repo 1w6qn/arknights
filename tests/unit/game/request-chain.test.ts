@@ -24,9 +24,19 @@ const accountMock = vi.hoisted(() => ({
   accountManager: {
     getPlayerData: vi.fn(),
     getUidByToken: vi.fn(),
+    // 认证端口其余成员（2026-09-13：kernel 认证策略经 @core/auth/account-port 取账号能力，
+    // 不再直连 AccountManager，故 mock 需补齐端口形状并注册）
+    tokenByPhonePassword: vi.fn(),
+    getUserConfig: vi.fn(),
+    configs: {} as Record<string, never>,
+    registerUser: vi.fn(),
+    updatePassword: vi.fn(),
+    updatePhone: vi.fn(),
   },
 }));
 vi.mock("@game/modules/account/AccountManager", () => accountMock);
+import { registerAccountAuthPort } from "@core/auth/account-port";
+registerAccountAuthPort(accountMock.accountManager);
 
 /** excel 行夹具视图（本文件不读取行字段） */
 interface ExcelRowMock {

@@ -11,7 +11,7 @@ import { insertReplaceSql, toCount } from "./dialect";
 import type { SqlDatabase } from "./types";
 import { readJson } from "@utils/file";
 import { now } from "@utils/time";
-import type { UserConfig } from "@game/modules/account/AccountManager";
+import type { UserConfig } from "./types";
 
 /** users 表列顺序 */
 const USERS_COLUMNS = ["uid", "data", "updated_ts"];

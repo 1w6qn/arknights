@@ -153,7 +153,7 @@ import {
 } from "./models";
 import * as ReqSchema from "./schemas";
 import { rlv2Response, SEC } from "./response";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import { logger } from "@utils/logger";
 import type { JsonValue } from "@excel/json-value";
 

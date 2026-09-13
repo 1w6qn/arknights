@@ -54,7 +54,7 @@ import {
   ClimbTowerSweepRequest,
   ClimbTowerSweepResponse,
 } from "./tower";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   battleFinishSchema,
   battleStartSchema,
@@ -373,7 +373,7 @@ router.post("/battleFinish", validateBody(battleFinishSchema), async (req, res) 
   // 解密战斗数据（失败时不影响主流程，按失败处理）
   let battleData: BattleData;
   try {
-    battleData = await decryptBattleData(data, player.loginTime);
+    battleData = await decryptBattleData<BattleData>(data, player.loginTime);
   } catch (err) {
     logger.error("tower/battleFinish", "decrypt failed:", err);
     res.send({

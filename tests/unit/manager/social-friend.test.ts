@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { SocialManager } from "@game/modules/social/SocialManager";
 import { accountManager } from "@game/modules/account/AccountManager";
-import type { FriendDataWithNameCard } from "@game/modules/social/social-model";
+import type { FriendDataWithNameCard } from "@game/kernel/social-model";
 import type { PlayerDataModel } from "@game/kernel/playerdata";
 import {
   asModel,

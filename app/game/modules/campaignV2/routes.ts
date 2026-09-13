@@ -25,7 +25,7 @@ import {
   CampaignSweepRequest,
   CampaignSweepResponse,
 } from "./campaignV2";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import excel from "@excel/excel";
 import { now } from "@utils/time";
 import { logger } from "@utils/logger";

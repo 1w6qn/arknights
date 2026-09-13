@@ -3,27 +3,15 @@ import excel from "@excel/excel";
 import { logger } from "@utils/logger";
 import { now } from "@utils/time";
 import { getFurnitureThemeId } from "@excel/building_excel";
-import { isJsonObject, JsonValue } from "@excel/json-value";
+import { isJsonObject } from "@excel/json-value";
 import { PlayerDataModel, PlayerStatus } from "./playerdata";
 import { PlayerDataManager } from "./PlayerDataManager";
 import { Draft } from "mutative";
 import type { PipelineItem } from "./inventory-pipeline";
 import { TypedEventEmitter } from "./events/runtime";
-import { BadRequestError } from "./http/errors";
-import { activityDictKey } from "../modules/activities/shared/unlockActivity";
-
-/**
- * JSON 值（可缺省）→ 调用方声明的局部只读视图
- *
- * 与 `modules/activities/shared/activity-json.ts#asShape` 同实现：kernel 层受 R2
- * 约束不得 import modules（守卫 tests/unit/architecture/module-boundary.test.ts），
- * 故在此保留最小副本（仅类型层断言，不改运行时值）。
- * @param value - 待收窄的 JSON 值
- * @returns 声明的视图；非对象返回 undefined
- */
-function asJsonShape<T>(value: JsonValue | undefined): T | undefined {
-  return value !== undefined && isJsonObject(value) ? (value as T) : undefined;
-}
+import { BadRequestError } from "@core/http/errors";
+import { resolveDictKey } from "./util/excel-key";
+import { asShape } from "./util/json-shape";
 
 /** 余额位于 consumable 实例的物品类型（consumable[itemId][instId].count） */
 const CONSUMABLE_TYPES: ReadonlySet<string> = new Set([
@@ -97,7 +85,7 @@ function act53SideActIdByCoinItem(itemId: string): string | undefined {
     // 活动详情表为未建模 JSON（ActivityTable_ActivityDetailTable = JsonValue 字典型），
     // 逐层用 isJsonObject 收窄后取 constData.coinItemId
     const activityTypeDict = activityTable?.activity?.[
-      activityDictKey("TYPE_ACT53SIDE") ?? "tYPE_ACT53SIDE"
+      resolveDictKey(activityTable?.activity, "TYPE_ACT53SIDE") ?? "tYPE_ACT53SIDE"
     ];
     const activity = isJsonObject(activityTypeDict) ? activityTypeDict : {};
     for (const [actId, info] of Object.entries(basic)) {
@@ -250,7 +238,7 @@ export class InventoryManager {
     await this._player.update(async (draft) => {
       // TYPE_ACT53SIDE 未具名登记（PlayerActivity 兜底索引签名只展开两层 ServerPayload），
       // 第三层 actCoin 就地收窄为存档形状
-      const act = asJsonShape<{ actCoin?: number }>(draft.activity?.TYPE_ACT53SIDE?.[actId]);
+      const act = asShape<{ actCoin?: number }>(draft.activity?.TYPE_ACT53SIDE?.[actId]);
       if (act) {
         act.actCoin = (act.actCoin ?? 0) + (item.count ?? 0);
       }

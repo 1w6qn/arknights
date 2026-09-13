@@ -142,7 +142,7 @@ import {
   ActivityStubRequest,
   ActivityStubResponse,
 } from "../shared/activity";
-import { validateBody } from "../../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 const router = Router();
 import { handleRewardMilestone, handleRewardAllMilestone, handleConfirmActivityMission, handleConfirmActivityMissionList, handleConfirmActivityMissionGroup, handleAutoConfirmMissions, handleExchangeActivityShopItem, handleGetActivityCollectionReward, handleGetActivityShopInfo } from "./logic";

@@ -4,7 +4,7 @@ import {
   buildFreshStatus,
   freshTroop,
   freshGacha,
-} from "@game/modules/user/freshPlayer";
+} from "@game/kernel/fresh-player";
 
 /**
  * freshPlayer 构造函数的返回契约是 `Record<string, unknown>`（用于整体覆盖存档分区），

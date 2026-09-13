@@ -129,7 +129,7 @@ import {
   ActivityStubRequest,
   ActivityStubResponse,
 } from "../shared/activity";
-import { validateBody } from "../../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 const router = Router();
 router.post("/act45side/confirmChar", validateBody(ReqSchema.act45sideConfirmSchema), async (req, res) => {

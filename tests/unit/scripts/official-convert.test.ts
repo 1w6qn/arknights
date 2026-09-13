@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { JsonValue } from "@excel/json-value";
-import { setIn } from "@game/kernel/util/json-path";
+import { setIn } from "@utils/json-path";
 import { convertOfficialData } from "../../../scripts/official-convert";
 
 /** 官服数据入参类型（syncData 的 user 字段） */

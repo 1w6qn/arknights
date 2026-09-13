@@ -2,7 +2,7 @@ import { Router } from "express";
 import { getPlayer, getPlayerOptional } from "../../kernel/http/request-context";
 import { randomUUID } from "node:crypto";
 import { PlayerDataManager } from "../../kernel/PlayerDataManager";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   unlockRetroBlockSchema,
   getRetroTrailRewardSchema,

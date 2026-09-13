@@ -5,7 +5,7 @@ import { RoguelikeV2Manager } from "./logic";
 import { randomChoice } from "@utils/random";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import { logger } from "@utils/logger";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
 /**
  * 官方池定义（data/rlv2/pools.json）：成员清单来自路标档案馆 pools/rogue_6 页面

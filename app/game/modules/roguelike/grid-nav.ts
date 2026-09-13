@@ -26,7 +26,7 @@ import {
   ROLL_NODE_TYPE_VALUES,
   isBlackstream,
 } from "./theme-rules";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
   /** 重掷节点（CS: RoguelikeRollNodeRequest { nodeIndex }）：消耗次数并按 rollNodeData 重生成节点 */
 export async function rerollNode(mgr: RoguelikeV2Manager, args: { nodeIndex: string }) : Promise<void> {

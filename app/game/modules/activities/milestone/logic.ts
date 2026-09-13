@@ -141,7 +141,7 @@ import {
   ActivityStubRequest,
   ActivityStubResponse,
 } from "../shared/activity";
-import { validateBody } from "../../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 import { PlayerDataManager } from "../../../kernel/PlayerDataManager";
 import type { PlayerTemplateShop } from "../../../kernel/playerdata";
@@ -465,7 +465,7 @@ export async function handleExchangeActivityShopItem(player: PlayerDataManager, 
     }
     const shop = draft.tshop[body.shopId];
     // 记录购买（与 shop.SOCIAL.info / crisis.shop.info 同一「存在累加否则追加」语义，
-    // 共享实现见 @game/util/purchase-record）
+    // 共享实现见 @game/kernel/util/purchase-record）
     recordPurchase(shop.info, body.goodId, count);
   });
    if (rewardItem) {

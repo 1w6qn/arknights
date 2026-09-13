@@ -65,6 +65,11 @@
       "unknown": 2,
       "object": 0
     },
+    "app/core/http/errors.ts": {
+      "any": 0,
+      "unknown": 6,
+      "object": 0
+    },
     "app/core/utils/logger.ts": {
       "any": 0,
       "unknown": 17,
@@ -110,6 +115,11 @@
       "unknown": 2,
       "object": 0
     },
+    "app/game/kernel/char-skills.ts": {
+      "any": 0,
+      "unknown": 1,
+      "object": 0
+    },
     "app/game/kernel/events/core.ts": {
       "any": 0,
       "unknown": 1,
@@ -130,14 +140,14 @@
       "unknown": 4,
       "object": 0
     },
+    "app/game/kernel/fresh-player.ts": {
+      "any": 0,
+      "unknown": 45,
+      "object": 0
+    },
     "app/game/kernel/http/common.ts": {
       "any": 0,
       "unknown": 3,
-      "object": 0
-    },
-    "app/game/kernel/http/errors.ts": {
-      "any": 0,
-      "unknown": 6,
       "object": 0
     },
     "app/game/kernel/http/resp-schema.ts": {
@@ -213,11 +223,6 @@
     "app/game/modules/campaignV2/campaignV2.ts": {
       "any": 0,
       "unknown": 3,
-      "object": 0
-    },
-    "app/game/modules/character/char-skills.ts": {
-      "any": 0,
-      "unknown": 1,
       "object": 0
     },
     "app/game/modules/character/char.ts": {
@@ -383,11 +388,6 @@
     "app/game/modules/tower/tower-reward.ts": {
       "any": 0,
       "unknown": 1,
-      "object": 0
-    },
-    "app/game/modules/user/freshPlayer.ts": {
-      "any": 0,
-      "unknown": 45,
       "object": 0
     },
     "app/game/modules/user/routes.ts": {

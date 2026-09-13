@@ -9,9 +9,9 @@ import type { CreditShopMaterial, CreditShopRowEntry } from "../logic";
 import excel from "@excel/excel";
 import { ItemBundle } from "@excel/excel";
 import { logger } from "@utils/logger";
-import { recordPurchase } from "../../pay/purchase-record";
+import { recordPurchase } from "../../../kernel/util/purchase-record";
 import { SocialGoodList, SocialShopData } from "@excel/excel";
-import { random } from "../../../kernel/util/random";
+import { random } from "@utils/random";
 
   /**
    * 每日刷新处理：重置低级商店每日限购记录

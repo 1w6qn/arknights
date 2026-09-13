@@ -20,7 +20,7 @@ import {
   VecBreakV2StartBattleResponse,
   VecBreakV2PlayerData,
 } from "./vecbreak";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   currentVecBreakActivityId,
   vecBreakMilestoneGain,

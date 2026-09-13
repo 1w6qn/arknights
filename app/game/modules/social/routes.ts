@@ -27,7 +27,7 @@ import {
   SetStarFriendListRequest,
   SetStarFriendListResponse,
 } from "./social";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   deleteFriendSchema,
   getFriendListSchema,

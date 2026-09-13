@@ -16,7 +16,7 @@ import { logService } from "@logs/log-service";
 import { assetRegistry } from "@asset/asset-service";
 import { createSse, sseSend } from "@utils/sse";
 import { pluginConfigService } from "@plugin/index";
-import { validateBody } from "@game/kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import { isOfficialAction } from "./official-ops";
 import {
   arkhubImportPetsSchema,

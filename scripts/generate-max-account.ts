@@ -6,23 +6,23 @@
  *
  * 参考：opendoctoratepy tools/生成背包物品.py（物品分类处理）
  *
- * 注意：buildMaxedSkills / buildMaxedEquip 已迁至 app/game/kernel/util/maxout.ts（供管理后台复用），
+ * 注意：buildMaxedSkills / buildMaxedEquip 已迁至 app/ops/admin/maxout.ts（供管理后台复用），
  * 此处 re-export 保持公共 API 不变。
  */
 import excel from "@excel/excel";
 import config from "@core/config/index";
 import { readJson } from "@utils/file";
 import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
-import { acceptJsonValue, setIn } from "@game/kernel/util/json-path";
+import { acceptJsonValue, setIn } from "@utils/json-path";
 import type { PlayerDataModel } from "@excel/types-playerdata";
 import {
   buildMaxedSkills,
   buildMaxedEquip,
   type MaxedSkill,
   type MaxedEquipEntry,
-} from "@game/kernel/util/maxout";
+} from "@ops/admin/maxout";
 
-export { buildMaxedSkills, buildMaxedEquip } from "@game/kernel/util/maxout";
+export { buildMaxedSkills, buildMaxedEquip } from "@ops/admin/maxout";
 
 /** 阿米娅升变形态条目（`tmpl` 的值——客户端按 tmpl 渲染形态） */
 export type MaxedCharFormEntry = {

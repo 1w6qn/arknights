@@ -10,7 +10,7 @@ import { TypedEventEmitter } from "../../kernel/events/runtime";
 import excel from "@excel/excel";
 import * as crypto from "crypto";
 import { readFileSync } from "fs";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
 /**
  * data/rlv2/nodesInfo.json 视图（官方 stages 提取：主题 → 区域 → 阶段列表）

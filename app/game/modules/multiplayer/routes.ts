@@ -50,7 +50,7 @@ import {
   ProcessInviteResponse,
 } from "./multiplayer";
 import { emptyRequestSchema } from "./multiplayer.schema";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 const router = Router();
 

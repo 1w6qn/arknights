@@ -12,7 +12,7 @@ import { logger } from "@utils/logger";
 import { Draft } from "mutative";
 import { PlayerDataModel } from "../../../kernel/playerdata";
 import { PlayerBuildingMeetingClue } from "../../../kernel/playerdata";
-import { accountManager } from "../../account/AccountManager";
+import { accountManager } from "../../account/public";
 import { headcountMoodRelief, isDispersedAp, warmupHoursOf, MAX_AP } from "../mood";
 import { getSpecCond, SPEC_ASSIST_BASE_BONUS } from "../mastery";
 import { contactSpeedFactor, settleContactProgress } from "../hire-contacts";
@@ -32,7 +32,7 @@ import {
   CLUE_BASE_SECONDS,
   OWN_CLUE_LIMIT,
 } from "../clue-speed";
-import { random } from "../../../kernel/util/random";
+import { random } from "@utils/random";
 import type {
   CharWithFavor,
   CharWithWarmup,

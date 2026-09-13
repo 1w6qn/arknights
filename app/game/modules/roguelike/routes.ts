@@ -19,7 +19,7 @@ import {
   RoguelikeUpgradeOutBuffRequest,
   RoguelikeUpgradeOutBuffResponse,
 } from "./roguelike";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   roguelikeCreateGameSchema,
   roguelikeFinishGameSchema,

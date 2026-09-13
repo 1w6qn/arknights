@@ -18,7 +18,7 @@ import {
   RemoveAllReceivedMailRequest,
   RemoveAllReceivedMailResponse,
 } from "./mail";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   getMetaInfoListSchema,
   listMailBoxSchema,

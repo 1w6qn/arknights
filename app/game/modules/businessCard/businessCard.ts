@@ -7,7 +7,7 @@
  * CS 存在但服务端未读取的字段（如 GetOtherPlayerNameCardRequest.src）标为可选。
  * 设置名片展示勋章（SetCardShowMedal）相关类型见协议 social.ts。
  */
-import { FriendDataWithNameCard } from "../social/social-model";
+import { FriendDataWithNameCard } from "../../kernel/social-model";
 import { PlayerNameCardMisc } from "../../kernel/playerdata";
 import { PlayerDeltaResponse } from "../../kernel/http/common";
 

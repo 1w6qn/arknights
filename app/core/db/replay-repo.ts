@@ -8,11 +8,26 @@
  */
 import { insertReplaceSql } from "./dialect";
 import type { SqlDatabase } from "./types";
+import type { JsonValue } from "@utils/json-value";
 import { now } from "@utils/time";
-import type {
-  BattleInfo,
-  BattleRecord,
-} from "@game/kernel/battle-info-store";
+
+/**
+ * 战斗结束记录的**最小结构**（core 侧视图）
+ *
+ * core 不得依赖 game（R1），故不 import `@game/kernel/battle-info-store` 的 `BattleRecord`；
+ * 仓储只读写这四列，声明所需字段即可——game 侧更宽的 `BattleRecord` 结构性满足本形状
+ * （额外字段不影响可赋值性）。读取方法以泛型 `<T = BattleRecordRow>` 交还调用方声明的形状。
+ */
+export interface BattleRecordRow {
+  /** 战斗唯一标识 */
+  battleId: string;
+  /** 所属账号 uid */
+  uid: string;
+  /** 关卡 id */
+  stageId: string;
+  /** 记录创建时间戳 */
+  createdTs: number;
+}
 
 export class ReplayRepository {
   /** @param db - 后端无关的数据库句柄 */
@@ -54,11 +69,11 @@ export class ReplayRepository {
    * @param uid - 账号 uid
    * @param battleId - 战斗 id
    */
-  async getInfo(uid: string, battleId: string): Promise<BattleInfo | undefined> {
+  async getInfo<T = JsonValue>(uid: string, battleId: string): Promise<T | undefined> {
     const row = await this._db
       .prepare("SELECT info FROM battle_infos WHERE uid = ? AND battle_id = ?")
       .get<{ info: string }>(uid, battleId);
-    return row ? (JSON.parse(row.info) as BattleInfo) : undefined;
+    return row ? (JSON.parse(row.info) as T) : undefined;
   }
 
   /**
@@ -67,10 +82,10 @@ export class ReplayRepository {
    * @param battleId - 战斗 id
    * @param info - 结算信息
    */
-  async upsertInfo(
+  async upsertInfo<T>(
     uid: string,
     battleId: string,
-    info: BattleInfo,
+    info: T,
   ): Promise<void> {
     await this._db
       .prepare(
@@ -98,7 +113,7 @@ export class ReplayRepository {
    * 留存战斗结束记录（写入/覆盖，供未来分析）
    * @param record - 战斗结束记录
    */
-  async saveRecord(record: BattleRecord): Promise<void> {
+  async saveRecord(record: BattleRecordRow): Promise<void> {
     await this._db
       .prepare(
         insertReplaceSql(
@@ -122,14 +137,14 @@ export class ReplayRepository {
    * @param uid - 账号 uid
    * @param battleId - 战斗 id
    */
-  async getRecord(
+  async getRecord<T = BattleRecordRow>(
     uid: string,
     battleId: string,
-  ): Promise<BattleRecord | undefined> {
+  ): Promise<T | undefined> {
     const row = await this._db
       .prepare("SELECT record FROM battle_records WHERE uid = ? AND battle_id = ?")
       .get<{ record: string }>(uid, battleId);
-    return row ? (JSON.parse(row.record) as BattleRecord) : undefined;
+    return row ? (JSON.parse(row.record) as T) : undefined;
   }
 
   /**
@@ -137,12 +152,12 @@ export class ReplayRepository {
    * @param uid - 账号 uid
    * @param limit - 最大条数
    */
-  async listRecords(uid: string, limit = 50): Promise<BattleRecord[]> {
+  async listRecords<T = BattleRecordRow>(uid: string, limit = 50): Promise<T[]> {
     const rows = await this._db
       .prepare(
         "SELECT record FROM battle_records WHERE uid = ? ORDER BY created_ts DESC LIMIT ?",
       )
       .all<{ record: string }>(uid, limit);
-    return rows.map((r) => JSON.parse(r.record) as BattleRecord);
+    return rows.map((r) => JSON.parse(r.record) as T);
   }
 }

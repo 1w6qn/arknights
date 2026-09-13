@@ -262,7 +262,7 @@ export class BossRushManager {
     let wave = 0;
     let stageId = "";
     try {
-      battleData = await decryptBattleData(
+      battleData = await decryptBattleData<BattleData>(
         body.data,
         this._player._playerdata.pushFlags.status,
       );

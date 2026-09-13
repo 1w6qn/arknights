@@ -7,6 +7,9 @@ vi.mock("@game/modules/account/AccountManager", () => ({
 }));
 
 import { accountManager } from "@game/modules/account/AccountManager";
+import { registerAccountAuthPort } from "@core/auth/account-port";
+// 账号端口注册：core/kernel 不再直连本模块（R1/R2），mock 的 accountManager 需显式注册进端口注册表
+registerAccountAuthPort(accountManager);
 import {
   SingleAccountStrategy,
   RealAccountStrategy,

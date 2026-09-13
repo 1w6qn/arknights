@@ -11,6 +11,8 @@ import { logger, flush as flushLogs } from "@utils/logger";
 import { formatTimestamp, parseVirtualTime } from "@utils/time";
 import { createTrafficRecorder } from "@utils/traffic-recorder";
 import { captureManager } from "@capture/capture-manager";
+import { assetHooks } from "@ops/assets/asset-hooks";
+import { registerAssetHooks } from "@core/config/asset-hooks";
 import excel from "@excel/excel";
 import morgan from "morgan";
 import compression, { filter as compressionFilter } from "compression";
@@ -179,7 +181,10 @@ export async function main(): Promise<void> {
       recordTrafficExclude: ["/admin"],
     };
   }
-  app.use(createTrafficRecorder(config, capture ? "official" : "private"));
+  // 抓包写入端口由组合根注入（core 层不再缺省绑定 @capture 单例，见 @core/capture/port）
+  app.use(createTrafficRecorder(config, capture ? "official" : "private", captureManager));
+  // 资产热更钩子由组合根注入（core/config 不得 import ops，见 @core/config/asset-hooks）
+  registerAssetHooks(assetHooks);
   // 子域名分发：*.hypergryph.com 请求按官服子域名映射到私服路由
   app.use(createHostRouter());
   app.use("/config/prod", prod);

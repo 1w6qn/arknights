@@ -4,7 +4,7 @@ import type { SqlDatabase } from "@core/db/types";
 import { ReplayRepository } from "@core/db/replay-repo";
 import { AccountManager } from "@game/modules/account/AccountManager";
 import type { UserConfig } from "@game/modules/account/AccountManager";
-import { BattleStore } from "@game/modules/battle/BattleStore";
+import { BattleStore } from "@game/kernel/battle-store";
 import { asModel } from "../../helpers";
 
 /**

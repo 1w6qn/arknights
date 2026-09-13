@@ -9,7 +9,7 @@ import type { BattleRecord } from "../../kernel/battle-info-store";
 import { logger } from "@utils/logger";
 import excel from "@excel/excel";
 import { ROGUE6_NODE } from "./theme-rules";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
 /** 各账号最近一次 rlv2 战斗上下文（start 生成写入，finish 读取结算与记录留存用） */
 const battleSessionByUid = new Map<
@@ -146,7 +146,7 @@ export class RoguelikeBattleManager {
    * 解密结果为权威数据源；请求明文 battleData 用于补齐解密缺失字段，
    * 并在 data 解密失败/为空时作为降级数据源（completeState 缺失仍走软失败路径）。
    *
-   * @param decryptResult - decryptBattleData(data) 的解密结果（可为 null）
+   * @param decryptResult - decryptBattleData<BattleData>(data) 的解密结果（可为 null）
    * @param requestBattleData - 请求顶层 battleData 字段（可为 undefined）
    * @returns 合并后的战报对象（两者皆空返回 null）
    */
@@ -275,7 +275,7 @@ export class RoguelikeBattleManager {
     const loginTime = this._player._player.loginTime;
     let decryptResult: BattleData | null = null;
     try {
-      decryptResult = await decryptBattleData(args.data, loginTime);
+      decryptResult = await decryptBattleData<BattleData>(args.data, loginTime);
     } catch {
       // 无效/空战斗数据（模拟器/异常结算）：降级到请求明文 battleData 判定
     }

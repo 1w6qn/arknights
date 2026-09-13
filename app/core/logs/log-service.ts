@@ -4,7 +4,7 @@
  * 聚合管理所有日志来源，供 Dashboard「日志」Tab / 管理 REST API / CLI 使用：
  * - 服务器日志：logs/server-YYYYMMDD.log（logger 按天轮转，文本行格式）
  * - 看门狗日志：logs/watchdog-*.log
- * - 审计日志：data/admin/logs.jsonl（复用 AdminService，JSONL）
+ * - 审计日志：data/admin/logs.jsonl（持久化在 ops/admin；本服务经 AuditLogSource 端口读取）
  * - 实时日志：logger 订阅（subscribeLog）→ SSE 尾随
  *
  * 服务器日志行格式：`YYYY-MM-DD HH:MM:SS [LEVEL] [TAG] 内容`（与 logger 落盘一致）。
@@ -60,6 +60,32 @@ export interface AuditLogEntry {
   action: string;
   uid: string;
   detail: string;
+}
+
+/**
+ * 审计日志源端口（core 定义，ops/admin 注入）
+ *
+ * 审计日志的**持久化实现在 ops/admin**（data/admin/logs.jsonl，由 `AdminService` 负责）。
+ * core 不得依赖 ops（R1），故此处只声明「读取最近 N 条」的最小契约；`AdminService`
+ * 在构造时经 {@link registerAuditLogSource} 注册自身（ops → core 允许）。
+ */
+export interface AuditLogSource {
+  /**
+   * 读取最近 N 条审计条目（时间倒序）
+   * @param limit - 最大条数
+   */
+  logs(limit: number): Promise<AuditLogEntry[]>;
+}
+
+/** 已注册的审计日志源（未注册 = ops/admin 尚未加载，读取返回空） */
+let auditSource: AuditLogSource | undefined;
+
+/**
+ * 注册审计日志源（由 `AdminService` 构造时调用）
+ * @param src - 审计日志源；传 undefined 注销
+ */
+export function registerAuditLogSource(src: AuditLogSource | undefined): void {
+  auditSource = src;
 }
 
 /**
@@ -138,12 +164,16 @@ class LogService {
     return { files: names, entries: entries.slice(-500).reverse() };
   }
 
-  /** 审计日志（复用 AdminService，过滤 action/uid/关键字） */
+  /**
+   * 审计日志（经 {@link AuditLogSource} 端口读取 ops/admin 的持久化实现，再按条件过滤）
+   * @param q - 过滤条件（action/uid/关键字/条数上限）
+   * @returns 过滤后的审计条目（时间倒序）
+   */
   async readAuditLog(q: { action?: string; uid?: string; q?: string; limit?: number } = {}): Promise<AuditLogEntry[]> {
-    // 动态引入避免模块加载期的重依赖（adminService 已由 admin-router/CLI 加载）
-    const { adminService } = await import("../../ops/admin/AdminService");
     const limit = Math.min(Math.max(Math.floor(q.limit ?? 100), 1), 1000);
-    const entries = await adminService.logs(limit);
+    // 审计日志源未注册（ops/admin 未加载：纯 core 单测、CLI 未触达 admin）→ 返回空列表
+    if (!auditSource) return [];
+    const entries = await auditSource.logs(limit);
     const action = q.action?.trim();
     const uid = q.uid?.trim();
     const kw = q.q?.trim();

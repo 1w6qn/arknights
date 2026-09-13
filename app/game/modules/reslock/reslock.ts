@@ -20,7 +20,7 @@
  */
 import { Draft } from "mutative";
 import { logger } from "@utils/logger";
-import { BadRequestError } from "../../kernel/http/errors";
+import { BadRequestError } from "@core/http/errors";
 import type { ExcelData } from "../../kernel/excel-port";
 import { PlayerDataManager } from "../../kernel/PlayerDataManager";
 import { PlayerDataModel, PlayerConsumableItem } from "../../kernel/playerdata";

@@ -1,5 +1,5 @@
-import { AvatarInfo, SharedCharData } from '../../kernel/model';
-import { PlayerBirthday, PlayerMedalCustomLayout, PlayerNameCardSkin, PlayerNameCardStyle } from '../../kernel/playerdata';
+import { AvatarInfo, SharedCharData } from './model';
+import { PlayerBirthday, PlayerMedalCustomLayout, PlayerNameCardSkin, PlayerNameCardStyle } from './playerdata';
 export interface FriendDataWithNameCard extends FriendData {
     registerTs:number,
     mainStageProgress:string|null,

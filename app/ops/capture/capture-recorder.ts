@@ -1,37 +1,22 @@
 /**
- * 抓包写入端口（CaptureRecorder）
+ * 抓包写入端口（CaptureRecorder）—— **ops 侧兼容垫片**
  *
- * 定义业务/工具层面向的窄接口：仅暴露落库一条记录的能力，
- * 隐藏 CaptureManager 的会话管理、查询、导出、订阅等实现细节。
+ * 2026-09-13：端口契约已下沉 `@core/capture/port`——`app/core/utils/traffic-recorder.ts`
+ * 需要它，而 core 不得依赖 ops（R1，见 tests/unit/architecture/module-boundary.test.ts）。
+ * 本文件保留原 `@capture/capture-recorder` import 路径供存量引用点使用（零改动），
+ * 内容全部 re-export；**新增代码请直接 import `@core/capture/port`**。
  *
- * 目的：解耦业务层（utils/traffic-recorder，含并入的原 game/reqres-log）对具体单例
- * `captureManager` 的依赖——它们只依赖该端口，默认注入真实单例，
- * 测试时可替换为 mock（见 traffic-recorder.test）。
- *
- * `CaptureManager` 天然结构性满足本接口，组装层（index.ts）保持默认注入即可。
+ * 实现侧：`app/ops/capture/capture-manager.ts` 的 `captureManager` 天然结构性满足该端口
+ * （addRecord 返回更完整的 CaptureRecord，协变兼容），由组合根 `app/server.ts` 注入。
  */
-import type {
-  CaptureBodiesInput,
-  CaptureRecord,
-  CaptureRecordInput,
-} from "./capture-manager";
-
-/**
- * 抓包写入端口
- *
- * @remarks
- * 仅声明 addRecord 一条写入能力，供 HTTP 抓包中间件（traffic-recorder）
- * 面向接口写入统一抓包存储。
- */
-export interface CaptureRecorder {
-  /**
-   * 写入一条抓包记录
-   * @param input - 记录元信息（方法/路径/来源/会话等）
-   * @param bodies - 请求/响应体（可选）
-   * @returns 落库后的记录
-   */
-  addRecord(
-    input: CaptureRecordInput,
-    bodies?: CaptureBodiesInput,
-  ): Promise<CaptureRecord>;
-}
+export type {
+  BodyKind,
+  CaptureBodiesInputPort,
+  CaptureBodyInputPort,
+  CaptureDirection,
+  CaptureHeaders,
+  CaptureRecordInputPort,
+  CaptureRecordRef,
+  CaptureRecorder,
+  CaptureSource,
+} from "@core/capture/port";

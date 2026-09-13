@@ -132,7 +132,7 @@ import {
   ActivityStubRequest,
   ActivityStubResponse,
 } from "../shared/activity";
-import { validateBody } from "../../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import { getEnemyDuelSessionAddress } from "./public";
 
 let enemyDuelMatchState: { activityId: string; modeId: string } | null = null;

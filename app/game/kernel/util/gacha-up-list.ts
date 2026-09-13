@@ -2,8 +2,9 @@
  * 抽卡共享工具（domain/util 公共件）
  *
  * GACHA_RULE_TYPE（gachaRuleType → 玩家数据子结构名）与 resolveEffectiveUpPerCharList
- * （生效 UP 干员列表纯函数）原属 gacha 模块；ShopManager 等跨模块消费——
- * 上移公共工具层，gacha/shop 统一从本层取用，消除 shop → gacha 值级耦合。
+ * （生效 UP 干员列表纯函数）原属 gacha 模块、ShopManager 等跨模块消费；
+ * 2026-09-13 上移 `kernel/util`（本文件），gacha/shop 统一从本层取用，消除 shop → gacha 值级耦合。
+ * `gacha/gacha.ts` 仍 re-export `GACHA_RULE_TYPE` 以兼容既有消费点。
  */
 import type {
   GachaDetailData,
@@ -11,8 +12,8 @@ import type {
   GachaPerChar,
   GachaPoolClientData,
 } from "@excel/excel";
-import type { PlayerGacha } from "../../kernel/playerdata";
-import { getIn } from "../../kernel/util/json-path";
+import type { PlayerGacha } from "../playerdata";
+import { getIn } from "@utils/json-path";
 
 export const GACHA_RULE_TYPE: { [rule: string]: string } = {
     NORMAL: "normal",

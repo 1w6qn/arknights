@@ -12,7 +12,7 @@ import { RoguelikeV2Manager } from "../logic";
 import excel from "@excel/excel";
 import { now } from "@utils/time";
 import { TypedEventEmitter } from "../../../kernel/events/runtime";
-import { random } from "../../../kernel/util/random";
+import { random } from "@utils/random";
 
 export interface CopperItem {
   id: string;

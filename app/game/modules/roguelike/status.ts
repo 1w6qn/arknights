@@ -4,7 +4,7 @@ import { RoguelikeV2Manager } from "./logic";
 import excel from "@excel/excel";
 import { RoguelikeEventManager, RoguelikePendingEvent } from "./events";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
 export class RoguelikePlayerStatusManager
   implements PlayerRoguelikeV2.CurrentData.PlayerStatus

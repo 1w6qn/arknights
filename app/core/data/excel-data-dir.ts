@@ -10,7 +10,10 @@
  * - 热重载（init 二次调用）与懒加载 getter 读写盘路径此前不可控。
  *
  * 解析优先级：`setExcelDataDir()` 显式覆写 > `ARKNIGHTS_EXCEL_DIR` 环境变量 > 默认值。
- * 不引入 @core/config 依赖，保持 excel 层零反向耦合（守卫 decoupling.test.ts）。
+ * 不引入 @core/config 依赖，保持本模块零反向耦合（守卫 decoupling.test.ts）。
+ *
+ * 位置：2026-09-13 由 `app/game/excel/excel-data-dir.ts` 下沉 `app/core/data/`——零依赖，
+ * 属热更管线基础设施而非游戏业务，下沉后 ops/updater 与 scripts 复用不再经 game。
  */
 
 /** 默认 excel 数据目录（仓库既有相对路径，行为与改造前一致） */

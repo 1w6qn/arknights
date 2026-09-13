@@ -4,18 +4,18 @@ import { ItemBundle, ItemType } from "@excel/excel";
 import type { ItemBundleInput } from "../../kernel/inventory-pipeline";
 import excel from "@excel/excel";
 import { newlyCompletedPowers } from "./team-power";
-import { GachaResult } from "../gacha/gacha";
+import { GachaResult } from "../../kernel/model";
 import { now } from "@utils/time";
 import { logger } from "@utils/logger";
 import { rarityToIndex } from "@utils/rarity";
 import {
   reconcileCharEquips,
   reconcileCharSkills,
-} from "./char-skills";
+} from "../../kernel/char-skills";
 import { PlayerCharacter, PlayerCharPatch } from "../../kernel/model";
 import type { PlayerStatus } from "../../kernel/playerdata";
 import { UniEquipData } from "@excel/excel";
-import { BadRequestError } from "../../kernel/http/errors";
+import { BadRequestError } from "@core/http/errors";
 
 /**
  * character_table 技能条目读取视图（既有实现按 `levelUpCostCond` 读专精档位）

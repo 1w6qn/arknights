@@ -8,7 +8,7 @@ import {
 } from "@utils/random";
 import { now } from "@utils/time";
 import { PlayerDataManager } from "../../kernel/PlayerDataManager";
-import { BadRequestError } from "../../kernel/http/errors";
+import { BadRequestError } from "@core/http/errors";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import { rarityToIndex } from "@utils/rarity";
 import type { PlayerBuildingHire } from "../../kernel/playerdata";

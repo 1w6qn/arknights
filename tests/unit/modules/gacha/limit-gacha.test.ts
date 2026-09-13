@@ -85,7 +85,7 @@ import type { Draft } from "mutative";
 import type { PlayerDataModel } from "@game/kernel/playerdata";
 import { GainItemPipeline } from "@game/kernel/inventory-pipeline";
 import { GachaManager } from "@game/modules/gacha/logic";
-import { setRandSource, resetRandSource } from "@game/kernel/util/random";
+import { setRandSource, resetRandSource } from "@utils/random";
 import { GachaType } from "@game/modules/gacha/gacha";
 import { accountManager } from "@game/modules/account/AccountManager";
 import { freeCountFor, refreshLimitFree } from "@game/modules/gacha/limit-gacha";

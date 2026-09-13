@@ -7,7 +7,7 @@
  *
  * 方法均为异步：主数据层支持 MySQL / PostgreSQL 后端，仓储 API 统一异步。
  */
-import type { BattleInfo, BattleRecord } from "../../kernel/battle-info-store";
+import type { BattleInfo, BattleRecord } from "./battle-info-store";
 import type { ReplayRepository } from "@core/db/replay-repo";
 
 export class BattleStore {

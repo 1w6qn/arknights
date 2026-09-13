@@ -6,10 +6,10 @@ import { rarityToIndex } from "@utils/rarity";
 import {
   reconcileCharEquips,
   reconcileCharSkills,
-} from "./char-skills";
+} from "../../kernel/char-skills";
 import { PlayerDataManager } from "../../kernel/PlayerDataManager";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
-import { BadRequestError } from "../../kernel/http/errors";
+import { BadRequestError } from "@core/http/errors";
 import { isJsonObject } from "@excel/json-value";
 
 export class TroopManager {

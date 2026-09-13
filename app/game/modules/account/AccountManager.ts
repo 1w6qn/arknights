@@ -25,17 +25,19 @@ import { openDatabase } from "@core/db/database";
 import { ReplayRepository } from "@core/db/replay-repo";
 import { PlayerDataRepository } from "@core/db/player-data-repo";
 import * as fs from "fs";
-import { BattleStore } from "../battle/BattleStore";
-import { SocialService } from "../social/SocialService";
+import { BattleStore } from "../../kernel/battle-store";
+import { SocialService } from "../social/public";
 import { UserRepository, migrateUsersFromJsonFile } from "@core/db/user-repo";
+import type { UserConfig } from "@core/db/types";
+import { registerAccountAuthPort } from "@core/auth/account-port";
 import config from "@core/config/index";
 import { migrateFromUserConfigs } from "@core/db/migrate";
 import { acquireLock } from "@utils/mutex";
 import { hashPassword, verifyPassword, isHashedPassword } from "@utils/crypt";
 import { logger } from "@utils/logger";
 import { checkAndRepairSave, logSaveRepair } from "../../kernel/save-health";
-import { buildFreshPlayerData } from "../user/freshPlayer";
-import { BadRequestError } from "../../kernel/http/errors";
+import { buildFreshPlayerData } from "../../kernel/fresh-player";
+import { BadRequestError } from "@core/http/errors";
 
 /**
  * 热路径顶层键（放最前）
@@ -131,6 +133,9 @@ export class AccountManager implements BattleInfoStore {
     this.data = {};
     this._trigger = new Emittery();
     this._socialService = new SocialService(this);
+    // 认证端口注册（2026-09-13）：core 的 auth 路由 / kernel 的认证策略均不得反向
+    // 依赖本模块（R1/R2），改为本类构造时向 @core/auth/account-port 注册自身。
+    registerAccountAuthPort(this);
   }
 
   /** secret→uid 索引（真实模式 getUidByToken 懒构建，避免每次请求线性扫描 configs） */
@@ -1034,39 +1039,13 @@ interface LegacyUserConfigBattle {
 }
 
 /**
- * 用户配置接口
- * 
- * 存储用户的账户认证、社交、战斗、抽卡等配置信息。
+ * 用户配置接口（**从 core 重导出，保持向后兼容**）
+ *
+ * 2026-09-13：定义已下沉 `@core/db/types`——`core/db/user-repo.ts` 与 `core/db/migrate.ts`
+ * 需要它，而 core 不得依赖 game（R1）。本模块所有存量引用点（含 12 个测试、scripts、
+ * ops/admin）经此 re-export 零改动；**新增代码请直接 import `@core/db/types`**。
  */
-export interface UserConfig {
-  uid: string;
-  password: string;
-  /** 账号密钥（参考 DoctoratePy：MD5(phone + 渠道密钥)，真实模式 token 用） */
-  secret?: string;
-  /** 是否禁用（Dashboard 删除/禁用用户；禁用后无法登录/鉴权） */
-  disabled?: boolean;
-  auth: {
-    hgId: string;
-    phone: string;
-    email: string;
-    identityNum: string;
-    identityName: string;
-    isMinor: false;
-    isLatestUserAgreement: true;
-  };
-  // 社交数据（好友/申请/访问）以 social.db 为唯一事实源（R3）——UserConfig 不再携带 social 字段
-  battle: {
-    stageId: string;
-    // 回放独立存 replays 表（R4）、结算信息独立存 battle_infos 表（A3）——configs 均不再携带
-  };
-  gacha: {
-    [key: string]: {
-      beforeNonHitCnt: number;
-    };
-  };
-  /** 肉鸽存档快照（服务端自定义；未建模 JSON，索引/取值均须显式收窄） */
-  rlv2: JsonValue;
-}
+export type { UserConfig };
 
 /**
  * 战斗信息接口（从 BattleInfoStore 重导出，保持向后兼容）

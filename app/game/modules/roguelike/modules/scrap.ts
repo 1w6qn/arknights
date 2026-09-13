@@ -14,7 +14,7 @@ import { now } from "@utils/time";
 import { TypedEventEmitter } from "../../../kernel/events/runtime";
 import { isBlackstream } from "../theme-rules";
 import type { RoguelikeScrapModuleData } from "@excel/excel";
-import { random } from "../../../kernel/util/random";
+import { random } from "@utils/random";
 
 /**
  * 当前移动方式（步行 = isWalk true；载具 = instId）

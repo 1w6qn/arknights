@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { getPlayer, getPlayerOptional } from "../../kernel/http/request-context";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import { PlayerDataManager } from "../../kernel/PlayerDataManager";
 import {
   addonStageBattleFinishSchema,

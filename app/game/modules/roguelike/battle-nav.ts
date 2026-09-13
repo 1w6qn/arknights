@@ -15,7 +15,7 @@ import excel from "@excel/excel";
 import { PlayerSquad } from "../../kernel/model";
 import { ItemBundle } from "@excel/excel";
 import { generateShopGoods, buildShopContent, buyGoods, refreshShop, leaveShop, shopBattleStart, isInShopNode } from "./shop";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
 export async function moveAndBattleStart(mgr: RoguelikeV2Manager, args: {
     to: RoguelikeNodePosition;

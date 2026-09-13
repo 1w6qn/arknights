@@ -18,7 +18,7 @@ import {
   ROLL_NODE_TYPE_VALUES,
   isBlackstream,
 } from "./theme-rules";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
 /**
  * 商店商品条目（BATTLE_SHOP payload 的单件）

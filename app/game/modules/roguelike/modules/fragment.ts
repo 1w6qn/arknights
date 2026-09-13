@@ -7,7 +7,7 @@ import { randomChoice } from "@utils/random";
 import { rarityToIndex } from "@utils/rarity";
 import { logger } from "@utils/logger";
 import { TypedEventEmitter } from "../../../kernel/events/runtime";
-import { random } from "../../../kernel/util/random";
+import { random } from "@utils/random";
 
 export class RoguelikeFragmentManager {
   index: number;

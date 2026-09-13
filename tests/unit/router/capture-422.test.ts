@@ -10,7 +10,7 @@ import type { ZodSchema } from "zod";
 import type { JsonValue } from "@excel/json-value";
 import * as Building from "@game/modules/building/schemas";
 import * as BusinessCard from "@game/modules/businessCard/businessCard.schema";
-import { validateBody } from "@game/kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 /** 校验中间件的请求视图：只声明被测分支读到的 body */
 interface MockReq {

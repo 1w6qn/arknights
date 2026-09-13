@@ -135,7 +135,7 @@ import {
   ActivityStubRequest,
   ActivityStubResponse,
 } from "../shared/activity";
-import { validateBody } from "../../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 /**
  * act24side（落叶逐火 / 源石技艺炼金站）活动配置读取

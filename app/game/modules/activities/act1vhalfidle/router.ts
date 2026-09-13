@@ -131,7 +131,7 @@ import {
   ActivityStubRequest,
   ActivityStubResponse,
 } from "../shared/activity";
-import { validateBody } from "../../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 const router = Router();
 import { handleAct1vhalfidlebattleStart, handleAct1vhalfidlebattleFinish, handleAct1vhalfidlerefreshProduct, handleAct1vhalfidleharvest, handleAct1vhalfidleunlockTech, handleAct1vhalfidlerecruitNormal, handleAct1vhalfidlerecruitDirect, handleAct1vhalfidleupgradeChar, handleAct1vhalfidleupgradeSkill, handleAct1vhalfidleevolveChar, handleAct1vhalfidlereplaceRate, handleAct1vhalfidlesetAssistChar } from "./logic";

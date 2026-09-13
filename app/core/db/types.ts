@@ -12,6 +12,7 @@
  * 暴露，三种驱动行为一致（SQLite 驱动内部同步执行后立即 resolve，无额外开销）。
  * 参数占位符统一写 `?`（PostgreSQL 驱动内部改写为 `$n`）。
  */
+import type { JsonValue } from "@utils/json-value";
 
 /** 支持的数据库后端类型 */
 export type DatabaseBackend = "sqlite" | "mysql" | "postgresql";
@@ -113,3 +114,47 @@ export interface NetworkDatabaseOptions {
 
 /** 数据库连接配置（三种后端联合类型） */
 export type DatabaseOptions = SqliteDatabaseOptions | NetworkDatabaseOptions;
+
+/**
+ * 用户配置（users 表持久化形状，JSON 列）
+ *
+ * 存储账号认证、战斗、抽卡等配置。**社交数据不在其中**——好友/申请/访问以 social.db
+ * 为唯一事实源；回放与结算信息亦已独立成表（replays / battle_infos / battle_records），
+ * `battle` 只保留 `stageId`。
+ *
+ * 位置：2026-09-13 由 `app/game/modules/account/AccountManager.ts` 下沉 `core/db/types`——
+ * `core/db/user-repo.ts` 与 `core/db/migrate.ts` 需要它，而 core 不得依赖 game（R1）。
+ * `AccountManager` 仍 re-export 该类型以兼容存量引用点。
+ */
+export interface UserConfig {
+  /** 账号 uid（字符串） */
+  uid: string;
+  /** 密码（哈希后存储；兼容历史明文） */
+  password: string;
+  /** 账号密钥（参考 DoctoratePy：MD5(phone + 渠道密钥)，真实模式 token 用） */
+  secret?: string;
+  /** 是否禁用（Dashboard 删除/禁用用户；禁用后无法登录/鉴权） */
+  disabled?: boolean;
+  /** 认证信息（官服协议形状） */
+  auth: {
+    hgId: string;
+    phone: string;
+    email: string;
+    identityNum: string;
+    identityName: string;
+    isMinor: false;
+    isLatestUserAgreement: true;
+  };
+  /** 战斗配置（仅关卡进度；回放/结算信息见独立表） */
+  battle: {
+    stageId: string;
+  };
+  /** 抽卡保底计数（按卡池 key） */
+  gacha: {
+    [key: string]: {
+      beforeNonHitCnt: number;
+    };
+  };
+  /** 肉鸽存档快照（服务端自定义；未建模 JSON，索引/取值均须显式收窄） */
+  rlv2: JsonValue;
+}

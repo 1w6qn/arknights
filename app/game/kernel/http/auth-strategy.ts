@@ -5,13 +5,17 @@
  * AuthStrategy 策略接口。authMiddleware 通过策略对象完成 uid 解析，不再直接
  * 分叉 config.authMode；策略工厂是唯一依据 config.authMode 做出模式决策的地方。
  *
- * 依赖注入（2026-09）：real 模式所需的账号能力收敛为 `AuthAccountPort` 端口，
- * 缺省绑定 accountManager 单例（行为不变），测试/多服场景可注入替身——
- * 免去 `vi.mock("@game/modules/account/AccountManager")` 模块打桩。
+ * 依赖注入（2026-09）：real 模式所需的账号能力收敛为 `AuthAccountPort` 端口。
+ * 2026-09-13：端口契约下沉 `@core/auth/account-port`（core 不得依赖 game，R2/R1），
+ * **缺省绑定移出 kernel**——未显式注入时经 `getAuthAccountPort()` 取账号模块构造时
+ * 注册进 core 的实现；测试仍可注入两方法替身。
  */
 
 import type { Request } from "express";
-import { accountManager } from "../../modules/account/AccountManager";
+import { getAuthAccountPort } from "@core/auth/account-port";
+import type { AuthAccountPort } from "@core/auth/account-port";
+
+export type { AuthAccountPort } from "@core/auth/account-port";
 
 /**
  * 策略工厂读取的最小配置形状
@@ -95,47 +99,34 @@ export class SingleAccountStrategy implements AuthStrategy {
 }
 
 /**
- * 账号服务端口（Auth Account Port）
- *
- * real 模式策略需要的最小账号能力面：token→uid 解析与建号。
- * 缺省绑定全局单例 accountManager；测试注入替身即可覆盖，无需模块打桩。
- * 端口刻意只含这两个方法——策略不感知 AccountManager 的其余职责。
- */
-export interface AuthAccountPort {
-  /**
-   * token（uid 或账号 secret）→ uid
-   * @param token - 客户端 secret 头值
-   * @returns 匹配的 uid；无匹配返回空串（调用方据此判 401）
-   */
-  getUidByToken(token: string): Promise<string>;
-
-  /**
-   * 注册新账号
-   * @param phone - 手机号
-   * @param password - 密码
-   * @returns 新账号 uid
-   */
-  registerUser(phone: string, password: string): Promise<string>;
-}
-
-/**
  * 真实多账号策略
  *
  * 校验 secret 为有效账号 uid 或账号 token（经注入的账号端口解析），
  * 无效或缺省返回 undefined；注册同样委托端口真正建号。
+ *
+ * 端口缺省解析：构造时未注入 → 每次调用经 `getAuthAccountPort()` 取
+ * `AccountManager` 构造时向 core 注册的实现（未注册时抛错，不静默降级）。
  */
 export class RealAccountStrategy implements AuthStrategy {
   /** real 模式保留客户端 secret 头，不强制覆盖 */
   readonly forceSecretHeader = false;
 
-  /** 账号服务端口（缺省绑定 accountManager 单例） */
-  private readonly _accounts: AuthAccountPort;
+  /** 账号服务端口（显式注入优先；缺省取 core 注册的账号端口） */
+  private readonly _accounts?: AuthAccountPort;
 
   /**
-   * @param accounts - 账号服务端口（缺省 `accountManager` 单例，行为与迁移前一致）
+   * @param accounts - 账号服务端口（缺省 `getAuthAccountPort()` 注册值）
    */
-  constructor(accounts: AuthAccountPort = accountManager) {
+  constructor(accounts?: AuthAccountPort) {
     this._accounts = accounts;
+  }
+
+  /**
+   * 取生效的账号端口（显式注入优先，否则回落 core 注册值）
+   * @returns 账号端口
+   */
+  private _port(): AuthAccountPort {
+    return this._accounts ?? getAuthAccountPort();
   }
 
   /**
@@ -146,7 +137,7 @@ export class RealAccountStrategy implements AuthStrategy {
   async resolveUid(req: Request): Promise<string | undefined> {
     const secret = req.headers?.secret as string | undefined;
     if (!secret) return undefined;
-    const uid = await this._accounts.getUidByToken(secret);
+    const uid = await this._port().getUidByToken(secret);
     return uid || undefined;
   }
 
@@ -157,19 +148,19 @@ export class RealAccountStrategy implements AuthStrategy {
    * @returns 新账号 uid
    */
   async registerUid(phone: string, password: string): Promise<string> {
-    return this._accounts.registerUser(phone, password);
+    return this._port().registerUser(phone, password);
   }
 }
 
 /**
  * 认证策略工厂：唯一依据 config.authMode 做出模式决策的地方
  * @param cfg - 应用配置（读取 authMode / singleUid）
- * @param accounts - 账号服务端口（real 模式使用；缺省 accountManager 单例）
+ * @param accounts - 账号服务端口（real 模式使用；缺省取 core 注册的账号端口）
  * @returns 对应当前模式的认证策略实例
  */
 export function createAuthStrategy(
   cfg: AuthStrategyConfig,
-  accounts: AuthAccountPort = accountManager,
+  accounts?: AuthAccountPort,
 ): AuthStrategy {
   return cfg.authMode === "real"
     ? new RealAccountStrategy(accounts)

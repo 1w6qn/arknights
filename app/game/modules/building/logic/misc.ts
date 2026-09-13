@@ -11,7 +11,7 @@ import { logger } from "@utils/logger";
 import { Draft } from "mutative";
 import { PlayerDataModel } from "../../../kernel/playerdata";
 import { PlayerBuildingDIYPreset, PlayerStatus } from "../../../kernel/playerdata";
-import { accountManager } from "../../account/AccountManager";
+import { accountManager } from "../../account/public";
 import { getMessageLeaveBoardConst } from "@excel/building_excel";
 import type {
   ConfirmMessageBoardRewardRequest,

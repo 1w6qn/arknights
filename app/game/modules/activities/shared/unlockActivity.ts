@@ -20,6 +20,7 @@ import { syncAct44SideEntry } from "../act44side/public";
 import { logger } from "@utils/logger";
 import config from "@core/config/index";
 import { scanUnlockChain } from "../../../kernel/util/stage-unlock";
+import { resolveDictKey } from "../../../kernel/util/excel-key";
 import type { Draft } from "mutative";
 import type {
   MissionPlayerData,
@@ -70,13 +71,12 @@ function activityDetailKey(type: string): string {
  * 改为大小写/下划线不敏感匹配——任意版本下都能命中实际键。
  * @param type - basicInfo.type 枚举名（如 "TYPE_ACT3D0" / "COLLECTION"）
  * @returns 字典实际键（未命中返回 undefined）
+ *
+ * 2026-09-13：纯函数部分上移 `@game/kernel/util/excel-key`（kernel 不再反向依赖本模块），
+ * 本函数退化为「取 excel 单例字典 + 委托」的薄壳。
  */
 export function activityDictKey(type: string): string | undefined {
-  const norm = type.replace(/_/g, "").toLowerCase();
-  const dict = excel.ActivityTable.activity;
-  return Object.keys(dict).find(
-    (k) => k.replace(/_/g, "").toLowerCase() === norm,
-  );
+  return resolveDictKey(excel.ActivityTable.activity, type);
 }
 
 /** BOSS_RUSH 默认遗物（relicList[0].relicId，缺省空） */

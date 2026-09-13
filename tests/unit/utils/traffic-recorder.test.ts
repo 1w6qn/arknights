@@ -117,7 +117,7 @@ describe("createTrafficRecorder（统一抓包存储记录）", () => {
   });
 
   it("recordTraffic=true 时写入统一抓包存储（记录行 + req/res body 文件）", async () => {
-    const handler = createTrafficRecorder(cfgOn, "private");
+    const handler = createTrafficRecorder(cfgOn, "private", captureManager);
     const req = mockReq("/account/syncData?platform=2");
     const res = mockRes();
     const next = vi.fn();
@@ -150,7 +150,7 @@ describe("createTrafficRecorder（统一抓包存储记录）", () => {
   });
 
   it("recordTraffic=false（默认）时不写任何记录", async () => {
-    const handler = createTrafficRecorder(cfgOff, "private");
+    const handler = createTrafficRecorder(cfgOff, "private", captureManager);
     const req = mockReq("/account/syncData");
     const res = mockRes();
     run(handler, req, res, () => {});
@@ -161,7 +161,7 @@ describe("createTrafficRecorder（统一抓包存储记录）", () => {
   });
 
   it("url 带 query 时 path 只取路径部分", async () => {
-    const handler = createTrafficRecorder(cfgOn, "private");
+    const handler = createTrafficRecorder(cfgOn, "private", captureManager);
     const req = mockReq("/u8/user/v1/getToken?appCode=abc&platform=2");
     const res = mockRes();
     run(handler, req, res, () => {});
@@ -176,7 +176,7 @@ describe("createTrafficRecorder（统一抓包存储记录）", () => {
   });
 
   it("source 参数标记来源（capture 官服转发 → official）", async () => {
-    const handler = createTrafficRecorder(cfgOn, "official");
+    const handler = createTrafficRecorder(cfgOn, "official", captureManager);
     const req = mockReq("/account/login");
     const res = mockRes();
     run(handler, req, res, () => {});
@@ -188,7 +188,7 @@ describe("createTrafficRecorder（统一抓包存储记录）", () => {
   });
 
   it("非 JSON 请求带 rawBody 时以 req.bin 原始字节落盘（multipart 像素画上传等）", async () => {
-    const handler = createTrafficRecorder(cfgOn, "official");
+    const handler = createTrafficRecorder(cfgOn, "official", captureManager);
     const req = mockReq("/activity/arkhub/savePixelArt");
     req.headers = { "content-type": 'multipart/form-data; boundary="C880D0B0"' };
     req.body = undefined;
@@ -212,7 +212,7 @@ describe("createTrafficRecorder（统一抓包存储记录）", () => {
   });
 
   it("JSON 请求（无 rawBody）请求体以 req.json 落盘", async () => {
-    const handler = createTrafficRecorder(cfgOn, "private");
+    const handler = createTrafficRecorder(cfgOn, "private", captureManager);
     const req = mockReq("/account/login", "POST", { phone: "13800000000" });
     const res = mockRes();
     run(handler, req, res, () => {});
@@ -226,7 +226,7 @@ describe("createTrafficRecorder（统一抓包存储记录）", () => {
   });
 
   it("默认排除 /admin /assetbundle /config /api 等本地挂载前缀（不记录，不包裹 res）", async () => {
-    const handler = createTrafficRecorder(cfgOn, "private");
+    const handler = createTrafficRecorder(cfgOn, "private", captureManager);
     const cases = [
       "/admin/api/status",
       "/admin/dashboard",
@@ -249,7 +249,7 @@ describe("createTrafficRecorder（统一抓包存储记录）", () => {
 
   it("自定义 recordTrafficExclude 覆盖默认列表（空数组 = 全部记录，含 /admin）", async () => {
     const cfgAll = { debug: { recordTraffic: true, recordTrafficExclude: [] as string[] } };
-    const handler = createTrafficRecorder(cfgAll, "private");
+    const handler = createTrafficRecorder(cfgAll, "private", captureManager);
     const req = mockReq("/admin/api/status");
     const res = mockRes();
     run(handler, req, res, () => {});
@@ -263,7 +263,7 @@ describe("createTrafficRecorder（统一抓包存储记录）", () => {
 
   it("自定义 recordTrafficExclude 仅排除指定前缀（其它照常记录）", async () => {
     const cfg = { debug: { recordTraffic: true, recordTrafficExclude: ["/admin"] } };
-    const handler = createTrafficRecorder(cfg, "private");
+    const handler = createTrafficRecorder(cfg, "private", captureManager);
     const req1 = mockReq("/admin/api/status");
     const res1 = mockRes();
     run(handler, req1, res1, () => {});

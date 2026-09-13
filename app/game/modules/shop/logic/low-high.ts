@@ -7,7 +7,7 @@
 import type { ShopManager } from "../logic";
 import excel from "@excel/excel";
 import { ItemBundle, ItemType } from "@excel/excel";
-import { resolveEffectiveUpPerCharList } from "../../gacha/gacha-up-list";
+import { resolveEffectiveUpPerCharList } from "../../../kernel/util/gacha-up-list";
 import { now } from "@utils/time";
 import { logger } from "@utils/logger";
 import { ClassicGoodList, HighGoodList, QCObject } from "@excel/excel";

@@ -11,7 +11,7 @@ import {
   Act1LockSetSquadRequest,
   Act1LockSetSquadResponse,
 } from "./interlock";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   getMilestoneBatchSchema,
   getMilestoneSchema,

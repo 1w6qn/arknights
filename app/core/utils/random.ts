@@ -1,7 +1,13 @@
 /**
  * 随机数工具模块
- * 
+ *
  * 提供常用的随机数生成和随机选择功能，用于抽卡、招募等游戏随机机制。
+ *
+ * 2026-09-13：并入原 `app/game/kernel/util/random.ts` 的**可注入随机源**
+ * （`random` / `setRandSource` / `resetRandSource`）——零依赖纯工具、被 29 处
+ * 跨模块消费，下沉 core 后 game/ops/scripts 统一从 `@utils/random` 取用。
+ * 既有 `randomInt` / `randomChoices` / `randomSample` / `randomChoice` / `divmod`
+ * 保持直连 `Math.random` 的历史行为不变（勿改为经注入源，避免行为漂移）。
  */
 import { randomUUID } from "node:crypto";
 
@@ -89,4 +95,40 @@ export function randomChoice<T>(arr: T[]): T {
  */
 export function divmod(x: number, y: number): [number, number] {
   return [Math.floor(x / y), x % y];
+}
+
+/**
+ * 可注入随机源（建议 15：全域随机源注入化）
+ *
+ * 业务纯函数/引擎统一经 `random()` 取随机数（默认 Math.random）；
+ * 测试可经 `setRandSource` 注入固定序列/固定值，实现确定性复现，
+ * 消除概率性断言 flaky（如 gacha-rank 的 2% 权重波动）。
+ *
+ * 约定：
+ * - 业务代码只 import { random }，不直接调 Math.random；
+ * - 默认源为动态读取 Math.random（兼容既有测试 vi.spyOn(Math, "random")）；
+ * - 测试可经 setRandSource 注入固定序列（推荐），结束时 resetRandSource；
+ * - 纯函数级 rand 参数注入（如 resolveGachaRank）优先于模块级注入。
+ */
+let source: () => number = () => Math.random();
+
+/**
+ * 注入随机源（测试用）
+ * @param fn - 返回 [0,1) 均匀随机数的函数
+ */
+export function setRandSource(fn: () => number): void {
+  source = fn;
+}
+
+/** 恢复默认（动态读取 Math.random） */
+export function resetRandSource(): void {
+  source = () => Math.random();
+}
+
+/**
+ * 取 [0,1) 随机数（经当前注入源）
+ * @returns 当前随机源产出的 [0,1) 随机数
+ */
+export function random(): number {
+  return source();
 }

@@ -14,7 +14,7 @@ import {
   CRISIS_JSON_BASE_PATH,
   CRISIS_V2_JSON_BASE_PATH,
 } from "./crisis-seasons";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   crisisBuyGoodsSchema,
   crisisChallengeRewardAllSchema,
@@ -53,10 +53,11 @@ import {
   type CrisisV2SeasonReady,
   type CrisisV2SeasonView,
 } from "./crisis-data";
-import { recordPurchase } from "../pay/purchase-record";
+import { recordPurchase } from "../../kernel/util/purchase-record";
 import { now } from "@utils/time";
 import { readJson } from "@utils/file";
 import { decryptBattleData } from "@utils/crypt";
+import type { BattleData } from "../../kernel/battle-model";
 import excel from "@excel/excel";
 import { logger } from "@utils/logger";
 import config from "@core/config/index";
@@ -846,7 +847,7 @@ router.post("/buyGoods", validateBody(crisisBuyGoodsSchema), async (req, res) =>
   const { goodId, count } = req.body as CrisisBuyGoodsRequest;
 
   await player.update(async (draft) => {
-    /** 更新商店购买记录（共享实现，见 @game/modules/pay/purchase-record） */
+    /** 更新商店购买记录（共享实现，见 @game/kernel/util/purchase-record） */
     recordPurchase(draft.crisis.shop.info, goodId, count);
   });
 
@@ -1344,7 +1345,7 @@ router.post("/v2/buyGood", validateBody(crisisV2BuyGoodSchema), async (req, res)
   const { goodId, count } = req.body as CrisisV2BuyGoodRequest;
 
   await player.update(async (draft) => {
-    /** 更新V2商店购买记录（共享实现，见 @game/modules/pay/purchase-record） */
+    /** 更新V2商店购买记录（共享实现，见 @game/kernel/util/purchase-record） */
     recordPurchase(draft.crisisV2.shop.info, goodId, count);
   });
 
@@ -1425,7 +1426,7 @@ router.post("/recalRune/battleFinish", validateBody(recalRuneBattleFinishSchema)
   let hp = 0;
   try {
     if (body.data) {
-      const battleData = await decryptBattleData(
+      const battleData = await decryptBattleData<BattleData>(
         body.data,
         player._playerdata.pushFlags.status,
       );

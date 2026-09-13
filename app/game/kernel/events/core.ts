@@ -17,7 +17,7 @@ import type {
   CommonStartBattleRequest,
 } from "../battle-model";
 import type { PlayerCharacter, SquadFriendData } from "../model";
-import type { PlayerRoguelikeV2 } from "../../modules/roguelike/rlv2-model";
+import type { PlayerRoguelikeV2 } from "../rlv2-model";
 
 /**
  * 核心事件映射

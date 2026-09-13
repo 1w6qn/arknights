@@ -9,8 +9,8 @@ import { Router } from "express";
 import { getPlayer, getPlayerOptional } from "../../kernel/http/request-context";
 import { PlayerDataManager } from "../../kernel/PlayerDataManager";
 import { GACHA_RULE_TYPE } from "./gacha";
-import { setIn } from "../../kernel/util/json-path";
-import { validateBody } from "../../kernel/http/validate-body";
+import { setIn } from "@utils/json-path";
+import { validateBody } from "@core/http/validate-body";
 import {
   syncNormalGachaSchema,
   finishNormalGachaSchema,

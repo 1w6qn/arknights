@@ -129,7 +129,7 @@ import {
   ActivityStubRequest,
   ActivityStubResponse,
 } from "../shared/activity";
-import { validateBody } from "../../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 const router = Router();
 router.post("/typeAct3d0/selectFaction", validateBody(ReqSchema.activityStubSchema), async (req, res) => {

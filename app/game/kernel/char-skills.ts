@@ -7,6 +7,11 @@
  * - 解锁条件以 excel CharacterTable[charId].skills[i].unlockCond.phase 为准，
  *   即当前 evolvePhase >= 所需 phase 时 unlock = 1，否则 unlock = 0。
  * - 官服存档在未精一/未精二时仍会列出未来技能占位（unlock:0），修复/回填时不得删除。
+ *
+ * 位置：2026-09-13 由 `app/game/modules/character/char-skills.ts` 上移 `app/game/kernel/`——
+ * kernel 的存档健康检查（`save-health.ts`）需要它，而 kernel 不得反向依赖 modules（R2）。
+ * 仍直连 `@excel/excel` 单例（棘轮基线已随之重键）：`checkAndRepairSave` 在 PlayerDataManager
+ * 之前对原始存档 JSON 运行，此处拿不到 `player.excel` 端口。
  */
 import excel from "@excel/excel";
 import type { UniEquipData } from "@excel/excel";

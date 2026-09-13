@@ -3,7 +3,6 @@ import excel from "@excel/excel";
 import { readFileSync } from "fs";
 import zlib from "node:zlib";
 import { RoguelikeInventoryManager } from "./inventory";
-import { TroopManager } from "../character/troop";
 import { RoguelikeBuffManager } from "./buff";
 import { RoguelikePlayerStatusManager } from "./status";
 import { now } from "@utils/time";
@@ -118,7 +117,7 @@ import { finishEvent, hasReachedZone3, locateStartNode, zoneKey, isZoneEnd, chec
 import { moveAndBattleStart, moveTo, createNodeScene, confirmZoneReward, confirmTraderReturn, specialZoneLeave, battlePassGetReward, battlePassBuyReward } from "./battle-nav";
 import { chooseBattleReward, finishBattleReward } from "./reward";
 import { activeRecruitTicket, recruitChar, closeRecruitTicket, getTicketAssistList, recruitAssistChar, stashRecruitTicket, useStashedTicket } from "./recruit-flow";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
 export class RoguelikeV2Manager implements PlayerRoguelikeV2 {
   get pinned(): string | undefined {
@@ -204,7 +203,6 @@ export class RoguelikeV2Manager implements PlayerRoguelikeV2 {
 
   troop: RoguelikeTroopManager;
 
-  _troop: TroopManager;
 
   _pool: RoguelikePoolManager;
 
@@ -244,7 +242,6 @@ export class RoguelikeV2Manager implements PlayerRoguelikeV2 {
     // 缺失字段，若 _playerdata.rlv2 已被 Immer 冻结（autoFreeze=true 下 finishDraft 冻结
     // 整个 _playerdata），则以深可变副本替换 rlv2 子树，避免构造期原地写抛错。
     this._normalizeMutablePlayerdata();
-    this._troop = player.troop;
     // 构造期占位：仅当存档无进行中的对局（current.game.theme 空——新登录/无对局）
     // 时初始化 NONE 占位；有进行中游戏（重启后重登"继续探索"）保留存档
     // current.game/buff/record——无条件重置会把进行中对局清空 → 重登后无法继续。

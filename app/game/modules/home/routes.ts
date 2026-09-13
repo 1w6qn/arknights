@@ -9,7 +9,7 @@
  */
 import { Router } from "express";
 import { getPlayer } from "../../kernel/http/request-context";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import {
   NpcAudioChangeLanRequest,
   NpcAudioChangeLanResponse,

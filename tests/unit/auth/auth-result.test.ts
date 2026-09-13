@@ -67,6 +67,9 @@ vi.mock("@utils/logger", () => ({ logger: { info: vi.fn(), error: vi.fn(), warn:
 
 import authRouter from "@core/auth/auth";
 import { accountManager } from "@game/modules/account/AccountManager";
+import { registerAccountAuthPort } from "@core/auth/account-port";
+// 账号端口注册：core/kernel 不再直连本模块（R1/R2），mock 的 accountManager 需显式注册进端口注册表
+registerAccountAuthPort(accountManager);
 
 /** auth 路由的测试请求视图：只声明用例传入且被测分支读到的成员（真实 express Request 可赋给它） */
 interface MockReq {

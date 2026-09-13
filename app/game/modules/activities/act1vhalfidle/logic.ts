@@ -141,7 +141,7 @@ import {
   ActivityStubRequest,
   ActivityStubResponse,
 } from "../shared/activity";
-import { validateBody } from "../../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 import { PlayerDataManager } from "../../../kernel/PlayerDataManager";
 import type { Draft } from "mutative";

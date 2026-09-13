@@ -9,7 +9,7 @@ import excel from "@excel/excel";
 import { ItemBundle, ItemType } from "@excel/excel";
 import { ShopError } from "../errors";
 import { ChooseGPItem, GPGoodList, LevelGPItem, MonthlySubItem, NormalGPItem, PeriodicityGroup, PeriodicityGPItem } from "@excel/excel";
-import { BadRequestError } from "../../../kernel/http/errors";
+import { BadRequestError } from "@core/http/errors";
 import type { Draft } from "mutative";
 import type {
   PlayerDataModel,

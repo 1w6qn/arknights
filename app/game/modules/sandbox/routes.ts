@@ -155,7 +155,7 @@ import {
   SandboxV3UnlockTechResponse,
 } from "./sandbox";
 import * as ReqSchema from "./sandbox.schema";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 const router = Router();
 

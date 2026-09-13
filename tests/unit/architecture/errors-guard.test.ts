@@ -30,8 +30,9 @@ describe("统一业务异常体系（errors-guard）", () => {
   });
 
   it("GameError 子类语义正确（状态码/错误码/文案）", () => {
-    // 类型层面保证：业务层引用的错误类从 kernel/http/errors 导出
-    const errorsFile = readSource(path.join(KERNEL_DIR, "http", "errors.ts"));
+    // 类型层面保证：业务层引用的错误类从 @core/http/errors 导出
+    // （2026-09-13 由 app/game/kernel/http/errors.ts 下沉 app/core/http/errors.ts）
+    const errorsFile = readSource(path.join(APP_ROOT, "app", "core", "http", "errors.ts"));
     for (const cls of ["GameError", "BadRequestError", "ForbiddenError", "NotFoundError", "InternalError", "isGameError"]) {
       expect(errorsFile).toContain(`export class ${cls}`.replace("export class isGameError", "export function isGameError"));
     }

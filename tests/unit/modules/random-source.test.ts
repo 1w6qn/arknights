@@ -2,7 +2,7 @@
  * 可注入随机源（建议 15）：setRandSource 注入确定性、resetRandSource 恢复默认
  */
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { random, resetRandSource, setRandSource } from "@game/kernel/util/random";
+import { random, resetRandSource, setRandSource } from "@utils/random";
 
 afterEach(() => {
   resetRandSource();

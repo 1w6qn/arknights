@@ -2,7 +2,7 @@ import { PlayerRoguelikePendingEvent } from "./rlv2";
 import { RoguelikeV2Manager } from "./logic";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import excel from "@excel/excel";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
 /** GAME_INIT_RELIC / GAME_INIT_GIFT / GAME_INIT_RECRUIT_SET / GAME_INIT_RECRUIT 事件载荷 */
 interface StepEventArgs {

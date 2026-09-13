@@ -21,10 +21,14 @@
  * 与 morgan 不同：morgan 只输出一行访问日志；本中间件保存完整请求/响应体用于协议对比。
  * 与旧版差异：不再写 tmp/{module}/{endpoint}/{timestamp}.json 散文件——
  * 全部来源（私服/capture 转发/独立代理/官服操作）统一进入 captureManager 存储。
+ *
+ * 分层（2026-09-13）：本文件在 `app/core/`，**不得依赖 ops**（R1）。写入能力收敛为
+ * `@core/capture/port` 的 {@link CaptureRecorder} 端口，实现（ops/capture 的 captureManager）
+ * 由组合根 `app/server.ts` 显式注入——core 不再缺省绑定 `@capture/capture-manager` 单例。
  */
 import { RequestHandler } from "express";
-import type { CaptureRecorder } from "@capture/capture-recorder";
-import { captureManager, CaptureSource } from "@capture/capture-manager";
+import type { CaptureRecorder, CaptureSource } from "../capture/port";
+import { acceptJsonValue } from "@utils/json-path";
 import { logger } from "@utils/logger";
 import { matchesAnyPrefix, LOCAL_ONLY_PREFIXES } from "@utils/path-prefix";
 
@@ -90,7 +94,7 @@ export interface TrafficRecorderOptions {
   config: TrafficRecorderConfig;
   /** 抓包来源标记（capture 官服转发模式传 "official"，普通私服 "private"，默认 "private"） */
   source?: CaptureSource;
-  /** 写入端口（默认 captureManager 单例；测试可注入 mock） */
+  /** 写入端口（**必填**：组合根注入 `captureManager`，测试可注入 mock；core 不再缺省绑定） */
   recorder?: CaptureRecorder;
   /**
    * 正向包含前缀：命中的请求**即使命中 exclude 也记录**（include 优先于 exclude）。
@@ -108,7 +112,9 @@ export interface TrafficRecorderOptions {
  * 形态二（位置参数，既有调用方兼容）：`createTrafficRecorder(config, source?, recorder?)`
  *
  * 拦截 res.send/res.json，在响应发出（finish）后把 request/response 异步写入
- * recorder（默认 captureManager）存储。写入失败仅 logger.debug，不阻塞响应。
+ * recorder 端口存储。**recorder 必须由调用方注入**（生产为 `app/server.ts` 的
+ * `captureManager`）——core 层不再缺省绑定 ops 单例，缺失时创建即抛错。
+ * 写入失败仅 logger.debug，不阻塞响应。
  *
  * 判定顺序：
  * 1. 两通道均关闭（recordTraffic=false 且 REQRES_LOG 未启用）→ 直接放行；
@@ -131,9 +137,9 @@ export function createTrafficRecorder(
 export function createTrafficRecorder(
   configOrOptions: TrafficRecorderConfig | TrafficRecorderOptions,
   source: CaptureSource = "private",
-  recorder: CaptureRecorder = captureManager,
+  recorder?: CaptureRecorder,
 ): RequestHandler {
-  // 兼容分派：带 config 键 → 对象形态；否则按旧位置参数处理（index.ts / 既有测试不受影响）
+  // 兼容分派：带 config 键 → 对象形态；否则按旧位置参数处理（server.ts / 既有测试不受影响）
   const opts: TrafficRecorderOptions =
     typeof configOrOptions === "object" &&
     configOrOptions !== null &&
@@ -141,7 +147,12 @@ export function createTrafficRecorder(
       ? (configOrOptions as TrafficRecorderOptions)
       : { config: configOrOptions as TrafficRecorderConfig, source, recorder };
 
-  const sink: CaptureRecorder = opts.recorder ?? captureManager;
+  const sink = opts.recorder;
+  if (!sink) {
+    throw new Error(
+      "createTrafficRecorder 需要注入 CaptureRecorder（core 层不再缺省绑定 @capture 单例，请由组合根传入 captureManager）",
+    );
+  }
   const src: CaptureSource = opts.source ?? "private";
   const note = opts.note;
 
@@ -215,8 +226,8 @@ export function createTrafficRecorder(
             payload === undefined
               ? undefined
               : typeof payload === "object" && !Buffer.isBuffer(payload)
-                ? { kind: "json" as const, data: payload }
-                : { kind: "bin" as const, data: payload };
+                ? { kind: "json" as const, data: acceptJsonValue(payload) }
+                : { kind: "bin" as const, data: acceptJsonValue(payload) };
 
           await sink.addRecord(
             {
@@ -228,8 +239,8 @@ export function createTrafficRecorder(
               latencyMs: Date.now() - startedAt,
               source: src,
               ...(note !== undefined ? { note } : {}),
-              reqHeaders: req.headers as Record<string, unknown>,
-              resHeaders: res.getHeaders() as Record<string, unknown>,
+              reqHeaders: req.headers,
+              resHeaders: res.getHeaders(),
             },
             {
               req: reqBody,

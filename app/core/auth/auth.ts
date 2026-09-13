@@ -10,7 +10,7 @@ import { now } from "@utils/time";
 import { readJson } from "@utils/file";
 import { logger } from "@utils/logger";
 import { verifyPassword } from "@utils/crypt";
-import { accountManager } from "@game/modules/account/AccountManager";
+import { getAccountAuthPort } from "./account-port";
 import config from "../config/index";
 
 const router = Router();
@@ -113,7 +113,7 @@ router.post("/user/auth/v1/token_by_phone_password", async (req, res) => {
       code: "CREDENTIAL_REQUIRED",
     });
   }
-  const code = await accountManager.tokenByPhonePassword(
+  const code = await getAccountAuthPort().tokenByPhonePassword(
     phone,
     password,
   );
@@ -136,8 +136,8 @@ router.post("/user/auth/v1/token_by_phone_password", async (req, res) => {
  * @returns 用户认证信息
  */
 router.get("/user/info/v1/basic", async (req, res) => {
-  const uid = await accountManager.getUidByToken(req.query!.token as string);
-  const data = await accountManager.getUserConfig(uid);
+  const uid = await getAccountAuthPort().getUidByToken(req.query!.token as string);
+  const data = await getAccountAuthPort().getUserConfig(uid);
   if (config.authMode === "real" && !uid) {
     // 真实模式：无效 token 严格报错（单例模式宽松）
     return res.status(404).send({ status: 1, msg: "用户不存在", code: "USER_NOT_FOUND" });
@@ -175,7 +175,7 @@ router.post("/user/info/v1/verify_cloud_auth_result", async (req, res) => {
 /** Token 换取用户状态（SDK /user/auth，参考 DoctoratePy userAuth） */
 router.post("/user/auth", async (req, res) => {
   const token = String(req.body?.token ?? "");
-  const uid = await accountManager.getUidByToken(token);
+  const uid = await getAccountAuthPort().getUidByToken(token);
   if (!uid) {
     return res.status(404).send({ status: 1, msg: "用户不存在" });
   }
@@ -228,7 +228,7 @@ router.get("/pcSdk/userInfo", async (_req, res) => {
 /** OAuth2 授权共享 handler（v1 兼容旧客户端，v2 为现行版本——逻辑一致） */
 async function oauth2Grant(req: Request, res: Response): Promise<void> {
   const code: string = req.body!.token;
-  const uid = await accountManager.getUidByToken(code);
+  const uid = await getAccountAuthPort().getUidByToken(code);
   res.send({
     status: 0,
     msg: "OK",
@@ -263,7 +263,7 @@ router.post("/u8/user/v1/getToken", async (req, res) => {
   const ext = parseExtension(req.body);
   if (!ext) return res.status(400).send(extensionErrorBody());
   const code: string = ext.code ?? "";
-  const uid = await accountManager.getUidByToken(code);
+  const uid = await getAccountAuthPort().getUidByToken(code);
   // 对齐官服抓包结构：captcha/error/isNew 字段（2026-08-07 auth/u8/user/v1/getToken）
   res.send({
     result: 0,
@@ -286,7 +286,7 @@ router.post("/u8/user/verifyAccount", async (req, res) => {
   const ext = parseExtension(req.body);
   if (!ext) return res.status(400).send(extensionErrorBody());
   const token: string = ext.access_token ?? "";
-  const uid = await accountManager.getUidByToken(token);
+  const uid = await getAccountAuthPort().getUidByToken(token);
   res.send({
     result: 0,
     uid,
@@ -358,8 +358,8 @@ router.post("/user/auth/v1/login", async (req, res) => {
   // 官方客户端 SDK 登录形状：{ networkVersion, uid, token }（token 为 SDK 会话）
   if (body.uid != null && body.token != null && body.account == null) {
     // 宽松解析：按 token 找账号（未知 token 兜底默认账号），返回可用的 secret token
-    const uid = await accountManager.getUidByToken(String(body.token ?? ""));
-    const conf = accountManager.configs[uid];
+    const uid = await getAccountAuthPort().getUidByToken(String(body.token ?? ""));
+    const conf = getAccountAuthPort().configs[uid];
     if (!uid || !conf) {
       return res.send({ result: 4 });
     }
@@ -374,7 +374,7 @@ router.post("/user/auth/v1/login", async (req, res) => {
     });
   }
   const { account, password } = body;
-  const found = Object.entries(accountManager.configs).find(
+  const found = Object.entries(getAccountAuthPort().configs).find(
     ([, c]) => c.auth?.phone == account,
   );
   if (!found) {
@@ -411,14 +411,14 @@ router.post("/user/auth/v1/register", async (req, res) => {
         "<color=red>密码格式错误</color>\n密码应为8-16位大小写字母和数字的组合\n其中可以选择包含一些常用字符",
     });
   }
-  const exists = Object.values(accountManager.configs).some(
+  const exists = Object.values(getAccountAuthPort().configs).some(
     (c) => c.auth?.phone == account,
   );
   if (exists) {
     return res.send({ result: 5, errMsg: "该账户已存在，请检查注册信息" });
   }
-  const uid = await accountManager.registerUser(account, password);
-  const token = accountManager.configs[uid]?.secret || uid;
+  const uid = await getAccountAuthPort().registerUser(account, password);
+  const token = getAccountAuthPort().configs[uid]?.secret || uid;
   res.send({
     result: 0,
     uid,
@@ -433,7 +433,7 @@ router.post("/user/auth/v1/register", async (req, res) => {
 /** 短信验证码登录（参考 DoctoratePy userLoginBySmsCode——私服简化：账号存在即成功） */
 router.post("/user/auth/v1/login_by_smscode", async (req, res) => {
   const { account } = req.body ?? {};
-  const found = Object.entries(accountManager.configs).find(
+  const found = Object.entries(getAccountAuthPort().configs).find(
     ([, c]) => c.auth?.phone == account,
   );
   if (!found) {
@@ -482,13 +482,13 @@ const PASSWORD_PATTERN = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d!@#$%^&*]{8,16}$/;
 /** 从 body.token 或 secret header 解析 uid（real 模式用户管理闭环） */
 async function resolveAuthUid(req: Request): Promise<string> {
   const token = String(req.body?.token ?? req.headers?.secret ?? "");
-  return accountManager.getUidByToken(token);
+  return getAccountAuthPort().getUidByToken(token);
 }
 
 /** 修改密码（参考 DoctoratePy userChangePassword——校验格式 + 验证码通过则更新） */
 router.post("/user/auth/v1/change_password", async (req, res) => {
   const uid = await resolveAuthUid(req);
-  if (!uid || !accountManager.configs[uid]) {
+  if (!uid || !getAccountAuthPort().configs[uid]) {
     return res.send({ result: 3 });
   }
   const { newPassword } = req.body ?? {};
@@ -497,19 +497,19 @@ router.post("/user/auth/v1/change_password", async (req, res) => {
     return res.send({ result: 1 });
   }
   if (
-    accountManager.configs[uid].password &&
-    verifyPassword(accountManager.configs[uid].password, newPassword)
+    getAccountAuthPort().configs[uid].password &&
+    verifyPassword(getAccountAuthPort().configs[uid].password, newPassword)
   ) {
     return res.send({ result: 1 }); // 新旧相同
   }
-  await accountManager.updatePassword(uid, newPassword);
+  await getAccountAuthPort().updatePassword(uid, newPassword);
   res.send({ result: 0 });
 });
 
 /** 换绑手机检查（参考 DoctoratePy userChangePhoneCheck——私服跳过 7 天限制） */
 router.post("/user/auth/v1/change_phone_check", async (req, res) => {
   const uid = await resolveAuthUid(req);
-  if (!uid || !accountManager.configs[uid]) {
+  if (!uid || !getAccountAuthPort().configs[uid]) {
     return res.send({ result: 3 });
   }
   res.send({ result: 0 });
@@ -518,7 +518,7 @@ router.post("/user/auth/v1/change_phone_check", async (req, res) => {
 /** 换绑手机（参考 DoctoratePy userChangePhone——校验新手机可用 + 更新 phone/secret） */
 router.post("/user/auth/v1/change_phone", async (req, res) => {
   const uid = await resolveAuthUid(req);
-  if (!uid || !accountManager.configs[uid]) {
+  if (!uid || !getAccountAuthPort().configs[uid]) {
     return res.send({ result: 3 });
   }
   const { newPhone } = req.body ?? {};
@@ -526,13 +526,13 @@ router.post("/user/auth/v1/change_phone", async (req, res) => {
   if (!newPhone || !/^\d{6,}$/.test(String(newPhone))) {
     return res.send({ result: 8 });
   }
-  const taken = Object.values(accountManager.configs).some(
+  const taken = Object.values(getAccountAuthPort().configs).some(
     (c) => c.auth?.phone == newPhone,
   );
   if (taken) {
     return res.send({ result: 8 });
   }
-  await accountManager.updatePhone(uid, String(newPhone));
+  await getAccountAuthPort().updatePhone(uid, String(newPhone));
   res.send({ result: 0 });
 });
 

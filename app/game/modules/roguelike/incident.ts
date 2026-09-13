@@ -29,7 +29,7 @@ import type {
 import { RoguelikeV2Manager } from "./logic";
 import type { RoguelikeGridZoneManager } from "./modules/grid_zone";
 import type { RoguelikeScrapManager } from "./modules/scrap";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
 /** rogue_6 event_choices.json 段的松散类型（其余主题同键结构不同，不做严格契约） */
 interface Ro6IncidentCond {

@@ -7,23 +7,26 @@
 import crypto from "crypto";
 import JSZip from "jszip";
 import type { JsonValue } from "./json-value";
-import { BattleData } from "@game/kernel/battle-model";
 
 const LOG_TOKEN_KEY = "pM6Umv*^hVQuB6t&";
 
 /**
  * 解密战斗数据
- * 
+ *
  * 使用 AES-128-CBC 算法解密战斗数据，密钥由 LOG_TOKEN_KEY 和登录时间生成。
- * 
+ *
+ * 分层（2026-09-13）：本文件在 `app/core/`，**不得依赖 game**（R1）。战斗载荷类型
+ * `BattleData` 属 game 领域，故返回值泛型化——调用方显式传 `<BattleData>`：
+ * `await decryptBattleData<BattleData>(data, loginTime)`（缺省 `JsonValue`，仅供不解构字段的场景）。
+ *
  * @param data - 加密的战斗数据（十六进制字符串）
  * @param loginTime - 登录时间戳
- * @returns 解密后的战斗数据对象
+ * @returns 解密后的战斗数据对象（调用方声明的形状）
  */
-export async function decryptBattleData(
+export async function decryptBattleData<T = JsonValue>(
   data: string,
   loginTime: number,
-): Promise<BattleData> {
+): Promise<T> {
   const battleData = Buffer.from(data.slice(0, data.length - 32), "hex");
   const src = LOG_TOKEN_KEY + loginTime.toString();
   const key = crypto.createHash("md5").update(src).digest();
@@ -31,7 +34,7 @@ export async function decryptBattleData(
   const decipher = crypto.createDecipheriv("aes-128-cbc", key, iv);
   const decryptedData = decipher.update(battleData);
   const decrypt = Buffer.concat([decryptedData, decipher.final()]).toString();
-  return JSON.parse(decrypt) as BattleData;
+  return JSON.parse(decrypt) as T;
 }
 
 /**

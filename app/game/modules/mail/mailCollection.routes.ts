@@ -8,7 +8,7 @@
 
 import { Router } from "express";
 import excel from "@excel/excel";
-import { validateBody } from "../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 import { getListSchema } from "./mailCollection.schema";
 import {
   MailCollectionGetListRequest,

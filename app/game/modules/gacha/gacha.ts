@@ -1,9 +1,9 @@
 import { ItemBundle } from "@excel/excel"
 import { randomChoices } from "@utils/random";
-import { random } from "../../kernel/util/random";
+import { random } from "@utils/random";
 
 export { GachaResult } from "../../kernel/model";
-export { GACHA_RULE_TYPE } from "./gacha-up-list";
+export { GACHA_RULE_TYPE } from "../../kernel/util/gacha-up-list";
 
 export enum GachaType {
     None = 4294967295,

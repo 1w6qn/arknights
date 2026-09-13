@@ -130,7 +130,7 @@ import {
   ActivityStubRequest,
   ActivityStubResponse,
 } from "../shared/activity";
-import { validateBody } from "../../../kernel/http/validate-body";
+import { validateBody } from "@core/http/validate-body";
 
 const router = Router();
 router.post("/arcade/battleStart", validateBody(ReqSchema.activityMiniBattleStartSchema), async (req, res) => {

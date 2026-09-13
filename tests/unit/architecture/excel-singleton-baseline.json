@@ -3,8 +3,8 @@
   "_generatedAt": "2026-09-13",
   "_scope": "app/game 下除 app/game/excel（数据层自身）与 app/game/kernel/PlayerDataManager.ts（组合根，端口默认值）",
   "counts": {
+    "app/game/kernel/char-skills.ts": 1,
     "app/game/kernel/inventory.ts": 1,
-    "app/game/kernel/util/maxout.ts": 1,
     "app/game/kernel/util/stage-unlock.ts": 1,
     "app/game/modules/activities/act1vhalfidle/config.ts": 1,
     "app/game/modules/activities/act1vhalfidle/logic.ts": 1,
@@ -35,7 +35,6 @@
     "app/game/modules/building/mastery.ts": 1,
     "app/game/modules/building/special.ts": 1,
     "app/game/modules/campaignV2/routes.ts": 1,
-    "app/game/modules/character/char-skills.ts": 1,
     "app/game/modules/character/char.ts": 1,
     "app/game/modules/character/team-power.ts": 1,
     "app/game/modules/character/troop.ts": 1,
