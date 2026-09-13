@@ -1,6 +1,7 @@
 import { Router } from "express";
 import config from "./index";
 import { readJson } from "@utils/file";
+import { signedEnvelope } from "@utils/rsa-sign";
 import { buildNetworkConfigContent } from "./remote-config";
 import { getAssetHooks } from "./asset-hooks";
 import { resolveRegion, resolveRegionVersion } from "./region";
@@ -85,8 +86,9 @@ router.get("/official/:version/version", async (req, res) => {
 });
 router.get("/official/network_config", async (req, res) => {
   const content = buildNetworkConfigContent();
-  const sign = "sign";
-  res.send({ sign, content });
+  // 真实签名（RSA-MD5）：仅当 data/crypto/private.pem 存在时启用；否则退回历史占位 sign，
+  // 由 Lua 插件的 VerifySignMD5RSA hotfix 兜底（见 app/core/utils/rsa-sign.ts 注释）。
+  res.send(signedEnvelope(content));
 });
 router.get("/official/refresh_config", async (req, res) => {
   res.send(servedVersion());

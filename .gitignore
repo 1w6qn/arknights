@@ -77,3 +77,5 @@ data/arkhub/pixels/
 data/user/gallery/
 # T3 目录重组：根 player_data.json 归档（未跟踪本地产物，勿提交）
 data/player_data.json.root-backup
+# 私服验签密钥（sign:key 生成；私钥绝不入库）
+data/crypto/
