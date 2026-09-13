@@ -30,6 +30,22 @@ NetworkRedirectPlugin.desc = "将客户端网络路由与签名校验重定向�
 local SERVER_URL = "http://127.0.0.1:8443"
 
 --[[
+  验签模式：
+    "strict" —— 用本插件内置公钥**真实验签**（服务端用配套私钥签名，见 app/core/utils/rsa-sign.ts
+                 与 scripts/sign-key.ts）。语义等于「把信任锚换成我方密钥」，签名不符仍会失败。
+    "bypass" —— 恒返回 true（本仓历史行为；未替换 asset 公钥、服务端未签名时使用）。
+  MD5 的 OID：RSACryptoServiceProvider.VerifyHash 需要 OID 而不是 "MD5" 名称。
+--]]
+local SIGN_MODE = "strict"
+local MD5_OID = "1.2.840.113549.2.5"
+
+--[[
+  我方验签公钥（.NET XML，须与 `pnpm run sign:key -- --show` 的 public.xml 完全一致；
+  长度 243 字节，与官方 asset 内公钥等长，可直接替换 assets/bin/Data/sharedassets0.assets.split5）。
+--]]
+local PUBLIC_KEY_XML = [[<RSAKeyValue><Modulus>FYRXh2XP47gHCjiICk/AhDjdRZlHtrMbj8rvTglAfKDCX7oOEG0OvN9h27oFj4mlhsUijoiW7xqH9NWVIE1u5QMg8B9IxhvNM686TBO1oTdIjvUrVFqknfNkP4SrjsL308XQb6z3/saK2LxwET4y5kOCjpvvdjedl9qphKITyqw=</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>]]
+
+--[[
   Networker.get_overrideRouterUrl 的替换实现：返回私服 network_config 路由地址。
   @return 私服路由 URL
 --]]
@@ -38,8 +54,31 @@ local function _RouterUrlFix(self)
 end
 
 --[[
-  CryptUtils.VerifySignMD5RSA 的替换实现：恒返回 true（绕过 RSA 签名校验）。
-  同名两个重载（string,string,string / byte[],byte[],string）均由本函数适配。
+  CryptUtils.VerifySignMD5RSA 的替换实现（strict）：用我方公钥做 RSA-MD5 真实验签。
+  客户端两个重载（string,string,string / byte[],byte[],string）按实参类型自适应。
+  @param a 内容（string 或 byte[]）
+  @param b 签名（base64 string 或 byte[]）
+  @return boolean 验签是否通过（异常时记错误日志并返回 false）
+--]]
+local function _VerifySignStrict(self, a, b, c)
+  local ok, result = xpcall(function()
+    local contentBytes = type(a) == "string" and CS.System.Text.Encoding.UTF8:GetBytes(a) or a
+    local signBytes = type(b) == "string" and CS.System.Convert.FromBase64String(b) or b
+    local rsa = CS.System.Security.Cryptography.RSACryptoServiceProvider()
+    rsa:FromXmlString(PUBLIC_KEY_XML)
+    local md5 = CS.System.Security.Cryptography.MD5.Create()
+    local hash = md5:ComputeHash(contentBytes)
+    return rsa:VerifyHash(hash, MD5_OID, signBytes)
+  end, debug.traceback)
+  if not ok then
+    eutil.LogError("[NetworkRedirectPlugin] 真实验签异常: " .. tostring(result))
+    return false
+  end
+  return result == true
+end
+
+--[[
+  CryptUtils.VerifySignMD5RSA 的替换实现（bypass）：恒返回 true（历史兜底）。
   @return true
 --]]
 local function _VerifySignFix(self, a, b, c)
@@ -47,17 +86,19 @@ local function _VerifySignFix(self, a, b, c)
 end
 
 --[[
-  插件启用：安装私服引导补丁。
+  插件启用：安装私服引导补丁（路由重定向 + 验签处理）。
 --]]
 function NetworkRedirectPlugin:OnLoad()
   self:Fix_ex(CS.Torappu.Network.Networker, "get_overrideRouterUrl", _RouterUrlFix)
-  self:Fix_ex(CS.Torappu.CryptUtils, "VerifySignMD5RSA", _VerifySignFix)
-  eutil.Log("[NetworkRedirectPlugin] 私服引导已启用: " .. SERVER_URL)
+  if SIGN_MODE == "strict" then
+    self:Fix_ex(CS.Torappu.CryptUtils, "VerifySignMD5RSA", _VerifySignStrict)
+    eutil.Log("[NetworkRedirectPlugin] 私服引导已启用（真实验签）: " .. SERVER_URL)
+  else
+    self:Fix_ex(CS.Torappu.CryptUtils, "VerifySignMD5RSA", _VerifySignFix)
+    eutil.Log("[NetworkRedirectPlugin] 私服引导已启用（兜底放行）: " .. SERVER_URL)
+  end
 end
 
---[[
-  插件停用：补丁由 BasePlugin 统一还原。
---]]
 function NetworkRedirectPlugin:OnUnload()
   eutil.Log("[NetworkRedirectPlugin] 私服引导已停用")
 end
