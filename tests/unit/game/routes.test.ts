@@ -68,6 +68,14 @@ const expectedPrefixes: Array<[string, string]> = [
   ["/audit", "./modules/system/routes"],
   ["/arkodc", "./modules/arkodc/routes"],
   ["/", "./modules/home/routes"],
+  // 由 home/routes.ts 按 URL 域拆出的独立模块（客户端调用不带模块前缀，故根挂载）
+  ["/", "./modules/char/routes"],
+  ["/", "./modules/troop/routes"],
+  ["/", "./modules/story/routes"],
+  ["/", "./modules/batchEvent/routes"],
+  ["/", "./modules/firework/routes"],
+  ["/", "./modules/car/routes"],
+  ["/", "./modules/templateTrap/routes"],
   ["/", "./modules/misc-alignment/routes"],
 ];
 

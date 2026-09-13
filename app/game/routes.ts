@@ -124,8 +124,17 @@ export const routes: RouteRegistration[] = [
   { prefix: "/pay", module: "./modules/pay/routes" },
   // 客户端 Lua 插件系统生效确认（PluginHeartbeat 心跳，见 lua/plugin/PluginHeartbeat.lua）
   { prefix: "/plugin", module: "./modules/system/plugin-heartbeat" },
-  // —— 根级挂载：home 兜底 + user/activity rootRouter + 模块自带前缀对齐 ——
+  // —— 根级挂载：home 兜底 + 从 home 拆出的 URL 域独立模块 + user/activity rootRouter + 模块自带前缀对齐 ——
   { prefix: "/", module: "./modules/home/routes" },
+  // 以下 7 个模块由 home/routes.ts 按 URL 域拆分而来：客户端调用不带模块前缀，故一律根挂载。
+  // 顺序上紧随 home，与其他根级 router 的相对优先级与拆分前一致。
+  { prefix: "/", module: "./modules/char/routes" },
+  { prefix: "/", module: "./modules/troop/routes" },
+  { prefix: "/", module: "./modules/story/routes" },
+  { prefix: "/", module: "./modules/batchEvent/routes" },
+  { prefix: "/", module: "./modules/firework/routes" },
+  { prefix: "/", module: "./modules/car/routes" },
+  { prefix: "/", module: "./modules/templateTrap/routes" },
   // user 模块根级路由（gallery/cg/medal/mainlineClue/server_time 等非 /user 前缀接口）
   { prefix: "/", module: "./modules/user/routes", exportName: "rootRouter" },
   // activity 模块根级路由（act25side/act29side/act36side 等客户端无 /activity 前缀的接口）

@@ -43,13 +43,20 @@ router.post("/setCurrent", validateBody(setCurrentSchema), async (req, res) => {
 /**
  * 创建轮换预设
  * @route POST /charRotation/createPreset
- * @returns 玩家增量数据、推送消息和实例ID
+ * @returns 玩家增量数据、推送消息和新建预设的实例ID（instId）
+ *
+ * 修复（2026-09-13，去重定案）：原实现丢弃 `createPreset()` 的返回值，
+ * 响应缺 instId；而 CS `CharRotationCreatePresetResponse` 明确声明 `instId` 字段
+ * （客户端 `_OnBtnCreatePresetClick` 回调据此选中新预设），
+ * `CharRotationManager#createPreset` 亦有单测断言其返回 instId。
  */
 router.post("/createPreset", validateBody(createPresetSchema), async (req, res) => {
   const player = getPlayer();
   req.body as CharRotationCreatePresetRequest;
-  await player.charRotation.createPreset();
-  res.send(player.delta satisfies CharRotationCreatePresetResponse);
+  res.send({
+    instId: await player.charRotation.createPreset(),
+    ...player.delta,
+  } satisfies CharRotationCreatePresetResponse);
 });
 
 /**

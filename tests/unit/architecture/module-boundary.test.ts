@@ -83,7 +83,6 @@ const EXEMPTIONS: { file: string; spec: string; reason: string }[] = [
   { file: "app/game/modules/charm/routes.ts", spec: "../home/home", reason: "charm 读取 home 主界面数据" },
   { file: "app/game/modules/crisis/routes.ts", spec: "../pay/purchase-record", reason: "共享购买记录实现" },
   { file: "app/game/modules/gacha/logic.ts", spec: "../account/AccountManager", reason: "共享账号服务（好友/uid/计数）——建议拆 account-data 门面" },
-  { file: "app/game/modules/home/routes.ts", spec: "../character/charRotation", reason: "共享角色轮换数据" },
   { file: "app/game/modules/roguelike/logic.ts", spec: "../character/troop", reason: "共享编队实现" },
   { file: "app/game/modules/roguelike/recruit.ts", spec: "../character/troop", reason: "共享编队实现" },
   { file: "app/game/modules/shop/logic/low-high.ts", spec: "../../gacha/gacha-up-list", reason: "共享卡池实现/列表" },

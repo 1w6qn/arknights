@@ -636,7 +636,7 @@ export const SERVER_OPTIONAL_FIELDS: Record<string, string[]> = {
   // 隐藏关卡 missions 为客户端模型字段，服务端新建条目只写 { unlock: 1 }
   // （modules/quest/routes.ts#unlockHideStage）
   PlayerHiddenStage: ["missions"],
-  // 烟花：服务端防御性建键（modules/home/routes.ts#firework/savePlateSlots、changeAnimal
+  // 烟花：服务端防御性建键（modules/firework/routes.ts#firework/savePlateSlots、changeAnimal
   // 先 `firework ??= {}` 再 `plate ??= {}`），存档可整块缺失
   PlayerDataModel: ["firework"],
   PlayerFirework: ["unlock", "plate", "animal"],

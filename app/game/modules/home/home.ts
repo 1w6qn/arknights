@@ -3,13 +3,13 @@
  *
  * 对应客户端 com.hypergryph.arknights_2.7.61.cs 中 Torappu 命名空间的
  * SetHomeThemeRequest / SetHomeBackgroundRequest / SetLowPowerRequest /
- * FinishStoryRequest / UI.Firework.FireworkChangeAnimalRequest /
- * UI.TemplateTrap.SetTemplateTrapRequest 等 Request/Response 类；
+ * ChangeRogueNpcVoiceLanRequest 等 Request/Response 类，以及 charm 模块复用的
+ * Activity.Act12side.UI.CharmSetSquadRequest/Response；
  * 字段以 CS 类为准，服务端未返回的协议字段标为可选。
- * 部分接口（事件上报/战车确认/特殊干员置顶等）无 CS 类对应，标注为服务端自定义。
+ *
+ * 其余曾堆在本文件的跨域协议（干员标记/剧情/事件上报/烟花/战车/陷阱队等）已随
+ * 路由按 URL 域拆到各自的独立模块。
  */
-import { ItemBundle } from "@excel/excel";
-import { PlayerCartInfo_Cart } from "../../kernel/playerdata";
 import { PlayerDeltaResponse } from "../../kernel/http/common";
 
 /* ===== 主题与背景 ===== */
@@ -29,19 +29,6 @@ export interface SetBackgroundRequest {
 
 /** 设置首页背景响应（CS: SetHomeBackgroundResponse） */
 export type SetBackgroundResponse = PlayerDeltaResponse;
-
-/* ===== 干员标记 ===== */
-
-/**
- * 修改干员星级标记请求（CS: ChangeStarMarkCharRequest）
- * CS 的 chrIdDict 为 ListDict<String,Int32>，映射为 { [key: string]: number }
- */
-export interface ChangeMarkStarRequest {
-  chrIdDict: { [key: string]: number };
-}
-
-/** 修改干员星级标记响应（CS: ChangeStarMarkCharResponse） */
-export type ChangeMarkStarResponse = PlayerDeltaResponse;
 
 /* ===== 设置 ===== */
 
@@ -65,27 +52,7 @@ export interface NpcAudioChangeLanRequest {
 /** 切换 NPC 语音响应（CS: ChangeRogueNpcVoiceLanResponse） */
 export type NpcAudioChangeLanResponse = PlayerDeltaResponse;
 
-/* ===== 剧情 ===== */
-
-/** 完成剧情请求（CS: FinishStoryRequest） */
-export interface FinishStoryRequest {
-  storyId: string;
-}
-
-/** 完成剧情响应（CS: FinishStoryResponse；服务端返回空 items） */
-export interface FinishStoryResponse extends PlayerDeltaResponse {
-  items: ItemBundle[];
-}
-
-/* ===== 事件上报 ===== */
-
-/** 客户端事件批量上报请求（服务端自定义；统计/BI 类接口，请求体无业务字段） */
-export interface BatchEventRequest {}
-
-/** 客户端事件批量上报响应（服务端自定义；返回空对象） */
-export interface BatchEventResponse {}
-
-/* ===== 信物与烟火 ===== */
+/* ===== 信物（charm 模块复用） ===== */
 
 /** 设置信物小队请求（CS: Activity.Act12side.UI.CharmSetSquadRequest） */
 export interface CharmSetSquadRequest {
@@ -94,68 +61,3 @@ export interface CharmSetSquadRequest {
 
 /** 设置信物小队响应（CS: Activity.Act12side.UI.CharmSetSquadResponse） */
 export type CharmSetSquadResponse = PlayerDeltaResponse;
-
-/** 烟花棋盘槽位（CS: FireworkData.PlateSlotData） */
-export interface PlateSlotData {
-  id: string;
-  idx: number;
-}
-
-/**
- * 保存烟花棋盘槽位请求（CS: UI.Firework.FireworkSavePlateSlotRequest）
- * CS 另有 groupId 字段，服务端未读取
- */
-export interface FireworkSavePlateSlotsRequest {
-  groupId?: string;
-  slots: PlateSlotData[];
-}
-
-/** 保存烟花棋盘槽位响应（CS: UI.Firework.FireworkSavePlateSlotResponse） */
-export type FireworkSavePlateSlotsResponse = PlayerDeltaResponse;
-
-/**
- * 更换烟花动物请求（CS: UI.Firework.FireworkChangeAnimalRequest）
- * CS 另有 groupId 字段，服务端未读取
- */
-export interface FireworkChangeAnimalRequest {
-  animal: string;
-  groupId?: string;
-}
-
-/** 更换烟花动物响应（CS: UI.Firework.FireworkChangeAnimalResponse） */
-export interface FireworkChangeAnimalResponse extends PlayerDeltaResponse {
-  animal: string;
-}
-
-/* ===== 战车与陷阱队 ===== */
-
-/** 确认出战战车请求（服务端自定义，无 CS 对应类；car 结构见 PlayerCartInfo.battleCar） */
-export interface ConfirmBattleCarRequest {
-  car: PlayerCartInfo_Cart;
-}
-
-/** 确认出战战车响应（服务端自定义；仅增量） */
-export type ConfirmBattleCarResponse = PlayerDeltaResponse;
-
-/**
- * 设置陷阱队请求（CS: UI.TemplateTrap.SetTemplateTrapRequest）
- * CS 的 trapSquad 为 String[]，服务端原样写回
- */
-export interface SetTrapSquadRequest {
-  trapDomainId: string;
-  trapSquad: string[];
-}
-
-/** 设置陷阱队响应（CS: UI.TemplateTrap.SetTemplateTrapResponse） */
-export interface SetTrapSquadResponse extends PlayerDeltaResponse {
-  trapDomainId: string;
-  trapSquad: string[];
-}
-
-/** 特殊干员置顶请求（服务端自定义，无 CS 对应类） */
-export interface PinSpecialOperatorRequest {
-  instId: number;
-}
-
-/** 特殊干员置顶响应（服务端自定义；仅增量） */
-export type PinSpecialOperatorResponse = PlayerDeltaResponse;

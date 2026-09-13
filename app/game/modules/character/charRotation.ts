@@ -20,9 +20,12 @@ export type CharRotationSetCurrentPresetResponse = PlayerDeltaResponse;
 /** 创建轮换预设请求（CS: CharRotationCreatePresetRequest，无字段） */
 export interface CharRotationCreatePresetRequest {}
 
-/** 创建轮换预设响应（CS: CharRotationCreatePresetResponse；服务端未返回 instId） */
+/**
+ * 创建轮换预设响应（CS: CharRotationCreatePresetResponse : PlayerDeltaResponse）
+ * CS 字段 instId 为新建预设的实例ID，客户端 `_OnBtnCreatePresetClick` 回调据此选中新预设
+ */
 export interface CharRotationCreatePresetResponse extends PlayerDeltaResponse {
-  instId?: string;
+  instId: string;
 }
 
 /** 删除轮换预设请求（CS: CharRotationDeletePresetRequest） */

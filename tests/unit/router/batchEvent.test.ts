@@ -4,11 +4,11 @@ vi.mock("express-http-context2", () => ({
   default: { get: vi.fn(), set: vi.fn() },
 }));
 
-import homeRouter from "@game/modules/home/routes";
-
 import type { Response } from "express";
-/** 路由测试请求体视图（本文件各端点字段合集） */
-interface HomeBatchBody {
+import batchEventRouter from "@game/modules/batchEvent/routes";
+
+/** 路由测试请求体视图 */
+interface BatchEventBody {
   events?: { id?: number }[];
 }
 
@@ -16,7 +16,7 @@ interface HomeBatchBody {
 interface MockReq {
   method: string;
   url: string;
-  body: HomeBatchBody;
+  body: BatchEventBody;
 }
 
 /** 路由测试响应视图（只声明被测分支读到的四个方法） */
@@ -27,7 +27,7 @@ interface MockRes {
   json: Response["json"];
 }
 
-type RouterReq = Parameters<typeof homeRouter>[0];
+type RouterReq = Parameters<typeof batchEventRouter>[0];
 
 function mockRes(): MockRes {
   return {
@@ -40,12 +40,12 @@ function mockRes(): MockRes {
 
 async function call(req: MockReq, res: MockRes): Promise<MockRes> {
   // mock 请求/响应只覆盖被测分支用到的成员，故按窄视图断言为 express Request/Response
-  homeRouter(req as RouterReq, res as Response, () => {});
+  batchEventRouter(req as RouterReq, res as Response, () => {});
   await new Promise((r) => setTimeout(r, 20));
   return res;
 }
 
-describe("home 路由：客户端事件批量上报", () => {
+describe("batchEvent 路由：客户端事件批量上报", () => {
   it("POST /batch_event 应返回 200 空对象（客户端只认状态码）", async () => {
     const res = mockRes();
     await call({ method: "POST", url: "/batch_event", body: { events: [{ id: 1 }] } }, res);
