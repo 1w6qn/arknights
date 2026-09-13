@@ -1,7 +1,7 @@
 {
   "totals": {
     "any": 0,
-    "unknown": 413,
+    "unknown": 407,
     "object": 26
   },
   "counts": {
@@ -583,11 +583,6 @@
     "tests/unit/db/player-data-repo.test.ts": {
       "any": 0,
       "unknown": 1,
-      "object": 0
-    },
-    "tests/unit/game/model/events.test.ts": {
-      "any": 0,
-      "unknown": 6,
       "object": 0
     },
     "tests/unit/game/modules/activities/arkhub/gateway/gateway.test.ts": {

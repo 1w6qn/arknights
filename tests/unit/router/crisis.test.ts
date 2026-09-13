@@ -54,11 +54,9 @@ vi.mock("@utils/file", async (importOriginal) => {
       p.includes("crisisV2") ? filesMock.v2 : filesMock.v1),
   };
 });
-vi.mock("./crisis-seasons", () => ({
-  listCrisisSeasons: vi.fn(async () => ({ v1: ["cc1"], v2: ["cc1"] })),
-  CRISIS_JSON_BASE_PATH: "data/crisis/",
-  CRISIS_V2_JSON_BASE_PATH: "data/crisisV2/",
-}));
+// 已删除的死 mock（2026-09-13）：原 `vi.mock("./crisis-seasons", …)` 的相对路径解析到
+// `tests/unit/router/crisis-seasons.ts`，该文件不存在（真实模块是 app/game/modules/crisis/crisis-seasons.ts），
+// 因此这条 mock 从未生效——赛季数据实际由上面的 `@utils/file#readJson` 打桩提供。
 /** excel mock 行形状（本文件用到的字段子集） */
 interface ExcelRowMock {
   name?: string;
