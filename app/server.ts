@@ -314,6 +314,9 @@ export async function main(): Promise<void> {
   }
 
   app.use("/admin", (await import("@ops/admin/admin-router")).default);
+  // GM 面板：/gm 静态面板 + 引导端点，/admin/<snake_op> 兼容操作端点（归档服务端 GM 契约）
+  app.use("/admin", (await import("@ops/admin/gm/gm-ops-router")).default);
+  app.use("/gm", (await import("@ops/admin/gm/gm-router")).default);
   const server = app.listen(config.PORT, () => {
     logger.info("index", `--------------DoctorateTs--------------`);
     logger.info("index", `running at http://localhost:${config.PORT}`);

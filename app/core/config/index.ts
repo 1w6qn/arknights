@@ -219,6 +219,13 @@ interface UserConfig {
     enable: boolean;
     /** 管理 API Bearer Token */
     token: string;
+    /**
+     * 是否允许远程访问 GM 面板引导接口（`/gm/{config,players,data}`）
+     *
+     * 缺省 false：引导接口仅限回环（对齐归档 `admin_allow_remote=false`）；
+     * 置 true 时远程需携带有效管理令牌，但 `/gm/config` 仍只在回环下回传 admin_token。
+     */
+    allowRemote?: boolean;
   };
   /** 认证模式：single（单例——secret 强制 1，任意 token 宽松）/ real（真实——多账号严格校验） */
   authMode?: "single" | "real";

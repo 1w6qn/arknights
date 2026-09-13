@@ -361,6 +361,24 @@ export async function ensureModsLoaded(platform: string): Promise<void> {
 }
 
 /**
+ * 强制重载 mod 列表（GM「资源补丁」开关：切换 `assets.enableMods` 后免重启生效）
+ *
+ * `initMods` 对已加载平台会跳过，故这里先复位 loaded/fingerprint 再重载；
+ * 关闭补丁时同样重载，使列表回到「无 mod」状态。
+ * @param platform - 平台键；缺省时重载全部已知平台
+ */
+export async function reloadMods(platform?: string): Promise<void> {
+  const keys = platform ? [platform] : Object.keys(PLATFORM_DIRS);
+  for (const p of keys) {
+    const state = stateFor(p);
+    state.loaded = false;
+    state.fingerprint = "";
+    state.list = emptyModsList();
+  }
+  await initMods(platform);
+}
+
+/**
  * 计算 mod 条目的起始 cid：官方 cid 是 abInfos(1..N) 与 packInfos(N+1..) 共用的
  * 全局唯一序号，mod 必须从两者最大值之后续起——否则与 pack 撞号会让客户端按 code
  * 管理下载任务时出现"大小不一致"（实测 14982/14983 撞 lpack_init1/2 致更新中止）。

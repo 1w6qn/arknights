@@ -24,7 +24,7 @@ import type { PlayerActivity, PlayerActivity_PlayerActAutoChessActivity_AutoChes
 import type { PlayerDataModel } from "../../kernel/playerdata";
 import type { Draft } from "mutative";
 import { logger } from "@utils/logger";
-import { generateBattleId } from "@utils/random";
+import { generateBattleId, randomChoices } from "@utils/random";
 import { userTimestamp } from "@utils/time";
 import config from "@core/config/index";
 import { activityDictKey } from "../activities/shared/unlockActivity";
@@ -56,6 +56,8 @@ export interface AutoChessSession {
   battleId: string;
   sceneId: string;
   modeId: string;
+  /** 会话所属活动（act1autochess/act2autochess）——结算与 GM 指令需要 */
+  activityId: string;
   /** 出战阵营（band_bldsk 等）：官方在实时对战准备阶段选择，私服 HTTP 流无入口，恒空串 */
   bandId: string;
   startTs: number;
@@ -64,7 +66,95 @@ export interface AutoChessSession {
   curRound: number;
   finished: boolean;
   settled: boolean;
+  /** 是否被 GM 冻结（`pause`/`resume`）；冻结期间 endTs 不变 */
+  paused: boolean;
+  /** 冻结时刻（userTimestamp；未冻结为 0）——`resume` 把冻结时长顺延到 endTs */
+  pausedAt: number;
+  /** 本局金币（GM `add_coin`） */
+  coin: number;
+  /** 本局生命（GM `set_hp`） */
+  hp: number;
+  /** 商店等级（GM `set_shop_lv`） */
+  shopLv: number;
+  /** 本局 Boss（GM `reroll_boss`） */
+  bossId: string;
+  /** 本局桌面（GM `grant_char`/`grant_item` 发放的干员棋 / 道具棋 id） */
+  table: AutoChessGmTable;
 }
+
+/** 本局桌面（GM 视角：已发放的干员棋 / 道具棋 id） */
+export interface AutoChessGmTable {
+  chars: string[];
+  items: string[];
+}
+
+/** GM 指令码（契约对齐归档服务端 GM 面板的 `/admin/autochess_gm` code 字段） */
+export const AUTOCHESS_GM_CODES = [
+  "state",
+  "skip_round",
+  "add_coin",
+  "set_hp",
+  "set_shop_lv",
+  "grant_char",
+  "grant_item",
+  "reroll_boss",
+  "force_settle",
+  "pause",
+  "resume",
+] as const;
+
+/** GM 指令码字面量联合 */
+export type AutoChessGmCode = (typeof AUTOCHESS_GM_CODES)[number];
+
+/**
+ * 本局经济默认值（对齐官方实时对战服务配置）
+ *
+ * excel `constData` 只有 shopRefreshPrice/maxDeckChessCnt 等字段、不含经济初值；
+ * 取值来源：归档 OpenBachelorSS `configs/autochess_act2.json`
+ * （initialCoin=10 / initialHp=100 / maxRound=14）。
+ */
+export const AUTOCHESS_GM_ECONOMY = {
+  initialCoin: 10,
+  initialHp: 100,
+  maxRound: 14,
+} as const;
+
+/** GM 指令可接受的参数值（面板 `params` 数组元素） */
+export type AutoChessGmParam = string | number | boolean | null;
+
+/** GM 本局态快照（`state` 指令与各指令的返回体） */
+export interface AutoChessGmStateView {
+  battleId: string;
+  sceneId: string;
+  modeId: string;
+  activityId: string;
+  curRound: number;
+  startTs: number;
+  endTs: number;
+  paused: boolean;
+  coin: number;
+  hp: number;
+  shopLv: number;
+  bossId: string;
+  table: AutoChessGmTable;
+  finished: boolean;
+  settled: boolean;
+  maxRound: number;
+}
+
+/** GM 指令成功返回体（各指令字段并集，面板按 code 取用） */
+export interface AutoChessGmData {
+  code?: string;
+  active?: boolean;
+  state?: AutoChessGmStateView | null;
+  result?: string;
+  settle?: { result: number; gameSettleData: AutoChessSeasonSettleGameInfo | null } | null;
+}
+
+/** GM 指令执行结果（status 供 HTTP 层映射：无对局 409、未知指令 400） */
+export type AutoChessGmResult =
+  | { ok: true; data: AutoChessGmData }
+  | { ok: false; reason: string; status: number };
 
 /** 匹配状态（私服单账号内存态，官方由匹配服务持有） */
 interface AutoChessMatchState {
@@ -98,6 +188,79 @@ export function emptyAutoChessFinishPayload(): Omit<
   };
 }
 
+/** GM 面板棋池目录中的干员棋 */
+export interface AutoChessGmCatalogChar {
+  id: string;
+  name: string;
+  cost: number;
+}
+
+/** GM 面板棋池目录中的道具棋 */
+export interface AutoChessGmCatalogItem {
+  id: string;
+  name: string;
+  lv: number;
+  type: string;
+}
+
+/** GM 面板棋池目录（干员棋 / 道具棋） */
+export interface AutoChessGmCatalog {
+  chars: AutoChessGmCatalogChar[];
+  items: AutoChessGmCatalogItem[];
+}
+
+/**
+ * 取赛季详情（excel.ActivityTable.activity[dictKey][actId]）
+ *
+ * `activity` 在生成类型里是 `{ [key: string]: JsonValue }`（多态大字典），
+ * 故按既有口径做一次受控下探；键名经 activityDictKey("AUTOCHESS_SEASON") 解析
+ * （转换后的 excel 键为 defaultAutoChessData）。
+ * @param actId - 活动 ID（act1autochess/act2autochess）
+ * @returns 赛季详情（缺失返回 undefined）
+ */
+function autochessSeasonData(actId: string): ActAutoChessData | undefined {
+  const activity = excel.ActivityTable?.activity ?? {};
+  const dict = activity as Record<string, unknown>;
+  // 主路径：按类型枚举名匹配（单测替身/旧数据的字典键为 autochessSeason）。
+  // 回退：真实 excel 的该字典键是 C# 字段名 defaultAutoChessData——与类型枚举名
+  // AUTOCHESS_SEASON 不同名，历史缺陷：只按枚举名匹配会恒 miss，导致多人对战/结算
+  // 读不到赛季配置（GM 棋池目录同理），故补一次含 "autochess" 的键回退。
+  const key =
+    activityDictKey("AUTOCHESS_SEASON") ??
+    Object.keys(activity).find((k) => k.replace(/_/g, "").toLowerCase().includes("autochess"));
+  if (!key) return undefined;
+  return (dict[key] as Record<string, ActAutoChessData | undefined>)?.[actId];
+}
+
+/**
+ * GM 面板棋池目录（干员棋 / 道具棋，供 GM 选择器使用）
+ *
+ * 数据源：赛季 `charShopChessDatas` / `trapShopChessDatas`；
+ * 道具棋 `itemType`（AutoChessItemType）在面板侧只区分「法术/装备」两类，
+ * 这里按 1=EQUIP / 其余=MAGIC 归一（口径与归档面板一致，待抓包校准）。
+ * @param actId - 赛季活动 ID（缺省 act2autochess）
+ * @returns 干员棋与道具棋列表
+ */
+export function autoChessGmCatalog(actId = "act2autochess"): AutoChessGmCatalog {
+  const data = autochessSeasonData(actId);
+  const chars: AutoChessGmCatalogChar[] = Object.entries(data?.charShopChessDatas ?? {}).map(
+    ([id, chess]) => ({
+      id,
+      name: excel.charData(chess.charId)?.name ?? chess.charId ?? id,
+      cost: chess.chessLevel ?? 0,
+    }),
+  );
+  const items: AutoChessGmCatalogItem[] = Object.entries(data?.trapShopChessDatas ?? {}).map(
+    ([id, item]) => ({
+      id,
+      name: item.trapId ?? id,
+      lv: item.itemLevel ?? 0,
+      type: item.itemType === "MAGIC" ? "MAGIC" : "EQUIP",
+    }),
+  );
+  return { chars, items };
+}
+
 /** 自走棋赛季管理器（经 player.autoChess 访问，注册于 player-composition） */
 export class AutoChessManager {
   /** 玩家数据管理器 */
@@ -127,10 +290,7 @@ export class AutoChessManager {
    * @returns 赛季详情（缺失返回 undefined）
    */
   private activityData(actId: string): ActAutoChessData | undefined {
-    const dict = (excel.ActivityTable?.activity ?? {}) as Record<string, unknown>;
-    const key = activityDictKey("AUTOCHESS_SEASON");
-    if (!key) return undefined;
-    return (dict[key] as Record<string, ActAutoChessData | undefined>)?.[actId];
+    return autochessSeasonData(actId);
   }
 
   /**
@@ -482,12 +642,20 @@ export class AutoChessManager {
       battleId: generateBattleId(),
       sceneId: body.sceneId,
       modeId,
+      activityId: body.activityId,
       bandId: "",
       startTs: nowTs,
       endTs: nowTs + specialPhaseTime,
       curRound: 1,
       finished: false,
       settled: false,
+      paused: false,
+      pausedAt: 0,
+      coin: AUTOCHESS_GM_ECONOMY.initialCoin,
+      hp: AUTOCHESS_GM_ECONOMY.initialHp,
+      shopLv: 1,
+      bossId: "",
+      table: { chars: [], items: [] },
     };
     this._sessions.set(uid, session);
     return {
@@ -823,5 +991,134 @@ export class AutoChessManager {
       skillIndex: options.skillIndex,
       assistInfo: { uid: "", nickName: "", nickNumber: "", alias: "" },
     };
+  }
+
+  /**
+   * 本局态视图（GM `state` 与各指令的返回体）
+   * @param session - 进行中的会话
+   * @returns 可 JSON 序列化的本局态快照
+   */
+  private gmStateView(session: AutoChessSession): AutoChessGmStateView {
+    return {
+      battleId: session.battleId,
+      sceneId: session.sceneId,
+      modeId: session.modeId,
+      activityId: session.activityId,
+      curRound: session.curRound,
+      startTs: session.startTs,
+      endTs: session.endTs,
+      paused: session.paused,
+      coin: session.coin,
+      hp: session.hp,
+      shopLv: session.shopLv,
+      bossId: session.bossId,
+      table: { chars: [...session.table.chars], items: [...session.table.items] },
+      finished: session.finished,
+      settled: session.settled,
+      maxRound: AUTOCHESS_GM_ECONOMY.maxRound,
+    };
+  }
+
+  /**
+   * 执行 GM 指令（卫戍协议 GM；契约对齐归档服务端 GM 面板的 `/admin/autochess_gm`）
+   *
+   * 语义边界（本仓无实时对战服务，故直接驱动本进程内的单局会话态）：
+   * - `state` 为查询：无对局返回 `{active:false}`（不算错误）；其余指令无对局 → 409
+   * - `force_settle('win')` 复用既有 `settleGame` 结算链路（正常发奖），
+   *   `force_settle('lose')` 仅清场不发奖
+   * - `pause`/`resume` 冻结/顺延 `endTs`；`skip_round` 不超过 `maxRound`
+   * @param code   - 指令码（见 AUTOCHESS_GM_CODES）
+   * @param params - 指令参数：数值类取 params[0]，干员/道具类取字符串 id，force_settle 取 'win'|'lose'
+   * @returns 成功数据或失败原因（status 供 HTTP 层映射）
+   */
+  async executeGm(code: string, params: AutoChessGmParam[] = []): Promise<AutoChessGmResult> {
+    if (!(AUTOCHESS_GM_CODES as readonly string[]).includes(code)) {
+      return { ok: false, reason: `unknown-code: ${code}`, status: 400 };
+    }
+    const uid = this._player.uid;
+    const session = this._sessions.get(uid);
+    const num = (fallback: number): number | null => {
+      const raw = params[0];
+      if (raw === undefined || raw === null || raw === "") return fallback;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : null;
+    };
+    const str = (): string => (typeof params[0] === "string" ? params[0].trim() : "");
+    if (code === "state") {
+      return {
+        ok: true,
+        data: session
+          ? { active: true, state: this.gmStateView(session) }
+          : { active: false, state: null },
+      };
+    }
+    if (!session) {
+      return { ok: false, reason: "no-active-battle", status: 409 };
+    }
+    switch (code) {
+      case "skip_round": {
+        session.curRound = Math.min(session.curRound + 1, AUTOCHESS_GM_ECONOMY.maxRound);
+        break;
+      }
+      case "add_coin":
+      case "set_hp":
+      case "set_shop_lv": {
+        const fallback = code === "add_coin" ? 10 : code === "set_hp" ? 100 : 1;
+        const n = num(fallback);
+        if (n === null) return { ok: false, reason: "invalid-param", status: 400 };
+        const value = Math.trunc(n);
+        if (code === "add_coin") session.coin = Math.max(0, session.coin + value);
+        else if (code === "set_hp") session.hp = Math.max(0, value);
+        else session.shopLv = Math.max(1, value);
+        break;
+      }
+      case "grant_char": {
+        const chessId = str();
+        if (!chessId) return { ok: false, reason: "invalid-param", status: 400 };
+        session.table.chars.push(chessId);
+        break;
+      }
+      case "grant_item": {
+        const itemId = str();
+        if (!itemId) return { ok: false, reason: "invalid-param", status: 400 };
+        session.table.items.push(itemId);
+        break;
+      }
+      case "reroll_boss": {
+        const bosses = Object.values(this.activityData(session.activityId)?.bossInfoDict ?? {});
+        if (!bosses.length) return { ok: false, reason: "no-boss-config", status: 409 };
+        const weights = bosses.map((b) => (Number.isFinite(b.weight) && b.weight > 0 ? b.weight : 1));
+        session.bossId = randomChoices(bosses, weights, 1)[0]?.bossId ?? "";
+        break;
+      }
+      case "pause": {
+        if (session.paused) return { ok: false, reason: "already-paused", status: 409 };
+        session.paused = true;
+        session.pausedAt = userTimestamp();
+        break;
+      }
+      case "resume": {
+        if (!session.paused) return { ok: false, reason: "not-paused", status: 409 };
+        session.paused = false;
+        session.endTs += Math.max(0, userTimestamp() - session.pausedAt);
+        session.pausedAt = 0;
+        break;
+      }
+      case "force_settle": {
+        const outcome = str() === "lose" ? "lose" : "win";
+        if (outcome === "lose") {
+          session.settled = true;
+          this._settledBattleIds.add(session.battleId);
+          this._sessions.delete(uid);
+          return { ok: true, data: { result: "lose", settle: null } };
+        }
+        const settled = await this.settleGame({ activityId: session.activityId });
+        if (!settled.ok) return { ok: false, reason: settled.reason, status: 409 };
+        return { ok: true, data: { result: "win", settle: settled.data ?? null } };
+      }
+      default:
+        return { ok: false, reason: `unknown-code: ${code}`, status: 400 };
+    }
+    return { ok: true, data: { code, state: this.gmStateView(session) } };
   }
 }

@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<title>DoctorateTs GM</title>
+<link rel="stylesheet" href="gm.css" />
+</head>
+<body>
+<div class="progress" id="progress" hidden><i></i></div>
+
+<header class="top">
+  <div class="brand">
+    <span class="brand__tag">GM</span>
+    <div class="brand__text">
+      <strong id="panelTitle">DoctorateTs GM</strong>
+      <small>v<span id="panelVersion">-</span> · 契约对齐归档服务端 GM 面板</small>
+    </div>
+    <span class="conn" id="conn"><i></i><em id="connText">连接中…</em></span>
+  </div>
+  <div class="top__fields">
+    <label class="field">
+      <span class="field__label">玩家 UID</span>
+      <span class="field__row">
+        <input id="playerId" list="playerList" placeholder="1" autocomplete="off" />
+        <button class="btn btn--icon" id="btnPlayerRefresh" title="刷新账号列表">⟳</button>
+      </span>
+      <datalist id="playerList"></datalist>
+    </label>
+    <label class="field">
+      <span class="field__label">管理令牌</span>
+      <span class="field__row">
+        <input id="token" type="password" placeholder="data/config.json → admin.token" autocomplete="off" />
+        <button class="btn btn--icon" id="btnTokenReveal" title="显示/隐藏">👁</button>
+      </span>
+    </label>
+    <button class="btn btn--primary" id="btnReloadAll">重新加载引导数据</button>
+  </div>
+</header>
+
+<nav class="nav" id="nav">
+  <button class="nav__item is-active" data-page="char"><em>干员</em><span>干员调整</span></button>
+  <button class="nav__item" data-page="growth"><em>养成</em><span>养成工具</span></button>
+  <button class="nav__item" data-page="item"><em>物品</em><span>物品发放</span></button>
+  <button class="nav__item" data-page="rlv2"><em>肉鸽</em><span>集成战略</span></button>
+  <button class="nav__item" data-page="sandbox"><em>沙盒</em><span>沙盒管理</span></button>
+  <button class="nav__item" data-page="season"><em>赛季</em><span>赛季与活动</span></button>
+  <button class="nav__item" data-page="reset"><em>重置</em><span>数据重置</span></button>
+  <button class="nav__item nav__item--gm" data-page="autochess" data-locked="1"><em>GM</em><span>卫戍协议<small id="acLockHint">（连点 5 次解锁）</small></span></button>
+</nav>
+
+<main class="main">
+  <!-- ============================ 干员调整 ============================ -->
+  <section class="page is-active" data-page="char">
+    <article class="card">
+      <header class="card__head"><h2>选择目标干员</h2><span class="card__hint">按名字 / ID / 职业搜索（共 <b id="charTotal">0</b> 名）</span></header>
+      <div class="card__body">
+        <div class="ss-host" id="charSearch"></div>
+        <div class="stat-grid" id="charInfo" hidden></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <header class="card__head"><h2>参数修改</h2><span class="card__hint">留空 = 不修改</span></header>
+      <div class="card__body grid">
+        <label class="field"><span class="field__label">等级</span><input id="charLevel" type="number" min="1" max="90" placeholder="不改" /></label>
+        <label class="field"><span class="field__label">精英化</span><select id="charEvolve"><option value="">不改</option></select></label>
+        <label class="field"><span class="field__label">潜能</span><input id="charPotential" type="number" min="0" max="5" placeholder="0-5" /></label>
+        <label class="field"><span class="field__label">技能等级</span><input id="charSkill" type="number" min="1" max="7" placeholder="1-7" /></label>
+        <label class="field"><span class="field__label">技能槽</span><select id="charSkillIdx"><option value="">不改</option></select></label>
+        <label class="field"><span class="field__label">专精</span><select id="charSpec"><option value="">不改</option><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+        <label class="field"><span class="field__label">信赖值</span><input id="charFavor" type="number" min="0" placeholder="0-25570" /></label>
+        <label class="field"><span class="field__label">模组</span><select id="charEquip"><option value="">不改</option></select></label>
+        <label class="field"><span class="field__label">模组等级</span><select id="charEquipLevel"><option value="">不改</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+        <label class="field"><span class="field__label">形态模板（仅阿米娅升变）</span><input id="charTmpl" placeholder="如 tmpl_002_amiya_2" /></label>
+        <div class="btn-grid field--full">
+          <button class="btn btn--primary" id="btnCharApply">应用修改</button>
+          <button class="btn" id="btnCharMax">此干员满养成</button>
+          <button class="btn btn--ghost" id="btnCharReset">清空表单</button>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <header class="card__head"><h2>命令预览</h2><button class="btn btn--ghost btn--sm" data-copy="charPreview">复制</button></header>
+      <pre class="code" id="charPreview">选择干员并填写参数后生成…</pre>
+    </article>
+    <pre class="resp" id="respChar">等待操作…</pre>
+  </section>
+
+  <!-- ============================ 养成工具 ============================ -->
+  <section class="page" data-page="growth">
+    <article class="card">
+      <header class="card__head"><h2>博士等级</h2><span class="card__hint">1 - 120</span></header>
+      <div class="card__body grid">
+        <label class="field field--full">
+          <span class="field__label">等级：<b id="doctorLevelVal">1</b></span>
+          <input id="doctorLevelRange" type="range" min="1" max="120" value="1" />
+        </label>
+        <label class="field"><span class="field__label">精确值</span><input id="doctorLevel" type="number" min="1" max="120" value="1" /></label>
+        <div class="btn-grid field--full"><button class="btn btn--primary" id="btnDoctorLevel">修改博士等级</button></div>
+      </div>
+    </article>
+    <article class="card">
+      <header class="card__head"><h2>批量发放</h2><span class="card__hint">均为破坏性操作，执行前需确认</span></header>
+      <div class="card__body">
+        <div class="action-grid">
+          <button class="btn" id="btnStageUnlockAll">解锁全部关卡</button>
+          <button class="btn" id="btnCharGrantAll">发放全部干员</button>
+          <button class="btn" id="btnCharMaxAll">全员满养成</button>
+          <button class="btn" id="btnSkinGrantAll">发放全部皮肤</button>
+          <button class="btn" id="btnFurniGrantAll">发放全部家具</button>
+          <button class="btn" id="btnShopCurrency">发放商店货币</button>
+        </div>
+      </div>
+    </article>
+    <pre class="resp" id="respGrowth">等待操作…</pre>
+  </section>
+
+  <!-- ============================ 物品发放 ============================ -->
+  <section class="page" data-page="item">
+    <article class="card">
+      <header class="card__head"><h2>邮件附件</h2><span class="card__hint">附件通过邮件发放（共 <b id="attachCount">0</b> 项）</span></header>
+      <div class="card__body grid">
+        <label class="field"><span class="field__label">分类</span><select id="itemCategory"></select></label>
+        <div class="field field--full"><span class="field__label">物品</span><div class="ss-host" id="itemSearch"></div></div>
+        <label class="field"><span class="field__label">数量</span><input id="itemCount" type="number" min="1" value="1" /></label>
+        <div class="btn-grid">
+          <button class="btn" id="btnItemAdd">添加到邮件</button>
+          <button class="btn btn--ghost" id="btnAttachClear">清空附件</button>
+        </div>
+        <div class="chips field--full" id="attachList"><span class="chips__empty">附件：无</span></div>
+        <label class="field field--full"><span class="field__label">邮件标题（留空 = 系统补给）</span><input id="mailSubject" /></label>
+        <label class="field field--full"><span class="field__label">邮件正文（留空 = 默认文案）</span><textarea id="mailContent" rows="2"></textarea></label>
+        <div class="btn-grid field--full"><button class="btn btn--primary" id="btnItemSend">发送邮件</button></div>
+      </div>
+    </article>
+    <article class="card card--danger">
+      <header class="card__head"><h2>物品清理</h2><span class="card__hint">货币 / 凭证与家具库存不受影响</span></header>
+      <div class="card__body">
+        <div class="btn-grid">
+          <button class="btn btn--danger" id="btnItemClearOne">删除选中物品</button>
+          <button class="btn btn--danger" id="btnItemClearAll">清空整个仓库</button>
+        </div>
+      </div>
+    </article>
+    <pre class="resp" id="respItem">等待操作…</pre>
+  </section>
+
+  <!-- ============================ 集成战略 ============================ -->
+  <section class="page" data-page="rlv2">
+    <article class="card">
+      <header class="card__head"><h2>集成战略修改</h2><span class="card__hint">需玩家存在进行中的对局</span></header>
+      <div class="card__body">
+        <div class="tabs" id="rlvTabs">
+          <button class="tab is-active" data-rlv="difficulty">难度</button>
+          <button class="tab" data-rlv="relic">藏品层数</button>
+          <button class="tab" data-rlv="buff">干员增益</button>
+        </div>
+        <div class="tab-panel is-active" data-rlv="difficulty">
+          <div class="grid">
+            <label class="field"><span class="field__label">难度值（game.modeGrade）</span><input id="rlvDifficulty" type="number" min="0" placeholder="0-15" /></label>
+          </div>
+        </div>
+        <div class="tab-panel" data-rlv="relic">
+          <div class="grid">
+            <label class="field"><span class="field__label">藏品 ID</span><input id="rlvRelic" list="rlvRelicList" placeholder="如 relic_..." /><datalist id="rlvRelicList"></datalist></label>
+            <label class="field"><span class="field__label">层数（留空 = +1）</span><input id="rlvLayer" type="number" min="0" /></label>
+          </div>
+        </div>
+        <div class="tab-panel" data-rlv="buff">
+          <div class="grid">
+            <div class="field"><span class="field__label">干员（须在对局队伍中）</span><div class="ss-host" id="rlvCharSearch"></div></div>
+            <label class="field"><span class="field__label">增益 ID</span><input id="rlvBuff" list="rlvBuffList" placeholder="如 buff_..." /><datalist id="rlvBuffList"></datalist></label>
+          </div>
+        </div>
+        <div class="btn-grid"><button class="btn btn--primary" id="btnRlvApply">执行</button></div>
+      </div>
+    </article>
+    <pre class="resp" id="respRlv2">等待操作…</pre>
+  </section>
+
+  <!-- ============================ 沙盒管理 ============================ -->
+  <section class="page" data-page="sandbox">
+    <article class="card">
+      <header class="card__head"><h2>沙盒管理</h2><span class="card__hint">赛季与敌潮改写玩家沙盒存档</span></header>
+      <div class="card__body grid">
+        <div class="field"><span class="field__label">沙盒主题</span><div class="ss-host" id="sandboxSearch"></div></div>
+        <label class="field"><span class="field__label">赛季编号（seasonType）</span><input id="sandboxSeason" type="number" min="0" value="0" /></label>
+        <label class="field"><span class="field__label">敌潮组 enemy_id</span><input id="sandboxEnemy" placeholder="敌潮组 ID" /></label>
+        <label class="field"><span class="field__label">节点 node_id</span><input id="sandboxNode" placeholder="地图节点 ID" /></label>
+        <div class="btn-grid field--full">
+          <button class="btn btn--primary" id="btnSandboxSeason">设置赛季</button>
+          <button class="btn" id="btnSandboxEnemy">写入敌潮</button>
+        </div>
+      </div>
+    </article>
+    <pre class="resp" id="respSandbox">等待操作…</pre>
+  </section>
+
+  <!-- ============================ 赛季与活动 ============================ -->
+  <section class="page" data-page="season">
+    <article class="card">
+      <header class="card__head"><h2>全服状态</h2><button class="btn btn--ghost btn--sm" id="btnStateRefresh">刷新</button></header>
+      <div class="card__body">
+        <div class="stat-grid" id="gmStateCard"></div>
+      </div>
+    </article>
+    <article class="card">
+      <header class="card__head"><h2>活动时钟（周期挑战时间窗）</h2><span class="card__hint">冻结开发者时间戳，影响所有周期性活动的开放窗口</span></header>
+      <div class="card__body grid">
+        <div class="field field--full"><span class="field__label">目标活动</span><div class="ss-host" id="clockActivitySearch"></div></div>
+        <div class="btn-grid field--full">
+          <button class="btn btn--primary" id="btnActivityClock">冻结到该活动时间窗</button>
+          <button class="btn" id="btnActivityClockReset">恢复真实时间</button>
+        </div>
+      </div>
+    </article>
+    <article class="card">
+      <header class="card__head"><h2>活动切换（全服任意活动）</h2><span class="card__hint">强制开启，与时钟叠加</span></header>
+      <div class="card__body grid">
+        <div class="field field--full"><span class="field__label">目标活动</span><div class="ss-host" id="switchActivitySearch"></div></div>
+        <div class="chips field--full" id="overrideList"><span class="chips__empty">当前无强制开启活动</span></div>
+        <div class="btn-grid field--full">
+          <button class="btn btn--primary" id="btnActivitySwitch">强制开启该活动</button>
+          <button class="btn" id="btnActivitySwitchReset">取消全部强制开启</button>
+        </div>
+      </div>
+    </article>
+    <article class="card">
+      <header class="card__head"><h2>赛季</h2></header>
+      <div class="card__body grid">
+        <label class="field"><span class="field__label">危机合约 V2 赛季（全服级）</span><select id="crisisSeason"></select></label>
+        <label class="field"><span class="field__label">保全派驻赛季（玩家级）</span><select id="towerSeason"></select></label>
+        <div class="btn-grid field--full">
+          <button class="btn" id="btnCrisisSeason">切换合约赛季</button>
+          <button class="btn" id="btnTowerSeason">设置保全派驻赛季</button>
+        </div>
+      </div>
+    </article>
+    <article class="card">
+      <header class="card__head"><h2>资源补丁（全服级 · 免重启）</h2><span class="badge" id="assetPatchBadge">-</span></header>
+      <div class="card__body">
+        <p class="hint">开启后立即热重载 mods 列表并生效；去玩官服前请务必关闭。改写 <code>data/config.json</code> 的 <code>assets.enableMods</code>。</p>
+        <div class="btn-grid">
+          <button class="btn" id="btnAssetPatchOn">补丁全开</button>
+          <button class="btn" id="btnAssetPatchOff">补丁全关</button>
+          <button class="btn btn--ghost" id="btnAssetPatchGuide">? 使用教程</button>
+        </div>
+      </div>
+    </article>
+    <pre class="resp" id="respSeason">等待操作…</pre>
+  </section>
+
+  <!-- ============================ 数据重置 ============================ -->
+  <section class="page" data-page="reset">
+    <article class="card card--danger">
+      <header class="card__head"><h2>存档重置（危险操作）</h2></header>
+      <div class="card__body grid">
+        <label class="field field--full"><span class="field__label">重置分区</span><select id="resetKey"></select></label>
+        <label class="field field--full"><span class="field__label">重置说明</span><div class="hint" id="resetKeyHint">选择分区后显示说明</div></label>
+        <div class="btn-grid field--full">
+          <button class="btn btn--danger" id="btnResetKey">重置选中分区</button>
+          <button class="btn btn--danger" id="btnResetAll">恢复初始模板（该玩家）</button>
+          <button class="btn btn--danger" id="btnResetDb">清空全部玩家存档</button>
+        </div>
+        <div class="hint field--full">「清空全部玩家存档」会把所有账号重建为初始模板（账号与登录凭据保留）。所有重置都会写入审计日志。</div>
+      </div>
+    </article>
+    <pre class="resp" id="respReset">等待操作…</pre>
+  </section>
+
+  <!-- ============================ 卫戍协议 GM ============================ -->
+  <section class="page" data-page="autochess">
+    <article class="card">
+      <header class="card__head"><h2>卫戍协议 GM（对局中指令）</h2>
+        <span class="card__hint">作用于本进程内的单局会话态；无对局时变更类指令返回 409</span></header>
+      <div class="card__body grid">
+        <label class="field"><span class="field__label">玩家 UID（留空 = 本机单账号）</span><input id="acUid" placeholder="留空取当前玩家" /></label>
+        <label class="field"><span class="field__label">数量 / 等级参数</span><input id="acNum" type="number" value="10" /></label>
+        <div class="field"><span class="field__label">干员棋（发干员用）</span><div class="ss-host" id="acCharSearch"></div></div>
+        <div class="field"><span class="field__label">道具棋（发道具用）</span><div class="ss-host" id="acItemSearch"></div></div>
+        <div class="btn-grid field--full">
+          <button class="btn" data-ac="state">战局状态</button>
+          <button class="btn" data-ac="skip_round">跳过回合</button>
+          <button class="btn" data-ac="add_coin">加金币</button>
+          <button class="btn" data-ac="set_hp">设生命</button>
+          <button class="btn" data-ac="set_shop_lv">商店等级</button>
+          <button class="btn" data-ac="grant_char">发干员</button>
+          <button class="btn" data-ac="grant_item">发道具</button>
+          <button class="btn" data-ac="reroll_boss">重抽 Boss</button>
+          <button class="btn" data-ac="force_settle_win">强制通关</button>
+          <button class="btn" data-ac="force_settle_lose">强制失败</button>
+          <button class="btn" data-ac="pause">冻结战局</button>
+          <button class="btn" data-ac="resume">恢复战局</button>
+        </div>
+        <label class="field field--full checkbox"><input type="checkbox" id="acAuto" /><span>自动刷新战局状态（3s，仅本页可见时）</span></label>
+      </div>
+    </article>
+    <article class="card">
+      <header class="card__head"><h2>战局状态</h2><button class="btn btn--ghost btn--sm" id="btnAcStateRefresh">刷新</button></header>
+      <div class="card__body"><div class="stat-grid" id="acState"><span class="hint">未查询</span></div></div>
+    </article>
+    <pre class="resp" id="respAc">等待操作…</pre>
+  </section>
+</main>
+
+<!-- 通用确认弹窗 -->
+<div class="modal" id="modal" hidden>
+  <div class="modal__mask" data-close="1"></div>
+  <div class="modal__box" role="dialog" aria-modal="true">
+    <header class="modal__head"><h3 id="modalTitle">确认</h3><button class="btn btn--ghost btn--sm" data-close="1">✕</button></header>
+    <div class="modal__body">
+      <p id="modalBody"></p>
+      <label class="field" id="modalWordField" hidden>
+        <span class="field__label" id="modalWordLabel">请输入确认词</span>
+        <input id="modalWord" autocomplete="off" />
+      </label>
+    </div>
+    <footer class="modal__foot">
+      <button class="btn" id="modalCancel">取消</button>
+      <button class="btn btn--primary" id="modalOk">确认</button>
+    </footer>
+  </div>
+</div>
+
+<!-- 教程弹窗 -->
+<div class="modal" id="tutorial" hidden>
+  <div class="modal__mask" data-close="1"></div>
+  <div class="modal__box" role="dialog" aria-modal="true">
+    <header class="modal__head"><h3 id="tutTitle">使用教程</h3><button class="btn btn--ghost btn--sm" data-close="1">✕</button></header>
+    <div class="modal__body"><p id="tutBody"></p></div>
+    <footer class="modal__foot">
+      <span class="modal__step" id="tutStep">1 / 1</span>
+      <button class="btn" id="tutPrev">上一步</button>
+      <button class="btn btn--primary" id="tutNext">下一步</button>
+    </footer>
+  </div>
+</div>
+
+<div class="toasts" id="toastWrap"></div>
+
+<script src="js/core.js"></script>
+<script src="js/components.js"></script>
+<script src="js/pages.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

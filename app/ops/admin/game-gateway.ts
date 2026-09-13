@@ -15,6 +15,36 @@ import { mailManager } from "@game/modules/mail/MailManager";
 import { unlockActivity, forcedActivityIds } from "@game/modules/activities/shared/unlockActivity";
 import { listCrisisSeasons } from "@game/modules/crisis/crisis-seasons";
 import { loadOrders, markPaid } from "@game/modules/pay/pay-store";
+import { autoChessGmCatalog } from "@game/modules/autochess/public";
+import type { JsonObject } from "@excel/json-value";
+import {
+  buildFreshPlayerData,
+  buildFreshStatus,
+  freshInventory,
+  freshTroop,
+  freshGacha,
+  freshMedal,
+  freshMission,
+  freshBuilding,
+  freshHomeTheme,
+  freshRlv2,
+} from "@game/kernel/fresh-player";
+
+/**
+ * 构造全新玩家存档并收口为 JSON 域（GM 数据重置用）
+ *
+ * freshPlayer 的返回契约是 `Record<string, unknown>`（泛型存档脚手架），
+ * 在网关这一层统一收口为 {@link JsonObject}，避免 admin 业务代码出现模糊类型。
+ * @param template - 结构合法的模板存档（当前存档的深拷贝）
+ * @param opts     - 新号身份信息（uid/昵称/编号/注册时间戳）
+ * @returns 全新存档对象（纯 JSON 域）
+ */
+function freshPlayerJson(
+  template: JsonObject,
+  opts: { uid: string; nickName: string; nickNumber: string; registerTs: number },
+): JsonObject {
+  return buildFreshPlayerData(template, opts) as JsonObject;
+}
 
 /**
  * admin 可访问的 game 运行时实体集合
@@ -30,6 +60,20 @@ export const adminGame = {
   listCrisisSeasons,
   loadOrders,
   markPaid,
+  // 「GM 数据重置」所需：新玩家存档构建与各分区重置构造器（reset_all / reset_key）
+  buildFreshPlayerData,
+  buildFreshStatus,
+  freshInventory,
+  freshTroop,
+  freshGacha,
+  freshMedal,
+  freshMission,
+  freshBuilding,
+  freshHomeTheme,
+  freshRlv2,
+  // 「GM 面板」所需：自走棋棋池目录（/gm/data 的 autochess 选择器）与存档重置构造
+  autoChessGmCatalog,
+  freshPlayerJson,
 };
 
 /** 网关对象类型（便于测试 mock） */
