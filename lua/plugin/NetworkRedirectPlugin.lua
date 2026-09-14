@@ -43,7 +43,7 @@ local MD5_OID = "1.2.840.113549.2.5"
   我方验签公钥（.NET XML，须与 `pnpm run sign:key -- --show` 的 public.xml 完全一致；
   长度 243 字节，与官方 asset 内公钥等长，可直接替换 assets/bin/Data/sharedassets0.assets.split5）。
 --]]
-local PUBLIC_KEY_XML = [[<RSAKeyValue><Modulus>FYRXh2XP47gHCjiICk/AhDjdRZlHtrMbj8rvTglAfKDCX7oOEG0OvN9h27oFj4mlhsUijoiW7xqH9NWVIE1u5QMg8B9IxhvNM686TBO1oTdIjvUrVFqknfNkP4SrjsL308XQb6z3/saK2LxwET4y5kOCjpvvdjedl9qphKITyqw=</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>]]
+local PUBLIC_KEY_XML = [[<RSAKeyValue><Modulus>rMoTooSp2pedN3bvm46CQ+YyPhFwvNiKxv73rG/QxdP3wo6rhD9k852kWlQr9Y5IN6G1E0w6rzPNG8ZIH/AgA+VuTSCV1fSHGu+WiI4ixYaliY8Futth37wObRAOul/CoHxACU7vyo8bs7ZHmUXdOITATwqIOAoHuOPPZYdXhBU=</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>]]
 
 --[[
   Networker.get_overrideRouterUrl 的替换实现：返回私服 network_config 路由地址。

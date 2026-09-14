@@ -42,14 +42,23 @@ const PUBKEY_XML_LEN = 243;
 const KEY_BITS = 1024;
 
 /**
- * 由公钥导出 .NET XML 形式（`FromXmlString` 语义：Modulus/Exponent 均为**小端**字节序）。
+ * 由公钥导出 .NET XML 形式（Modulus/Exponent 均按**大端**原样写出）。
+ *
+ * 端序是实测定的，别改回去：官方资产里的公钥（`assets/bin/Data/sharedassets0.assets.split5`）
+ * 是**大端**，客户端 `RSA.FromXmlString` 也是**按原样**读（两条独立证据：
+ * ① 用官服 `/config/prod/official/network_config` 的真实 `sign`+`content` 反证，
+ *   只有「大端 + MD5」验得过；② 设备端 A/B——把官方公钥「原样」塞回
+ *   `CryptUtils.VerifySignMD5RSA(byte[],byte[],string)` 时对 344 个官方 Lua 资产全部返回 true，
+ *   换成「逐字节反转」写法则全部 false，且验签失败会让客户端 SIGABRT）。
+ * 历史缺陷：本函数曾按 CAPI 小端 `.reverse()` 写出，客户端算出的模数是错的，
+ * 于是「换我们自己的密钥」这条路实际一直验不过。
  * @param publicKey - Node 公钥对象
  * @returns `<RSAKeyValue>…</RSAKeyValue>` 字符串
  */
 export function publicKeyToDotNetXml(publicKey: crypto.KeyObject): string {
   const jwk = publicKey.export({ format: "jwk" });
-  const n = Buffer.from(jwk.n ?? "", "base64url").reverse(); // 小端
-  const e = Buffer.from(jwk.e ?? "", "base64url").reverse();
+  const n = Buffer.from(jwk.n ?? "", "base64url");
+  const e = Buffer.from(jwk.e ?? "", "base64url");
   return `<RSAKeyValue><Modulus>${n.toString("base64")}</Modulus><Exponent>${e.toString("base64")}</Exponent></RSAKeyValue>`;
 }
 
@@ -99,7 +108,7 @@ export function readPrivateKey(): crypto.KeyObject {
 }
 
 /**
- * 由 .NET XML 公钥解析出 KeyObject（Modulus/Exponent 为小端字节序）。
+ * 由 .NET XML 公钥解析出 KeyObject（Modulus/Exponent 按**大端**原样读，见 {@link publicKeyToDotNetXml}）。
  * @param xml - `<RSAKeyValue>…</RSAKeyValue>` 字符串
  * @returns 公钥 KeyObject
  */
@@ -107,8 +116,8 @@ export function dotNetXmlToPublicKey(xml: string): crypto.KeyObject {
   const m = /<Modulus>([^<]+)<\/Modulus>/.exec(xml);
   const e = /<Exponent>([^<]+)<\/Exponent>/.exec(xml);
   if (!m || !e) throw new Error("公钥 XML 解析失败（缺 Modulus/Exponent）");
-  const n = Buffer.from(m[1], "base64").reverse();
-  const exp = Buffer.from(e[1], "base64").reverse();
+  const n = Buffer.from(m[1], "base64");
+  const exp = Buffer.from(e[1], "base64");
   const jwk = { kty: "RSA", n: n.toString("base64url"), e: exp.toString("base64url") };
   return crypto.createPublicKey({ key: jwk, format: "jwk" });
 }

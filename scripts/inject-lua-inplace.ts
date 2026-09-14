@@ -25,12 +25,21 @@
  *   pnpm run inject:lua -- --bundle <官方bundle.dat|.bin> --asset TestStubHotfixer --script <自定义.lua>
  *   --script  可选自定义注入 Lua（缺省用内置自包含引导）；必须为合法 HotfixBase hotfixer
  *   --out     输出 mods 目录（缺省 <项目根>/mods）
+ *   --key     私钥 PEM（缺省 data/crypto/private.pem）——用于**重签名**
+ *   --resign-all  把 bundle 内**所有** TextAsset 都用我们的私钥重签（客户端换成我们公钥时必须做）
+ *
+ * ★ 为什么要重签名：`m_Script = [128B RSA-1024/MD5 签名][16B IV^mask][AES 密文]`，
+ *   签名覆盖 `script[128:]`；客户端每次加载 Lua 资产都用 `GlobalOptions.cryptoPubKey` 校验，
+ *   失败会**直接 abort**（详见 docs/lua-asset-signature-2026-09-14.md）。因此：
+ *   - 被改写的资产必须重签；
+ *   - 客户端若使用我们的公钥，则**同 bundle 内每个资产**都必须是我们的签名（否则那些资产验签失败）。
+ *   重签名不改长度（签名固定 128B），因此 SF 结构依旧零改动。
  */
 import * as fs from "fs";
 import * as path from "path";
 import JSZip from "jszip";
 import { lz4BlockDecompress, decompressLz4ak, lz4BlockCompress, compressLz4ak } from "./vendor/lz4";
-import { encryptLuaScript, decryptLuaScript, HEAD_LEN } from "./vendor/lua-crypt";
+import { encryptLuaScript, decryptLuaScript, signLuaScript } from "./vendor/lua-crypt";
 
 /** 内置 Lua 主 bundle 名（zip 条目名 = 客户端资源名） */
 const BUILTIN_BUNDLE_NAME = "anon/6edf14bbd79243eb61e288ff28e446c3.bin";
@@ -314,11 +323,116 @@ export function buildRobustBootstrap(): string {
     "  -- 兜底②：TimerModel 可用时 5s 后重试",
     "  xpcall(function()",
     "    local tm=TimerModel and TimerModel.me",
-    "    if tm then tm:Delay(5,function() xpcall(hb,function()end) end) end",
+    "    if tm then",
+    "      local cb=function() xpcall(hb,function()end) end",
+    "      pcall(function() if Event~=nil and Event.CreateStatic~=nil then cb=Event.CreateStatic(cb) end end)",
+    "      tm:Delay(5,cb)",
+    "    end",
     "  end,function()end)",
     "end",
     "function T:OnInit()",
     "  inst()",
+    "end",
+    "return T",
+    "",
+  ].join("\n");
+}
+
+/**
+ * 生成「网络拉取插件源码」引导（对应服务端 `GET /plugin/lua`）。
+ *
+ * 为什么不把插件源码直接内联进资产：Lua bundle 里最大的 TextAsset 明文只有约 33KB，
+ * 而 `lua/plugin/*.lua` 合计约 60KB，一个资产装不下。于是资产里只放这段几百字节的引导：
+ *   1) 立即尝试 `UISender.me:SendGet("/plugin/lua")`（此时 UISender 可能还没建）；
+ *   2) `TimerModel` 就绪后每 3s 重试，至多 10 次；
+ *   3) `Battle.UI.UIController.Awake` 兜底再试一次（必然晚于登录/网络就绪）。
+ * 取回的 JSON 里 `lua` 字段是自包含 chunk（源码 + searcher + 引导），`load()` 执行即可；
+ * 结果（含各插件启停自检）写入 `plugin_boot_trace.txt`。
+ * @returns 明文 Lua 源码
+ */
+export function buildFetchBootstrap(): string {
+  return [
+    'local T=Class("T",HotfixBase)',
+    "local DONE=false",
+    "local ATT=0",
+    "local APPLIED=false",
+    "local function trace(m)",
+    "  xpcall(function()",
+    '    local p=CS.UnityEngine.Application.persistentDataPath.."/plugin_boot_trace.txt"',
+    '    CS.Torappu.FileUtil.WriteToFile("[DTS] "..m,p,true)',
+    "  end,function()end)",
+    "end",
+    "local function ready()",
+    "  return UISender~=nil and UISender.me~=nil and UISender.me.SendGet~=nil",
+    "end",
+    "local function apply(raw)",
+    "  local body=raw",
+    "  -- 游戏网络层把响应包成 { text = <原始响应体> }（实测 keys=text:string）",
+    '  if type(body)=="table" and type(body.text)=="string" then body=body.text end',
+    '  if type(body)=="string" then',
+    '    local ok,d=pcall(function() return require("rapidjson").decode(body) end)',
+    "    if ok then body=d end",
+    "  end",
+    '  if type(body)~="table" then return false end',
+    "  local function findLua(t,depth)",
+    '    if type(t)~="table" or depth>3 then return nil end',
+    '    if type(t.lua)=="string" then return t.lua end',
+    "    for _,v in pairs(t) do",
+    "      local r=findLua(v,depth+1)",
+    "      if r~=nil then return r end",
+    "    end",
+    "    return nil",
+    "  end",
+    "  local chunk=findLua(body,0)",
+    '  if type(chunk)~="string" then',
+    "    local ks={}",
+    "    for k,v in pairs(body) do ks[#ks+1]=tostring(k)..\":\"..type(v) end",
+    '    trace("no lua; keys="..table.concat(ks,","))',
+    "    return false",
+    "  end",
+    '  local fn=load(chunk,"@dts_http")',
+    "  if fn==nil then return false end",
+    "  local ok,res=pcall(fn)",
+    '  trace("chunk "..(ok and "ok" or "err")..": "..tostring(res))',
+    "  return ok",
+    "end",
+    "local function fetch()",
+    "  if DONE or ATT>=20 then return end",
+    "  if not ready() then return end",
+    "  ATT=ATT+1",
+    '  trace("fetch #"..ATT)',
+    "  local h=function(data)",
+    "    -- 回调在游戏 `UISender._HandleGetResponse` 里同步执行：这里绝不能抛异常，",
+    "    -- 否则会变成未捕获的托管异常 → 进程 abort（实测）。同时只应用一次，避免重复装载。",
+    "    local okc,resc=pcall(function()",
+    '      trace("cb "..type(data))',
+    "      if APPLIED then return end",
+    "      local r=apply(data)",
+    "      if r then APPLIED=true; DONE=true end",
+    "    end)",
+    '    if not okc then trace("cb err: "..tostring(resc)) end',
+    "  end",
+    "  local cb=h",
+    "  pcall(function() if Event~=nil and Event.CreateStatic~=nil then cb=Event.CreateStatic(h) end end)",
+    '  pcall(function() UISender.me:SendGet("/plugin/lua",nil,{onProceed=cb,useMask=false}) end)',
+    "end",
+    "function T:OnInit()",
+    '  trace("init")',
+    "  fetch()",
+    "  pcall(function()",
+    "    local G=CS.Torappu.GlobalInitializerAndUpdater",
+    "    local orig=G.Update",
+    "    local n=0",
+    '    xlua.hotfix(G,"Update",function(...)',
+    "      if orig~=nil then orig(...) end",
+    "      n=n+1",
+    "      if DONE then",
+    '        xpcall(function() xlua.hotfix(G,"Update",orig) end,function()end)',
+    "        return",
+    "      end",
+    "      if n%30==0 then fetch() end",
+    "    end)",
+    "  end)",
     "end",
     "return T",
     "",
@@ -479,7 +593,10 @@ async function main(): Promise<void> {
   const bootstrapMode = bsi >= 0 ? args[bsi + 1] : "robust";
   // robust（复刻成功心跳链路）默认落到明文预算更大的官方热修资产，避免写不下
   let assetWant = ai >= 0 ? args[ai + 1] : "";
-  if (!assetWant) assetWant = bootstrapMode === "robust" ? "ArkventHotfixer" : "TestStubHotfixer";
+  if (!assetWant) {
+    // fetch/robust 引导体积较大（数百字节～1KB），落到明文预算更大的官方热修资产上
+    assetWant = bootstrapMode === "default" ? "TestStubHotfixer" : "ArkventHotfixer";
+  }
   const scriptFile = si >= 0 ? args[si + 1] : "";
   const outMods = path.resolve(oi >= 0 ? args[oi + 1] : path.join(__dirname, "..", "mods"));
   // 客户端资源名（zip 条目名）——须与 hot_update_list 里的 `anon/<hash>.bin` 同名，否则客户端拉不到
@@ -512,12 +629,24 @@ async function main(): Promise<void> {
   console.log(`[inject] 目标: "${loc.name}" (pathId=${target.pathId}, objectStart=${target.start}, size=${target.size})`);
   console.log(`[inject] m_Script 原始密文 ${loc.scriptLen}B @ SF+${loc.scriptAbs}`);
 
+  // 私钥（重签名用）：缺省 data/crypto/private.pem
+  const reseignAll = args.indexOf("--resign-all") >= 0;
+  const ki = args.indexOf("--key");
+  const keyPath = path.resolve(ki >= 0 ? args[ki + 1] : path.join(__dirname, "..", "data", "crypto", "private.pem"));
+  if (!fs.existsSync(keyPath)) {
+    throw new Error(`找不到私钥 ${keyPath}：先执行 node scripts/sign-key.ts --gen（或加 --key <pem>）`);
+  }
+  const privateKeyPem = fs.readFileSync(keyPath, "utf8");
+  console.log(`[inject] 重签名私钥: ${keyPath}${reseignAll ? "（将重签 bundle 内全部资产）" : ""}`);
+
   // 生成注入明文并 padding 到可复现同长密文的长度
   const basePlain = scriptFile
     ? fs.readFileSync(scriptFile, "utf8")
-    : bootstrapMode === "robust"
-      ? buildRobustBootstrap()
-      : buildDefaultBootstrap();
+    : bootstrapMode === "fetch"
+      ? buildFetchBootstrap()
+      : bootstrapMode === "robust"
+        ? buildRobustBootstrap()
+        : buildDefaultBootstrap();
   // 目标明文长度：**保留原资产明文长度**，不要填充到预算上限。
   // 实测：客户端加载器对「明文长度 != 原值」的资产返回 null（官方 DefinedFix 明文 265B，
   // 我们填充到预算 271B 后 require 解析失败 → entry.lua 的 HotfixProcesser.Do 中断，插件永不加载）。
@@ -528,10 +657,11 @@ async function main(): Promise<void> {
     throw new Error(`注入内容 ${Buffer.byteLength(basePlain, "utf8")}B 超过该资产明文预算 ${targetP}B；换更大的目标资产或精简内容`);
   }
   const padded = padTo(basePlain, targetP);
-  // **保留原始 128B 头**：官方头虽是随机数据、我们的解密器忽略它，但客户端加载器对「换过头」的资产
-  // 会返回 null（实测：随机头的资产 require 解析失败，同 bundle 内未改动的资产正常）。
-  const srcHead = sf.slice(loc.scriptAbs, loc.scriptAbs + HEAD_LEN);
-  const newEnc = Buffer.from(encryptLuaScript(Buffer.from(padded, "utf8"), srcHead));
+  // 重加密：随机 IV（长度与原文一致），随后**用我们的私钥重签名**覆盖那 128B 头
+  // （头就是签名，不是"随机数据"；保留旧头会让客户端验签失败并 abort，见文件头注释）。
+  const newEnc = Buffer.from(
+    signLuaScript(Buffer.from(encryptLuaScript(Buffer.from(padded, "utf8"))), privateKeyPem),
+  );
   if (newEnc.length !== loc.scriptLen) {
     throw new Error(`重加密长度不符: 期望 ${loc.scriptLen}B 实际 ${newEnc.length}B`);
   }
@@ -539,7 +669,36 @@ async function main(): Promise<void> {
   // 原位写回（仅 m_Script 字节区，长度不变 → 结构不动）
   const mutated = sf.slice();
   mutated.set(newEnc, loc.scriptAbs);
-  console.log(`[inject] 已原位写回加密引导 ${newEnc.length}B（结构零改动）`);
+  console.log(`[inject] 已原位写回加密引导 ${newEnc.length}B（结构零改动，已重签名）`);
+
+  // 可选：把 bundle 内**所有** TextAsset 用我们的私钥重签
+  // （客户端换成我们公钥时，未重签的官方资产会验签失败 → abort）
+  if (reseignAll) {
+    let resigned = 0;
+    let skipped = 0;
+    for (const obj of meta.objects.filter((x) => x.typeId === taTypeIdx)) {
+      if (obj.pathId === target.pathId) continue; // 目标资产已在上面签过
+      const other = locateScript(sf, obj.start, obj.size);
+      if (!other) {
+        skipped += 1;
+        continue;
+      }
+      const enc = sf.slice(other.scriptAbs, other.scriptAbs + other.scriptLen);
+      try {
+        const plain = Buffer.from(decryptLuaScript(enc));
+        const reenc = Buffer.from(signLuaScript(Buffer.from(encryptLuaScript(plain)), privateKeyPem));
+        if (reenc.length !== other.scriptLen) {
+          skipped += 1;
+          continue;
+        }
+        mutated.set(reenc, other.scriptAbs);
+        resigned += 1;
+      } catch (e) {
+        skipped += 1; // 非加密/空资产：客户端不走验签路径，跳过
+      }
+    }
+    console.log(`[inject] 全 bundle 重签名: ${resigned} 个已重签，${skipped} 个跳过（非加密或异常）`);
+  }
 
   // 重建 UnityFS（官方 mode-4 压缩，客户端可加载）
   const newUf = buildUnityFSCompressed(mutated, cabNodeName);

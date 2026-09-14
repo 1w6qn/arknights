@@ -79,3 +79,7 @@ data/user/gallery/
 data/player_data.json.root-backup
 # 私服验签密钥（sign:key 生成；私钥绝不入库）
 data/crypto/
+
+# Python 字节码缓存（调试脚本用）
+__pycache__/
+*.pyc

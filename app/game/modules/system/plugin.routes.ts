@@ -23,6 +23,7 @@
 import { Router } from "express";
 import { logger } from "@utils/logger";
 import { pluginConfigService, type PluginOptionValue } from "@plugin/index";
+import { buildPluginLuaChunk } from "@plugin/lua-chunk-builder";
 
 const router = Router();
 
@@ -67,6 +68,28 @@ router.get("/heartbeat", async (req, res) => {
     options,
     serverTime: Date.now(),
   });
+});
+
+/**
+ * 插件 Lua 源码下发端点。
+ *
+ * 场景：资产内只留一段几百字节的引导（装不下 ~60KB 插件源码），引导在运行时
+ * `UISender.me:SendGet("/plugin/lua")` 取回本端点返回的自包含 chunk 再 `load()` 执行
+ * ——于是插件系统完全由「资产内引导 + 私服下发」交付，无需 frida 注入 Lua。
+ * 响应体是 JSON（游戏网络层自动解析成 table），chunk 在 `lua` 字段里。
+ */
+router.get("/lua", (req, res) => {
+  try {
+    const built = buildPluginLuaChunk();
+    logger.info(
+      "PluginLua",
+      `下发插件 Lua chunk（${built.modules.length} 个模块，${built.lua.length}B，version=${built.version}）`,
+    );
+    res.json({ status: 0, result: 0, version: built.version, modules: built.modules, lua: built.lua });
+  } catch (error) {
+    logger.error("PluginLua", `插件 Lua chunk 构建失败: ${(error as Error).message}`);
+    res.status(500).json({ status: 1, msg: "plugin lua build failed" });
+  }
 });
 
 /** 客户端插件启停状态同步端点（路径编码，匹配 PluginHeartbeat.PushState） */

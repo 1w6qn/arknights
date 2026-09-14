@@ -336,8 +336,14 @@ export async function repackBuiltinLua(
 ): Promise<{ dat: string; bundle: Uint8Array; assetCount: number }> {
   const builtinBytes = await readBuiltinBundle(builtinPath);
   // 官方 bundle 的 AssetBundle 容器与 pathId 必须继承（客户端按容器 key / 清单 pathId 取 Lua 资产）
-  const { assets: builtin, assetPathIds, assetBundle, assetBundlePathId, typeTable } =
-    extractBundleWithMeta(builtinBytes);
+  const {
+    assets: builtin,
+    assetPathIds,
+    assetBundle,
+    assetBundlePathId,
+    typeTable,
+    enableTypeTree,
+  } = extractBundleWithMeta(builtinBytes);
   if (builtin.length === 0) {
     throw new Error(`内置 bundle 未解析出任何 Lua 资产: ${builtinPath}`);
   }
@@ -351,7 +357,11 @@ export async function repackBuiltinLua(
     tail: assetBundle?.tail,
     pathIds: merged.map((a) => pathIdByName.get(a.name) ?? 0n),
     assetBundlePathId: assetBundlePathId,
-    typeTable,
+    // 原样保留类型表仅当源 bundle **确实带类型树**时才有意义：packLuaBundle 传入 typeTable 会
+    // 强制 enableTypeTree=true，而 enableTypeTree=false 的源（如单元测试/部分平台的合成 bundle）
+    // 其 typeTable 只是普通类型条目、不含类型树 → 强制置位会让解析方（含真实客户端）按类型树读，
+    // 对象表错位、资产全部丢失（实测：自举重打包产物 extractTextAssets 得到空列表）。
+    typeTable: enableTypeTree ? typeTable : undefined,
     cabName,
   });
 }

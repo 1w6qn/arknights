@@ -100,7 +100,16 @@ end
 --]]
 local function _SendWithCallback(url, fn)
   return pcall(function()
-    UISender.me:SendGet(url, nil, { onProceed = fn, useMask = false })
+    -- ★ 回调必须是「带 Call 方法的对象」：游戏侧 `UISender:ExportOnProceed` 走的是
+    -- `callback.onProceed:Call(response)`（data/[uc]lua/Base/Network/UISender.lua:131）。
+    -- 直接传裸函数会抛 `attempt to index a function value (field 'onProceed')`，
+    -- 该异常会从 `_HandleGetResponse` 逸出 → 未捕获托管异常 → **整个客户端 abort**（实测 2.7.71）。
+    -- 官方 Lua 一律用 `Event.Create(self, fn)`，这里同理。
+    local cb = fn
+    pcall(function()
+      if Event ~= nil and Event.CreateStatic ~= nil then cb = Event.CreateStatic(fn) end
+    end)
+    UISender.me:SendGet(url, nil, { onProceed = cb, useMask = false })
   end)
 end
 
@@ -150,6 +159,25 @@ local function _AutoConfirm()
   end
 end
 
+--[[
+  把回调包成 Timer 能接受的「带 Call 方法的对象」。
+
+  ★ 契约：`Timer:Update` 里是 `self.m_call:Call()`（data/[uc]lua/Timer.lua:52），
+  而 `TimerModel:Delay(delay, cb)` 会把 cb 直接存成 `m_call`。
+  传裸函数 → `attempt to index a function value (field 'm_call')` → LuaException
+  从 `entry.lua:103 → TimerModel:Update → Timer:Update` 逸出 → **整个客户端 abort**（实测）。
+  与 UISender 的回调契约同源，官方 Lua 一律用 `Event.Create/CreateStatic`。
+  @param fn 回调
+  @return 可安全交给 TimerModel 的对象
+--]]
+local function _AsTimerCallback(fn)
+  local cb = fn
+  pcall(function()
+    if Event ~= nil and Event.CreateStatic ~= nil then cb = Event.CreateStatic(fn) end
+  end)
+  return cb
+end
+
 --[[ 延迟重试链是否已排（TimerModel 可能晚于引导阶段就绪，需要在其可用后补排）]]
 local _retriesScheduled = false
 
@@ -178,10 +206,10 @@ local function _ScheduleRetries()
     _AutoConfirm()
     local nextTimer = _Timer()
     if retries < _MAX_RETRY and nextTimer ~= nil then
-      nextTimer:Delay(_RETRY_DELAY_SEC, retry)
+      nextTimer:Delay(_RETRY_DELAY_SEC, _AsTimerCallback(retry))
     end
   end
-  tm:Delay(_RETRY_DELAY_SEC, retry)
+  tm:Delay(_RETRY_DELAY_SEC, _AsTimerCallback(retry))
 end
 
 --[[

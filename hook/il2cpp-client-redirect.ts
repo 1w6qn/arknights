@@ -1,5 +1,6 @@
 import "./frida17-compat";
 import "frida-il2cpp-bridge";
+import { PLUGIN_LUA } from "./build/plugin-lua";
 
 /*
  * 客户端运行时改造（等价于 apk:url-redirect + sign:key --patch-apk，但不改 APK）：
@@ -34,13 +35,39 @@ const HOST_MAP: { from: string; to: string }[] = [
  */
 const PUBKEY_XML = "__PUBKEY_XML__";
 const PUBKEY_PATH = "__PUBKEY_PATH__";
+/**
+ * 验签公钥端序 A/B 模式（由 `scripts/frida-mumu-arm64.py --pubkey-mode` 注入）：
+ *   asis = 不动公钥；flip = 一律换成「反转写法」；ab = 逐次交替（一次跑出结论）；ours = 换我们的公钥。
+ * 背景：客户端读 `<RSAKeyValue>` 的 Modulus 到底是按大端原样读还是按 CAPI 小端反转读，
+ * 决定了我们替换公钥时该写哪种端序（`data/crypto/public.xml` 目前写的是小端）。
+ */
+const PUBKEY_MODE = "__DTS_PUBKEY_MODE__";
+/** 官方公钥的两种端序写法（A/B 用，由管线在构建时从官方 APK 提取并注入） */
+const OFFICIAL_PUBKEY_BE = "__OFFICIAL_PUBKEY_BE__";
+const OFFICIAL_PUBKEY_LE = "__OFFICIAL_PUBKEY_LE__";
 const MAX_LOG = 60;
 /** Lua 加载器探针的日志上限（脚本加载次数远多于 URL 改写次数） */
 const MAX_LUA_LOG = 400;
+/** byte[] 重载（Lua 资产验签）的判定日志上限 */
+const MAX_BIN_LOG = 60;
+/** byte[] 重载累计调用次数（A/B 交替用） */
+let binVerifyCalls = 0;
+/** 已上报的 byte[] 验签结论条数 */
+let binLogs = 0;
 
 const stats = { urlsSeen: 0, urlsRewritten: 0, verifyCalls: 0, keysReplaced: 0, pubkeyLoaded: false, logsSeen: 0, luaLoads: 0 };
 /** 最近一次 `_CustomLoader(filePath)` 的入参（onEnter/onLeave 之间传递，加载器是串行调用） */
 let lastLuaPath: string | null = null;
+/**
+ * 是否正处于 `_CustomLoader`（Lua 资产加载）内部。
+ *
+ * 为什么需要：`VerifySignMD5RSA(byte[],byte[],string)` 这个重载**两条路都在用**——
+ * ① Lua 资产（`_CustomLoader` 里，我们的 mod bundle 用**我们的**私钥签，需要换成我们的公钥）；
+ * ② excel/DB 等 `CrypticConverter_WithSign` 资产（官方签名，必须**保持官方公钥**）。
+ * 早先不分场合地全局换公钥，会导致②全部验签失败、客户端在 DB 阶段就卡住（实测 `ours` 模式
+ * 只走到 2 次验签、Lua 一个都没加载）。故按调用上下文区分。
+ */
+let luaLoaderDepth = 0;
 let pubkey = "";
 let pubkeyWarned = false;
 let verbose = true;
@@ -116,8 +143,6 @@ function hookUrlEntries(klass: Il2Cpp.Class): string[] {
       const label = method.name + "#" + argIndex;
       Interceptor.attach(method.virtualAddress, {
         onEnter(args) {
-          // 触发一次 Lua 插件注入：URL 入口必然在 Lua 起来之后被调用，且此处不在 Lua 调用栈内
-          if (luaManagerPtr !== null && !luaInjected) tryInjectLua(luaManagerPtr);
           const url = readString(args[argIndex]);
           if (url === null) return;
           stats.urlsSeen += 1;
@@ -144,54 +169,581 @@ function hookUrlEntries(klass: Il2Cpp.Class): string[] {
 }
 
 /**
- * frida 侧把插件源码注入**运行中的 Lua VM**（不改任何游戏资产）。
+ * frida 侧把插件系统注入**运行中的 Lua VM**（不改任何游戏资产）。
  *
  * 为什么需要它：实测客户端会拒绝任何被重新加密的 Lua 资产（连「明文逐字节相同、只换 IV」都返回
- * null），所以「改 Lua bundle」这条路在当前客户端上走不通；而 `LuaEnv.DoString` 是可调用的托管接口，
- * 于是改为在**游戏线程**上直接往 Lua VM 里灌插件代码（自用调试，符合目标里的 frida 路线）。
+ * null），所以「改 Lua bundle」这条路在当前客户端上走不通；`LuaEnv.DoString` 是可直接调用的托管
+ * 接口，于是改为在**游戏主线程、Lua 空闲时**把插件源码灌进 Lua VM（自用调试，符合目标里的 frida 路线）。
  *
- * 时序与安全：`LuaManager.m_env` 指针从 `_CustomLoader(this, …)` 的 `this` 取；真正的注入放在
- * 托管日志钩子里（同样跑在游戏线程、且不在 Lua 调用栈内），等 Lua 明确起来后再执行一次。
+ * 三个关键点（全部由 `docs/il2cpp-dump-trace-2026-09-14.md` 的 dump/trace 实测确定）：
+ *  1) `XLua.LuaEnv::DoString` 有**两个都是 3 参数**的重载（`String` / `Byte[]` 版），
+ *     桥的 `method("DoString")` 取到哪一个不确定——必须用 `.overload("System.String","System.String","XLua.LuaTable")`
+ *     显式选字符串版，第三个参数（LuaTable env）传空指针常量 `NULL`（传 JS `null` 会报参数类型错）。
+ *  2) 注入时机：`LuaManager._DoLoadEntryScript` 返回（`entry` 与 hotfix 链跑完、Lua 栈已退空）之后，
+ *     在 `LuaManager._DoUpdate` 的 onEnter 里调用——由 Unity Update 循环驱动，不在任何 Lua 调用栈内，
+ *     避免在 `require` 的 searcher 回调里重入 Lua VM。
+ *  3) 插件源码不能靠 `require` 从资产里拿，payload 自带源码表：注入时先装一个只认
+ *     `Plugin/*` 的 searcher，再按插件自己的引导顺序 require（`_G.PluginDefs` → `PluginManager`
+ *     → …，与 lua/plugin/PluginBootHotfixer.lua 的 `_BootstrapGlobals` 一致）。
  */
-const LUA_INJECT_SNIPPET = [
-  "xpcall(function()",
-  '  local u = CS.Torappu.Lua.Util',
-  '  u.LogHotfixError("[DoctorateTs] frida lua inject OK")',
-  '  local p = CS.UnityEngine.Application.persistentDataPath .. "/frida_lua_inject.txt"',
-  '  CS.Torappu.FileUtil.WriteToFile("ok", p, true)',
-  "end, function(e)",
-  '  CS.Torappu.Lua.Util.LogHotfixError("[DoctorateTs] inject err: " .. tostring(e))',
-  "end)",
-].join("\n");
+/** 插件模块名 → 源码（构建期由 scripts/build-frida-hook.mjs 从 lua/plugin/*.lua 生成）。 */
+const LUA_MODULES: { [name: string]: string } = PLUGIN_LUA;
 /** LuaManager 实例（`_CustomLoader` 的 this），作为取 m_env 的入口 */
 let luaManagerPtr: NativePointer | null = null;
-/** 注入是否已成功（只做一次；失败允许后续重试） */
+/** 注入是否已成功（只做一次；失败允许后续重试，成功即停） */
 let luaInjected = false;
-/** Lua 加载计数（作为注入时机：第 5 次加载脚本时注入） */
-let luaLoadCalls = 0;
+/** `entry` 脚本是否已执行完（`_DoLoadEntryScript` 返回过）——注入的时序门禁 */
+let entryScriptDone = false;
+/** Update 帧计数（`_DoLoadEntryScript` 没等到时的兜底触发用） */
+let updateFrames = 0;
+/** 真正调用过 DoString 的次数（失败重试上限，防每帧重试风暴） */
+let injectAttempts = 0;
+/** 失败重试上限 */
+const MAX_INJECT_ATTEMPTS = 8;
+/** 兜底：entry 脚本迟迟没等到时，多少帧后仍尝试注入 */
+const FALLBACK_FRAMES = 900;
 
 /**
- * 经 il2cpp 在游戏线程上调用 `LuaManager.m_env.DoString(snippet)`。
- * @param manager - LuaManager 实例指针（来自 `_CustomLoader` 的 this）
+ * 构造注入 payload（自包含：源码表 + searcher + 引导）。
+ * 返回字符串即自检结论：`DTS_PLUGIN_OK` 或 `DTS_PLUGIN_ERR: …`——经 `DoString` 的返回值回传，
+ * 不依赖日志/文件即可判定成功。
+ * @returns Lua chunk 源码
+ */
+function buildLuaPayload(): string {
+  const lines: string[] = ["local SRC = {"];
+  for (const name of Object.keys(LUA_MODULES)) {
+    lines.push("  [" + JSON.stringify(name) + "] = " + JSON.stringify(LUA_MODULES[name]) + ",");
+  }
+  lines.push(
+    "}",
+    "local searchers = package.searchers or package.loaders",
+    "local function dts_searcher(name)",
+    "  local code = SRC[name]",
+    '  if code == nil then return "\\n\\tno DoctorateTs module \'" .. name .. "\'" end',
+    "  local chunk, err = load(code, \"@\" .. name)",
+    '  if chunk == nil then return "\\n\\tDoctorateTs module \'" .. name .. "\' load error: " .. tostring(err) end',
+    "  return chunk",
+    "end",
+    "table.insert(searchers, 1, dts_searcher)",
+    "local function dts_trace(msg)",
+    "  pcall(function()",
+    '    local path = CS.UnityEngine.Application.persistentDataPath .. "/frida_plugin_trace.txt"',
+    '    CS.Torappu.FileUtil.WriteToFile("[DTS] " .. msg, path, true)',
+    "  end)",
+    "end",
+    'dts_trace("frida inject enter")',
+    "local ok, err = xpcall(function()",
+    '  _G.PluginDefs = require "Plugin/PluginDefs"',
+    '  dts_trace("PluginDefs ok")',
+    '  _G.PluginManager = require "Plugin/PluginManager"',
+    '  dts_trace("PluginManager ok")',
+    '  _G.PluginEntry = require "Plugin/PluginEntry"',
+    '  dts_trace("PluginEntry ok")',
+    '  _G.PluginHeartbeat = require "Plugin/PluginHeartbeat"',
+    '  dts_trace("PluginHeartbeat ok")',
+    "  PluginEntry.init()",
+    '  dts_trace("PluginEntry.init ok")',
+    "  PluginHeartbeat.ScheduleAuto()",
+    '  dts_trace("ScheduleAuto ok")',
+    "end, debug.traceback)",
+    "local detail = \"\"",
+    "if ok then",
+    "  local parts = {}",
+    "  for _, def in ipairs(PluginDefs) do",
+    '    parts[#parts + 1] = def.id .. (PluginManager.me:GetPlugin(def.id) ~= nil and "=1" or "=0")',
+    "  end",
+    '  detail = " " .. table.concat(parts, " ")',
+    "end",
+    "-- UI 挂载自检：面板/浮动按钮是否已在 Canvas 上建出来（Canvas 晚于注入就绪时由自愈链补建）",
+    "local function dts_ui(id)",
+    "  local okP, p = pcall(function() return PluginManager.me:GetPlugin(id) end)",
+    '  if not okP or p == nil then return id .. "=nil" end',
+    "  local built = (p._root ~= nil) and (p._floatBtn ~= nil)",
+    '  return id .. "=" .. (built and "1" or "0")',
+    "end",
+    'local uis = " ui:" .. dts_ui("plugin_panel") .. "," .. dts_ui("options_panel")',
+    "-- 顺手把面板打开：便于用截屏按颜色（蓝色 Toggle #4D99FF）做「浮窗真的画出来了」的无眼验证",
+    "pcall(function()",
+    "  local p = PluginManager.me:GetPlugin(\"plugin_panel\")",
+    "  if p ~= nil and p._root ~= nil and p.TogglePanel ~= nil then p:TogglePanel() end",
+    "end)",
+    'local out = ok and ("DTS_PLUGIN_OK" .. detail) or ("DTS_PLUGIN_ERR: " .. tostring(err))',
+    "out = out .. uis",
+    "dts_trace(out)",
+    "-- 延迟复核：Canvas 晚就绪时自愈链应在数秒内补建；结果写入独立 trace 供回读",
+    "pcall(function()",
+    "  local tm = TimerModel and TimerModel.me",
+    "  if tm == nil then return end",
+    "  local cb=function()",
+    "    xpcall(function()",
+    '      local path = CS.UnityEngine.Application.persistentDataPath .. "/frida_ui_trace.txt"',
+    '      CS.Torappu.FileUtil.WriteToFile("[DTS-UI] " .. dts_ui("plugin_panel") .. " " .. dts_ui("options_panel"), path, true)',
+    "    end, function() end)",
+    "  end",
+    "  -- Timer 回调同样必须是带 Call 方法的对象（Timer:52 是 `self.m_call:Call()`），裸函数会让客户端 abort",
+    "  pcall(function() if Event~=nil and Event.CreateStatic~=nil then cb=Event.CreateStatic(cb) end end)",
+    "  tm:Delay(10, cb)",
+    "end)",
+    "return out",
+  );
+  return lines.join("\n");
+}
+
+/**
+ * 读 `LuaManager.m_env`（尚未建立时返回 null）。
+ * @param manager - LuaManager 实例指针
+ * @returns LuaEnv 对象指针，未就绪为 null
+ */
+function readLuaEnv(manager: NativePointer): Il2Cpp.Object | null {
+  try {
+    const env = new Il2Cpp.Object(manager).field("m_env").value as Il2Cpp.Object;
+    return env.isNull() ? null : env;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 构造「插件浮窗/面板状态」探针 chunk。
+ *
+ * 用途：插件系统起来后，实际去看 `PanelPlugin` 有没有把浮窗按钮与面板建出来
+ * （`PluginUI.FindCanvas()` 找不到活 Canvas 时会由自愈链重试，所以要"过一会儿再看"）。
+ * `toggle=true` 时额外调用 `TogglePanel()` 把面板打开，用于验证"能开且 activeInHierarchy"；
+ * `invokeRow=true` 时再 invoke 第一行的「切换」按钮，用于验证**实际功能**（启停 → 写配置 → 推服务端）。
+ * @param toggle - 是否顺便开合一次面板
+ * @param invokeRow - 是否 invoke 第一行的开关按钮
+ * @returns Lua chunk 源码（返回一行状态串）
+ */
+let uiProbeStage = 0;
+
+function buildUiProbeChunk(toggle: boolean, invokeRow = false): string {
+  return [
+    "local out = {}",
+    "local INVOKE_ROW = " + (invokeRow ? "true" : "false"),
+    'local function add(k, v) out[#out + 1] = k .. "=" .. tostring(v) end',
+    "xpcall(function()",
+    "  local pm = PluginManager",
+    "  add(\"pm\", pm ~= nil and pm.me ~= nil)",
+    "  local p = nil",
+    "  if pm ~= nil and pm.me ~= nil then p = pm.me:GetPlugin(\"plugin_panel\") end",
+    "  add(\"panel\", p ~= nil)",
+    "  if p ~= nil then",
+    "    add(\"canvas\", p._canvas ~= nil)",
+    "    add(\"btn\", p._floatBtn ~= nil)",
+    "    add(\"root\", p._root ~= nil)",
+    "    add(\"open\", p._open)",
+    "    if p._floatBtn ~= nil then",
+    "      add(\"btn_name\", p._floatBtn.name)",
+    "      add(\"btn_active\", p._floatBtn.activeSelf)",
+    "      add(\"btn_hier\", p._floatBtn.activeInHierarchy)",
+    "      local bp = p._floatBtn.transform.parent",
+    "      add(\"btn_parent\", bp ~= nil and bp.name or \"nil\")",
+    "      local rt = p._floatBtn:GetComponent(typeof(CS.UnityEngine.RectTransform))",
+    "      if rt ~= nil then",
+    "        add(\"btn_rect\", string.format(\"%.0f,%.0f %.0fx%.0f\", rt.anchoredPosition.x, rt.anchoredPosition.y, rt.sizeDelta.x, rt.sizeDelta.y))",
+    "      end",
+    "    end",
+    "    if p._root ~= nil then",
+    "    -- 实际功能验证：invoke 第一行的「切换」按钮（等价于点它）→ 看启停状态/写配置/推服务端是否真发生",
+    "    if INVOKE_ROW and p._listRoot ~= nil and p._listRoot.transform.childCount > 0 then",
+    "      local okr, errr = pcall(function()",
+    "        local row = p._listRoot.transform:GetChild(0)",
+    "        local st = row:Find(\"State\")",
+    "        if st ~= nil then add(\"row0_before\", st:GetComponent(typeof(CS.UnityEngine.UI.Text)).text) end",
+    "        pcall(function()",
+    "          local id0 = PluginDefs[1].id",
+    "          local q = PluginManager.me:GetPlugin(id0)",
+    "          add(\"p0_id\", id0)",
+    "          add(\"p0_before\", q ~= nil and tostring(q.enabled) or \"nil\")",
+    "        end)",
+    "        local t = row:Find(\"Toggle\")",
+    "        if t == nil then add(\"row0_invoked\", \"no-toggle\") return end",
+    "        local b = t:GetComponent(typeof(CS.UnityEngine.UI.Button))",
+    "        if b ~= nil then",
+    "          b.onClick:Invoke()",
+    "          add(\"row0_invoked\", \"ugui\")",
+    "        else",
+    "          add(\"row0_invoked\", \"selfdraw\")  -- 已改成自绘点击，合成点击请用真实 input",
+    "        end",
+    "      end)",
+    "      if not okr then add(\"row0_err\", tostring(errr)) end",
+    "      pcall(function()",
+    "        local id0 = PluginDefs[1].id",
+    "        local q2 = PluginManager.me:GetPlugin(id0)",
+    "        add(\"p0_after\", q2 ~= nil and tostring(q2.enabled) or \"nil\")",
+    "      end)",
+    "      pcall(function()",
+    "        local row2 = p._listRoot.transform:GetChild(0)",
+    "        local st2 = row2:Find(\"State\")",
+    "        if st2 ~= nil then add(\"row0_after\", st2:GetComponent(typeof(CS.UnityEngine.UI.Text)).text) end",
+    "      end)",
+    "    end",
+    "      add(\"root_name\", p._root.name)",
+    "      add(\"root_active\", p._root.activeSelf)",
+    "      add(\"root_hier\", p._root.activeInHierarchy)",
+    "      add(\"rows\", p._listRoot ~= nil and p._listRoot.transform.childCount or -1)",
+    "    end",
+    toggle ? "    p:TogglePanel()" : "    -- no toggle",
+    "    if p._root ~= nil then",
+    "      add(\"after_open\", p._open)",
+    "      add(\"after_active\", p._root.activeSelf)",
+    "      add(\"after_hier\", p._root.activeInHierarchy)",
+    "    end",
+    "  end",
+    "  add(\"screen\", CS.UnityEngine.Screen.width .. \"x\" .. CS.UnityEngine.Screen.height)",
+    "  -- 供真实 input 定位：行开关与二级(选项)面板按钮的屏幕坐标（bottom-up，top-down y=1080-y）",
+    "  pcall(function()",
+    "    if p == nil or p._listRoot == nil then return end",
+    "    local rows = p._listRoot.transform",
+    "    if rows.childCount > 0 then",
+    "      local t = rows:GetChild(0):Find(\"Toggle\")",
+    "      if t ~= nil then",
+    "        local sp = CS.UnityEngine.RectTransformUtility.WorldToScreenPoint(nil, t.position)",
+    "        add(\"row0_toggle_screen\", string.format(\"%.0f,%.0f\", sp.x, sp.y))",
+    "      end",
+    "    end",
+    "  end)",
+    "  pcall(function()",
+    "    local p2 = PluginManager.me:GetPlugin(\"options_panel\")",
+    "    if p2 == nil or p2._root == nil then return end",
+    "    add(\"opt_root_active\", tostring(p2._root.activeInHierarchy))",
+    "    add(\"opt_open\", tostring(p2._open))",
+    "    if p2._floatBtn ~= nil then",
+    "      local s2 = CS.UnityEngine.RectTransformUtility.WorldToScreenPoint(nil, p2._floatBtn.transform.position)",
+    "      add(\"opt_btn_screen\", string.format(\"%.0f,%.0f\", s2.x, s2.y))",
+    "    end",
+    "    if p2._tabRoot ~= nil and p2._tabRoot.transform.childCount > 0 then",
+    "      local tb = p2._tabRoot.transform:GetChild(0)",
+    "      local s3 = CS.UnityEngine.RectTransformUtility.WorldToScreenPoint(nil, tb.position)",
+    "      add(\"opt_tab0_screen\", string.format(\"%.0f,%.0f\", s3.x, s3.y))",
+    "    end",
+    "  end)",
+    "  -- 世界坐标 → 屏幕坐标：判定浮窗/面板到底画在屏幕的哪里（Overlay 画布传 nil 相机即可）",
+    "  pcall(function()",
+    "    if p == nil then return end",
+    "    if p._floatBtn ~= nil then",
+    "      local wp = p._floatBtn.transform.position",
+    "      local sp = CS.UnityEngine.RectTransformUtility.WorldToScreenPoint(nil, wp)",
+    "      add(\"btn_screen\", string.format(\"%.0f,%.0f\", sp.x, sp.y))",
+    "    end",
+    "    if p._root ~= nil then",
+    "      local wp2 = p._root.transform.position",
+    "      local sp2 = CS.UnityEngine.RectTransformUtility.WorldToScreenPoint(nil, wp2)",
+    "      add(\"root_screen\", string.format(\"%.0f,%.0f\", sp2.x, sp2.y))",
+    "    end",
+    "    if p._canvas ~= nil then",
+    "      local cv = p._canvas:GetComponent(typeof(CS.UnityEngine.Canvas))",
+    "      if cv ~= nil then",
+    "        add(\"canvas_mode\", tostring(cv.renderMode))",
+    "        add(\"canvas_order\", tostring(cv.sortingOrder))",
+    "        add(\"canvas_scale\", string.format(\"%.2f\", cv.scaleFactor))",
+    "      end",
+    "    end",
+    "  end)",
+    "  local sc = CS.UnityEngine.SceneManagement.SceneManager.GetActiveScene()",
+    "  add(\"scene\", sc.name)",
+    "end, function(e) add(\"err\", tostring(e)) end)",
+    'return table.concat(out, " ")',
+  ].join("\n");
+}
+
+/**
+ * 构造「卸载插件 / 清 C# 回调」chunk：游戏释放或重载 LuaEnv 之前调用，避免
+ * `InvalidOperationException: try to dispose a LuaEnv with C# callback!`（会 abort 整个进程）。
+ * @returns Lua chunk 源码
+ */
+function buildCleanupChunk(): string {
+  return [
+    "local out = {}",
+    "pcall(function()",
+    "  if PluginEntry ~= nil and PluginEntry.dispose ~= nil then",
+    "    PluginEntry.dispose()",
+    "    out[#out + 1] = \"plugin-dispose-ok\"",
+    "  end",
+    "end)",
+    "pcall(function()",
+    "  if _G.DTS_BootstrapCleanup ~= nil then",
+    "    _G.DTS_BootstrapCleanup()",
+    "    out[#out + 1] = \"boot-cleanup-ok\"",
+    "  end",
+    "end)",
+    "return table.concat(out, \" \")",
+  ].join("\n");
+}
+
+/**
+ * 跑一次清理并把结果发回（在游戏主线程上调用）。
+ * @param reason - 触发原因（方法名）
+ */
+function runLuaCleanup(reason: string): void {
+  const manager = luaManagerPtr;
+  if (manager === null) return;
+  const env = readLuaEnv(manager);
+  if (env === null) return;
+  try {
+    const result = env
+      .method("DoString")
+      .overload("System.String", "System.String", "XLua.LuaTable")
+      .invoke(Il2Cpp.string(buildCleanupChunk()), Il2Cpp.string("dts_cleanup"), NULL);
+    const handle = (result as Il2Cpp.Array).handle;
+    const count = handle.add(0x18).readS32();
+    const text = count > 0 ? readString(handle.add(0x20).readPointer()) : null;
+    send({ t: "lua-cleanup", reason: reason, text: text });
+  } catch (e) {
+    send({ t: "lua-cleanup", reason: reason, err: String(e) });
+  }
+}
+
+/** lua_tostring 的导出地址（惰性解析；没有就放弃读错误文本） */
+let luaToStringPtr: NativePointer | null = null;
+let luaToStringTried = false;
+
+/**
+ * 读 Lua 栈顶（或次顶）的错误文本。
+ * @param envPtr - LuaEnv 实例指针
+ * @returns 错误文本，失败为 null
+ */
+function readLuaErrorText(envPtr: NativePointer): string | null {
+  try {
+    if (!luaToStringTried) {
+      luaToStringTried = true;
+      luaToStringPtr = Module.findGlobalExportByName("lua_tostring");
+    }
+    if (luaToStringPtr === null) return null;
+    const env = new Il2Cpp.Object(envPtr);
+    const raw = env.method("get_L").invoke();
+    const L = raw as NativePointer;
+    const fn = new NativeFunction(luaToStringPtr, "pointer", ["pointer", "int"]);
+    for (const idx of [-1, -2]) {
+      const p = fn(L, idx);
+      if (!p.isNull()) {
+        const text = p.readUtf8String(600);
+        if (text !== null && text.length > 0) return text;
+      }
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 死因探针：Lua 错误被转成托管异常的那一刻（`LuaEnv.ThrowExceptionFromError`）以及
+ * Unity 记录异常的时刻（`Debug.LogException`），把**错误文本 + C# 调用栈**打出来。
+ *
+ * 为什么需要：客户端 abort 只打印 `terminating with uncaught exception of type Il2CppExceptionWrapper`，
+ * Unity 侧没有消息，光看崩溃栈定位不到是哪条 Lua 错误（本轮排查就卡在这里）。
+ * @param luaEnvCls - XLua.LuaEnv 类
+ * @param debugCls - UnityEngine.Debug 类（可为 null）
+ * @returns 已挂钩子的方法名列表
+ */
+function hookExceptionDiagnostics(luaEnvCls: Il2Cpp.Class, debugCls: Il2Cpp.Class | null): string[] {
+  const installed: string[] = [];
+  for (const method of luaEnvCls.methods) {
+    if (method.name !== "ThrowExceptionFromError") continue;
+    try {
+      Interceptor.attach(method.virtualAddress, {
+        onEnter(args) {
+          const text = readLuaErrorText(args[0]);
+          let frames = "";
+          try {
+            frames = Thread.backtrace(this.context, Backtracer.FUZZY)
+              .slice(0, 6)
+              .map((f) => f.toString())
+              .join(" ");
+          } catch (e) {
+            frames = "bt-fail";
+          }
+          send({ t: "lua-throw", msg: text, bt: frames });
+        },
+      });
+      installed.push("LuaEnv.ThrowExceptionFromError");
+    } catch (e) {
+      installed.push("ThrowExceptionFromError(fail:" + e + ")");
+    }
+  }
+  // 直接抓 xLua 抛出的异常消息：`XLua.LuaException..ctor(string)`（比 lua_tostring 可靠得多）
+  const luaExCls = findClass("XLua.LuaException");
+  if (luaExCls !== null) {
+    for (const method of luaExCls.methods) {
+      if (method.name !== ".ctor") continue;
+      try {
+        Interceptor.attach(method.virtualAddress, {
+          onEnter(args) {
+            send({ t: "lua-exception", msg: readString(args[1]) });
+          },
+        });
+        installed.push("LuaException..ctor");
+      } catch (e) {
+        installed.push("LuaException..ctor(fail:" + e + ")");
+      }
+    }
+  }
+  if (debugCls !== null) {
+    for (const method of debugCls.methods) {
+      if (method.name !== "LogException") continue;
+      let sig = "?";
+      try {
+        sig = method.parameters.map((x) => x.type.name).join(",");
+      } catch (e) {
+        sig = "?";
+      }
+      try {
+        Interceptor.attach(method.virtualAddress, {
+          onEnter(args) {
+            let text: string | null = null;
+            try {
+              text = new Il2Cpp.Object(args[0]).method("ToString").invoke().content;
+            } catch (e) {
+              text = "<读异常文本失败:" + e + ">";
+            }
+            send({ t: "log-exception", sig: sig, text: text === null ? null : text.slice(0, 600) });
+          },
+        });
+        installed.push("Debug.LogException(" + sig + ")");
+      } catch (e) {
+        installed.push("Debug.LogException(fail:" + e + ")");
+      }
+    }
+  }
+  return installed;
+}
+
+/**
+ * 在游戏销毁 LuaEnv 之前先卸载插件（释放 xLua 的 C# 回调），否则 xLua 会抛异常并 abort。
+ * @param klass - LuaManager 类
+ * @returns 已挂钩子的方法名列表
+ */
+function hookLuaDispose(klass: Il2Cpp.Class): string[] {
+  const installed: string[] = [];
+  for (const method of klass.methods) {
+    if (method.name !== "_DoDisposeLuaEnv" && method.name !== "Dispose") continue;
+    try {
+      Interceptor.attach(method.virtualAddress, {
+        onEnter() {
+          send({ t: "lua-dispose", fn: method.name });
+          runLuaCleanup(method.name);
+        },
+      });
+      installed.push(method.name);
+    } catch (e) {
+      installed.push(method.name + "(fail:" + e + ")");
+    }
+  }
+  return installed;
+}
+
+/**
+ * 直接挂 `XLua.LuaEnv.Dispose`（真正抛 `try to dispose a LuaEnv with C# callback!` 的地方）。
+ *
+ * 为什么不能只挂 `LuaManager`：客户端的官方 Lua 会把 `LuaManager` 的一堆方法 hotfix 掉
+ * （C# 里满屏 `__Hotfix0_*`），调用会走 DelegateBridge，我们挂在原方法体上的钩子**根本不会触发**
+ * （实测 `_DoDisposeLuaEnv`/`Dispose` 一次都没进来）。所以要挂到 xLua 自己的 Dispose 上，
+ * 并在那里先卸载插件、再打出调用栈，定位"谁在释放 LuaEnv"。
+ * @param klass - XLua.LuaEnv 类
+ * @returns 已挂钩子的方法名列表
+ */
+function hookLuaEnvDispose(klass: Il2Cpp.Class): string[] {
+  const installed: string[] = [];
+  for (const method of klass.methods) {
+    if (method.name !== "Dispose") continue;
+    let sig = "?";
+    try {
+      sig = method.parameters.map((x) => x.type.name).join(",");
+    } catch (e) {
+      sig = "?";
+    }
+    try {
+      Interceptor.attach(method.virtualAddress, {
+        onEnter() {
+          let frames = "";
+          try {
+            frames = Thread.backtrace(this.context, Backtracer.FUZZY)
+              .slice(0, 5)
+              .map((f) => f.toString())
+              .join(" ");
+          } catch (e) {
+            frames = "bt-fail";
+          }
+          send({ t: "luaenv-dispose", sig: sig, bt: frames });
+          runLuaCleanup("LuaEnv.Dispose(" + sig + ")");
+        },
+      });
+      installed.push("Dispose(" + sig + ")");
+    } catch (e) {
+      installed.push("Dispose(" + sig + ")(fail:" + e + ")");
+    }
+  }
+  return installed;
+}
+
+/**
+ * 在主线程上跑一次浮窗探针并把结果发回宿主机。
+ * @param toggle - 是否顺便开合面板
+ */
+function probePluginUi(toggle: boolean, invokeRow = false): void {
+  const manager = luaManagerPtr;
+  send({ t: "ui-probe-enter", toggle: toggle, invokeRow: invokeRow, hasMgr: manager !== null });
+  if (manager === null) return;
+  const env = readLuaEnv(manager);
+  if (env === null) return;
+  try {
+    const result = env
+      .method("DoString")
+      .overload("System.String", "System.String", "XLua.LuaTable")
+      .invoke(
+        Il2Cpp.string(buildUiProbeChunk(toggle, invokeRow)),
+        Il2Cpp.string(toggle ? "dts_ui_probe_open" : "dts_ui_probe"),
+        NULL,
+      );
+    const handle = (result as Il2Cpp.Array).handle;
+    const count = handle.add(0x18).readS32();
+    const text = count > 0 ? readString(handle.add(0x20).readPointer()) : null;
+    send({ t: "plugin-ui", toggle: toggle, invokeRow: invokeRow, text: text });
+  } catch (e) {
+    send({ t: "plugin-ui", toggle: toggle, text: null, err: String(e) });
+  }
+}
+
+/**
+ * 在游戏主线程上调用 `m_env.DoString(payload)`，经返回值判定插件系统是否起来。
+ * @param manager - LuaManager 实例指针（来自 `_DoUpdate` / `_CustomLoader` 的 this）
  */
 function tryInjectLua(manager: NativePointer): void {
-  if (luaInjected) return;
-  luaInjected = true;
+  if (luaInjected || injectAttempts >= MAX_INJECT_ATTEMPTS) return;
+  const env = readLuaEnv(manager);
+  if (env === null) return; // LuaEnv 还没建，等下一帧（不计入尝试次数）
+  injectAttempts += 1;
+  const payload = buildLuaPayload();
   try {
-    const mgr = new Il2Cpp.Object(manager);
-    const env = mgr.field("m_env").value as Il2Cpp.Object;
-    // 第三个参数是 XLua.LuaTable（可空）：必须传空指针常量 NULL，不能传 JS null
-    env
+    const result = env
       .method("DoString")
-      .invoke(Il2Cpp.string(LUA_INJECT_SNIPPET), Il2Cpp.string("dts_frida_inject"), NULL);
-    send({ t: "lua-inject", ok: true });
+      .overload("System.String", "System.String", "XLua.LuaTable")
+      .invoke(Il2Cpp.string(payload), Il2Cpp.string("dts_frida_inject"), NULL);
+    // DoString 返回 System.Object[]（chunk 的返回值列表）：第 0 个元素即插件自检结论
+    const handle = (result as Il2Cpp.Array).handle;
+    const count = handle.add(0x18).readS32();
+    const text = count > 0 ? readString(handle.add(0x20).readPointer()) : null;
+    // 判定用前缀匹配：payload 成功时返回 `DTS_PLUGIN_OK <各插件状态>`
+    const ok = text !== null && text.indexOf("DTS_PLUGIN_OK") === 0;
+    luaInjected = ok;
+    if (ok) {
+      // 插件起来后再验浮窗：Canvas 可能要等主 UI 才就绪（PluginUI 有自愈重试），所以看两次
+      setTimeout(() => probePluginUi(false), 20000);
+      setTimeout(() => probePluginUi(false, true), 45000); // ★ 实际功能：点第一行开关
+      setTimeout(() => probePluginUi(true), 75000);        // 再顺带验证开合
+    }
+    send({
+      t: "lua-inject",
+      ok: ok,
+      attempt: injectAttempts,
+      payloadBytes: payload.length,
+      retCount: count,
+      ret: text,
+    });
   } catch (e) {
-    luaInjected = false; // 允许下一轮重试
     let sig = "?";
-    let luaExports = 0;
     try {
-      const mgr = new Il2Cpp.Object(manager);
-      const env = mgr.field("m_env").value as Il2Cpp.Object;
       sig = env
         .method("DoString")
         .parameters.map((p) => p.type.name)
@@ -199,16 +751,116 @@ function tryInjectLua(manager: NativePointer): void {
     } catch (inner) {
       sig = "读取签名失败:" + inner;
     }
-    try {
-      const il2cpp = Process.findModuleByName("libil2cpp.so");
-      if (il2cpp !== null) {
-        luaExports = il2cpp.enumerateExports().filter((x) => x.name.indexOf("lua") === 0).length;
-      }
-    } catch (inner) {
-      luaExports = -1;
-    }
-    send({ t: "lua-inject", ok: false, err: String(e), sig: sig, luaExports: luaExports });
+    send({
+      t: "lua-inject",
+      ok: false,
+      attempt: injectAttempts,
+      payloadBytes: payload.length,
+      err: String(e),
+      sig: sig,
+    });
   }
+}
+
+/**
+ * 注入时序门禁：`LuaManager._DoLoadEntryScript` 返回后置位。
+ * 该返回点在 `entry`/hotfix 链执行完之后、Lua 栈退空时（trace 实测：此方法 → `_DoLoad` → `_CustomLoader`）。
+ * @param klass - LuaManager 类
+ * @returns 已挂钩子的方法名列表
+ */
+function hookEntryScriptDone(klass: Il2Cpp.Class): string[] {
+  const installed: string[] = [];
+  for (const method of klass.methods) {
+    if (method.name !== "_DoLoadEntryScript") continue;
+    try {
+      Interceptor.attach(method.virtualAddress, {
+        onLeave() {
+          entryScriptDone = true;
+          send({ t: "entry-script-done", frames: updateFrames });
+        },
+      });
+      installed.push("_DoLoadEntryScript");
+    } catch (e) {
+      installed.push("_DoLoadEntryScript(fail:" + e + ")");
+    }
+  }
+  return installed;
+}
+
+/**
+ * 安全注入点：`LuaManager._DoUpdate(deltaTime)` 的 onEnter。
+ * 由 Unity Update 循环驱动 ⇒ 游戏主线程、不在任何 Lua 调用栈内（不会在 require 的 searcher 里重入 VM）。
+ * 门禁：等 `_DoLoadEntryScript` 跑完（`Class` 等游戏侧 Lua 全局已就绪）再注入；超过 FALLBACK_FRAMES 帧兜底。
+ * @param klass - LuaManager 类
+ * @returns 已挂钩子的方法名列表
+ */
+/**
+ * 排一次浮窗探针（幂等）。
+ *
+ * 为什么要单独抽出来：`LuaManager._DoUpdate` 在**某些客户端状态**下并不是每帧都调用
+ * （实测同一脚本有时能排上、有时整段错过），而 `GlobalInitializerAndUpdater.Update`
+ * 是确定的每帧入口（资产内引导的帧轮询就挂在它上面）。两处都调，保证一定排上。
+ */
+function maybeScheduleUiProbes(): void {
+  if (uiProbeStage !== 0) return;
+  if (!entryScriptDone || luaInjected || PUBKEY_MODE !== "oursonly") return;
+  uiProbeStage = 1;
+  send({ t: "ui-probe-scheduled", mode: PUBKEY_MODE, frames: updateFrames });
+  setTimeout(() => probePluginUi(false), 20000);
+  setTimeout(() => probePluginUi(false, true), 45000); // ★ 实际功能：点第一行开关
+  setTimeout(() => probePluginUi(true), 75000);
+}
+
+/**
+ * 把浮窗探针排程挂到「确定的每帧入口」`GlobalInitializerAndUpdater.Update` 上。
+ * @param klass - Torappu.GlobalInitializerAndUpdater 类
+ * @returns 已挂钩子的方法名列表
+ */
+function hookGlobalInitUpdate(klass: Il2Cpp.Class): string[] {
+  const installed: string[] = [];
+  for (const method of klass.methods) {
+    if (method.name !== "Update") continue;
+    try {
+      Interceptor.attach(method.virtualAddress, {
+        onEnter() {
+          updateFrames += 1;
+          maybeScheduleUiProbes();
+        },
+      });
+      installed.push("GlobalInitializerAndUpdater.Update");
+    } catch (e) {
+      installed.push("GlobalInitializerAndUpdater.Update(fail:" + e + ")");
+    }
+  }
+  return installed;
+}
+
+function hookLuaUpdate(klass: Il2Cpp.Class): string[] {
+  const installed: string[] = [];
+  for (const method of klass.methods) {
+    if (method.name !== "_DoUpdate") continue;
+    try {
+      Interceptor.attach(method.virtualAddress, {
+        onEnter(args) {
+          luaManagerPtr = args[0];
+          // 每帧兜底清一次「Lua 加载中」标记：`_CustomLoader` 若抛异常，其 onLeave 不会执行，
+          // 标记残留会让后续非 Lua 的验签也换公钥（那是会把 DB/excel 阶段打死的事故）。
+          luaLoaderDepth = 0;
+          updateFrames += 1;
+          // 浮窗探针（与"谁把插件送进来"无关）：entry 脚本跑完后再等约 20s / 45s，
+          // 分别看一次面板状态与"开合后"的状态。`uiProbeStage` 保证各自只跑一次。
+          maybeScheduleUiProbes();
+          if (luaInjected) return;
+          if (!entryScriptDone && updateFrames < FALLBACK_FRAMES) return;
+          tryInjectLua(args[0]);
+        },
+      });
+      installed.push("_DoUpdate");
+    } catch (e) {
+      installed.push("_DoUpdate(fail:" + e + ")");
+    }
+  }
+  return installed;
 }
 /** 挂验签入口，把官方公钥换成我们自己的。 */
 function hookVerifySign(klass: Il2Cpp.Class): string[] {
@@ -221,36 +873,83 @@ function hookVerifySign(klass: Il2Cpp.Class): string[] {
     } catch (e) {
       params = "?";
     }
-    // 只处理 (String, String, String) 重载：内容、签名、公钥
-    if (params !== "System.String,System.String,System.String") continue;
+    // (String,String,String)：网络响应（内容、签名 base64、公钥）→ 换成我们的公钥
+    if (params === "System.String,System.String,System.String") {
+      try {
+        Interceptor.attach(method.virtualAddress, {
+          onEnter(args) {
+            stats.verifyCalls += 1;
+            const content = readString(args[0]);
+            const given = readString(args[2]);
+            if (verbose && stats.verifyCalls <= MAX_LOG) {
+              send({
+                t: "verify",
+                contentLen: content === null ? -1 : content.length,
+                contentHead: content === null ? null : content.slice(0, 80),
+                pubkeyLen: given === null ? -1 : given.length,
+                pubkeyOurs: given !== null && pubkey.length > 0 && given === pubkey,
+              });
+            }
+            if (pubkey.length === 0) return;
+            if (given !== null && given === pubkey) return;
+            try {
+              args[2] = Il2Cpp.string(pubkey).handle;
+              stats.keysReplaced += 1;
+            } catch (e) {
+              send({ t: "verify-key-fail", err: String(e) });
+            }
+          },
+        });
+        installed.push("VerifySignMD5RSA(String,String,String)");
+      } catch (e) {
+        installed.push("VerifySignMD5RSA(String..)(fail:" + e + ")");
+      }
+      continue;
+    }
+    // (Byte[],Byte[],String)：这个重载**两边都在用** —— Lua 资产（`_CustomLoader` 内）与
+    // excel/DB 的 `CrypticConverter_WithSign` 资产。换公钥必须**只在 Lua 加载上下文里**做，
+    // 否则②的官方签名验不过（实测会让客户端卡在 DB 阶段，Lua 一个都不加载）。
+    if (params !== "System.Byte[],System.Byte[],System.String") continue;
     try {
       Interceptor.attach(method.virtualAddress, {
         onEnter(args) {
           stats.verifyCalls += 1;
-          const content = readString(args[0]);
+          binVerifyCalls += 1;
+          if (PUBKEY_MODE === "asis") return;
+          if (luaLoaderDepth <= 0) return; // 非 Lua 上下文：保持官方公钥
           const given = readString(args[2]);
-          if (verbose && stats.verifyCalls <= MAX_LOG) {
-            send({
-              t: "verify",
-              contentLen: content === null ? -1 : content.length,
-              contentHead: content === null ? null : content.slice(0, 80),
-              pubkeyLen: given === null ? -1 : given.length,
-              pubkeyOurs: given !== null && pubkey.length > 0 && given === pubkey,
-            });
+          let next = "";
+          if (PUBKEY_MODE === "ours" || PUBKEY_MODE === "oursonly") {
+            next = pubkey;
+          } else if (PUBKEY_MODE === "flip") {
+            next = OFFICIAL_PUBKEY_LE;
+          } else if (given !== null && given.indexOf("RSAKeyValue") >= 0) {
+            // ab：奇数轮原样（大端），偶数轮反转（小端）
+            next = binVerifyCalls % 2 === 1 ? OFFICIAL_PUBKEY_BE : OFFICIAL_PUBKEY_LE;
           }
-          if (pubkey.length === 0) return;
-          if (given !== null && given === pubkey) return;
+          if (next.length === 0) return;
           try {
-            args[2] = Il2Cpp.string(pubkey).handle;
+            args[2] = Il2Cpp.string(next).handle;
             stats.keysReplaced += 1;
           } catch (e) {
-            send({ t: "verify-key-fail", err: String(e) });
+            /* 写不进去就保持原样 */
           }
         },
+        onLeave(retval) {
+          if (binLogs >= MAX_BIN_LOG) return;
+          binLogs += 1;
+          send({
+            t: "verify-bin",
+            call: binVerifyCalls,
+            ok: retval.toInt32() !== 0,
+            mode: PUBKEY_MODE,
+            form: PUBKEY_MODE === "ab" ? (binVerifyCalls % 2 === 1 ? "BE(as-is)" : "LE(flipped)") : PUBKEY_MODE,
+          });
+        },
       });
-      installed.push("VerifySignMD5RSA(String,String,String)");
+      installed.push("VerifySignMD5RSA(Byte[],Byte[],String)");
     } catch (e) {
-      installed.push("VerifySignMD5RSA(fail:" + e + ")");
+      installed.push("VerifySignMD5RSA(Byte..)(fail:" + e + ")");
     }
   }
   return installed;
@@ -290,8 +989,6 @@ function hookManagedLogsMinimal(find: (fullName: string) => Il2Cpp.Class | null)
       try {
         Interceptor.attach(method.virtualAddress, {
           onEnter(args) {
-            // 兜底触发：日志量足够大时（说明游戏已跑起来）注入一次，游戏线程、非 Lua 栈
-            if (stats.logsSeen > 30 && luaManagerPtr !== null && !luaInjected) tryInjectLua(luaManagerPtr);
             const text = readString(args[argIndex]);
             stats.logsSeen += 1;
             if (text === null) {
@@ -352,11 +1049,11 @@ function hookLuaLoader(klass: Il2Cpp.Class): string[] {
     try {
       Interceptor.attach(method.virtualAddress, {
         onEnter(args) {
-          luaLoadCalls += 1;
           luaManagerPtr = args[0]; // this（LuaManager 实例）——供后续经 m_env.DoString 注入插件
-          // 第 5 次加载脚本时注入插件：此刻 Lua VM 已初始化且已加载若干模块，仍在游戏线程上。
-          // （URL 钩子做触发点不可靠——它可能只在 Lua 起来之前触发。）
-          if (luaLoadCalls === 2 && !luaInjected) tryInjectLua(args[0]);
+          luaLoaderDepth += 1; // 标记「当前在 Lua 资产加载上下文」（验签换公钥要用它区分）
+          // 注意：这里**不**注入。`_CustomLoader` 是 xLua searcher 的回调，
+          // 此刻 Lua 调用栈是活的（正在 require），重入 Lua VM 会破坏状态；
+          // 注入统一放在 `_DoUpdate` 的 onEnter（见 hookLuaUpdate）。
           try {
             const slot = args[pathArg];
             if (slot.isNull()) {
@@ -369,6 +1066,7 @@ function hookLuaLoader(klass: Il2Cpp.Class): string[] {
           }
         },
         onLeave(retval) {
+          luaLoaderDepth = luaLoaderDepth > 0 ? luaLoaderDepth - 1 : 0;
           stats.luaLoads += 1;
           if (stats.luaLoads > MAX_LUA_LOG) return;
           // 返回值是解密后的明文 byte[]：长度在 +0x18，数据在 +0x20
@@ -408,7 +1106,14 @@ function findClass(fullName: string): Il2Cpp.Class | null {
 }
 
 pubkey = loadPubkey();
-send({ t: "pubkey", loaded: stats.pubkeyLoaded, length: pubkey.length, path: PUBKEY_PATH });
+send({
+  t: "pubkey",
+  loaded: stats.pubkeyLoaded,
+  length: pubkey.length,
+  path: PUBKEY_PATH,
+  mode: PUBKEY_MODE,
+  officialInjected: OFFICIAL_PUBKEY_BE.length > 100 && OFFICIAL_PUBKEY_LE.length > 100,
+});
 
 Il2Cpp.perform(() => {
   const webCls = findClass("UnityEngine.Networking.UnityWebRequest");
@@ -420,6 +1125,23 @@ Il2Cpp.perform(() => {
     verify: cryptCls === null ? [] : hookVerifySign(cryptCls),
     logs: hookManagedLogsMinimal(findClass),
     luaLoader: luaMgrCls === null ? [] : hookLuaLoader(luaMgrCls),
+    luaEntryScript: luaMgrCls === null ? [] : hookEntryScriptDone(luaMgrCls),
+    luaUpdate: luaMgrCls === null ? [] : hookLuaUpdate(luaMgrCls),
+    globalUpdate: (() => {
+      const giCls = findClass("Torappu.GlobalInitializerAndUpdater");
+      return giCls === null ? [] : hookGlobalInitUpdate(giCls);
+    })(),
+    luaDispose: luaMgrCls === null ? [] : hookLuaDispose(luaMgrCls),
+    luaEnvDispose: (() => {
+      const envCls = findClass("XLua.LuaEnv");
+      return envCls === null ? [] : hookLuaEnvDispose(envCls);
+    })(),
+    exceptionDiag: (() => {
+      const envCls = findClass("XLua.LuaEnv");
+      if (envCls === null) return [];
+      return hookExceptionDiagnostics(envCls, findClass("UnityEngine.Debug"));
+    })(),
+    pluginModules: Object.keys(LUA_MODULES).length,
   });
 }).catch((e: Error) => send({ t: "il2cpp-fail", err: String(e), stack: e.stack }));
 

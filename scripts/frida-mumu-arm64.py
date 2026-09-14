@@ -73,6 +73,14 @@ GADGET_CONFIG = "libfrida-gadget.config.so"
 WINDOWS_NODE = "/mnt/c/Program Files/nodejs/node.exe"
 START = time.time()
 
+# 输出预算：本脚本打印的内容会进入调用方会话终端（TUI 会把会话留在内存里）。
+# 实测把 10MB 级日志灌进去会把 TUI 的 V8 堆推爆（内核日志里是 node 的 `ud2` SIGILL 中止），
+# 故默认限 2MB、单行 2000 字符；要看全量请重定向到文件后用有界方式（tail -c）查看。
+MAX_OUTPUT_BYTES = int(os.environ.get("FRIDA_MAX_OUTPUT_BYTES", str(2 * 1024 * 1024)))
+MAX_LINE_CHARS = 2000
+_emitted_bytes = 0
+_output_truncated = False
+
 
 def adb(*args: str, timeout: int = 30) -> str:
     """执行 adb 命令并返回输出。"""
@@ -207,19 +215,45 @@ def ensure_relay(device_addr: str, device_port: int) -> None:
     raise SystemExit("中继启动后仍连不上 %s" % device_addr)
 
 
+def emit(line: str) -> None:
+    """按输出预算打印一行（超预算只报一次截断提示），并截断超长单行。
+
+    为什么需要：这篇输出会进入调用方的会话终端（TUI），而 TUI 会把会话内容留在内存里——
+    实测把 10MB 级日志灌进去会把 TUI 的 V8 堆推爆（内核日志里表现为 node 的 `ud2` SIGILL 中止）。
+    完整日志请自行重定向到文件（`python3 scripts/frida-mumu-arm64.py … > tmp/run.log`），
+    再用 `tail -c 4000 tmp/run.log` 之类**有界**方式查看。
+    @param line - 待打印文本
+    """
+    global _emitted_bytes, _output_truncated
+    if _output_truncated:
+        return
+    if MAX_OUTPUT_BYTES > 0 and _emitted_bytes >= MAX_OUTPUT_BYTES:
+        _output_truncated = True
+        print(
+            "[out] 已达输出上限 %d 字节，后续内容不再打印（完整内容见重定向文件；"
+            "--max-output-bytes 可调，0 表示不限）" % MAX_OUTPUT_BYTES,
+            flush=True,
+        )
+        return
+    if len(line) > MAX_LINE_CHARS:
+        line = line[:MAX_LINE_CHARS] + "…<单行截断>"
+    _emitted_bytes += len(line.encode("utf-8")) + 1
+    print(line, flush=True)
+
+
 def print_payload(label: str, payload: object) -> None:
-    """渲染一条 agent 消息。"""
+    """渲染一条 agent 消息（经输出预算闸门）。"""
     ts = "%6.2fs" % (time.time() - START)
     if isinstance(payload, dict):
         kind = payload.get("t")
         if kind == "log":
             src = payload.get("src", label)
             where = payload.get("tag") if src in ("host", "native") else payload.get("fn", payload.get("type"))
-            print("%s [%-12s] %-22s %s" % (ts, src, where, payload.get("text")), flush=True)
+            emit("%s [%-12s] %-22s %s" % (ts, src, where, payload.get("text")))
             return
         if kind == "stats":
             return
-    print("%s [%-12s] %s" % (ts, label, payload), flush=True)
+    emit("%s [%-12s] %s" % (ts, label, payload))
 
 
 def attach(device, target: int, source: str, label: str):
@@ -228,7 +262,7 @@ def attach(device, target: int, source: str, label: str):
 
     def on_message(message, data):
         if message.get("type") == "error":
-            print("[%s][error] %s" % (label, message.get("description")), flush=True)
+            emit("[%s][error] %s" % (label, message.get("description")))
             return
         print_payload(label, message.get("payload"))
 
@@ -238,12 +272,72 @@ def attach(device, target: int, source: str, label: str):
     return session
 
 
-def read_script(path: str, pubkey: str = "") -> str:
-    """读脚本；把 __PUBKEY_XML__ 占位符替换为私服公钥（运行时重定向脚本要用）。"""
+def official_pubkey_forms() -> tuple[str, str]:
+    """取官方公钥 XML 的两种端序写法（用于 hook 里做「客户端到底怎么读 XML」的 A/B）。
+
+    官方资产（`assets/bin/Data/sharedassets0.assets.split5` 内 TextAsset `arknights_key`）里写的
+    Modulus 是**大端**（已用官服 network_config 真签名反证）；这里同时给出「逐字节反转」的写法，
+    两者只差 Modulus 字节序 —— 哪一种仍能让官方签名验过，就说明客户端内部怎么解读。
+    结果缓存到 `tmp/official-pubkey.xml`，避免每次都开 1.8GB APK。
+    @returns (原样大端, 反转小端)
+    """
+    import base64
+    import re
+
+    cache = os.path.join(REPO, "tmp", "official-pubkey.xml")
+    xml = ""
+    if os.path.exists(cache):
+        with open(cache, "r", encoding="utf-8") as fh:
+            xml = fh.read().strip()
+    if not xml:
+        apk = os.path.join(REPO, "tmp", "apk", "2.7.71", "arknights-hg-2771.apk")
+        if not os.path.exists(apk):
+            return "", ""
+        import zipfile
+
+        with zipfile.ZipFile(apk) as zf:
+            blob = zf.read("assets/bin/Data/sharedassets0.assets.split5")
+        start = blob.find(b"<RSAKeyValue>")
+        end = blob.find(b"</RSAKeyValue>", start)
+        if start < 0 or end < 0:
+            return "", ""
+        xml = blob[start : end + len("</RSAKeyValue>")].decode("utf-8")
+        with open(cache, "w", encoding="utf-8") as fh:
+            fh.write(xml)
+    be = xml
+    m = re.search(r"<Modulus>([^<]+)</Modulus>", xml)
+    e = re.search(r"<Exponent>([^<]+)</Exponent>", xml)
+    if not m or not e:
+        return "", ""
+    flipped_n = base64.b64encode(base64.b64decode(m.group(1))[::-1]).decode("ascii")
+    flipped_e = base64.b64encode(base64.b64decode(e.group(1))[::-1]).decode("ascii")
+    le = xml.replace(m.group(1), flipped_n).replace(e.group(1), flipped_e)
+    return be, le
+
+
+def read_script(path: str, pubkey: str = "", script_mode: str = "both", pubkey_mode: str = "asis") -> str:
+    """读脚本；替换构建期占位符（私服公钥、dump/trace 模式、公钥端序 A/B）。
+
+    占位符：
+      __PUBKEY_XML__ / __PUBKEY_PATH__ —— 运行时验签公钥替换用
+      __DTS_MODE__                     —— hook/il2cpp-dump-trace.ts 的运行模式
+                                          （trace / dump / both，见 --script-mode）
+      __DTS_PUBKEY_MODE__              —— 公钥端序 A/B 模式（见 --pubkey-mode）
+      __OFFICIAL_PUBKEY_BE__ / __LE__  —— 官方公钥的两种端序写法（A/B 用）
+    """
     if not os.path.exists(path):
         raise SystemExit("脚本不存在：%s\n先执行 node scripts/build-frida-hook.mjs（或 pnpm run frida:build）" % path)
     with open(path, "r", encoding="utf-8") as fh:
         source = fh.read()
+    if "__DTS_MODE__" in source:
+        source = source.replace("__DTS_MODE__", script_mode)
+    if "__DTS_PUBKEY_MODE__" in source:
+        source = source.replace("__DTS_PUBKEY_MODE__", pubkey_mode)
+    if "__OFFICIAL_PUBKEY_BE__" in source or "__OFFICIAL_PUBKEY_LE__" in source:
+        be, le = official_pubkey_forms()
+        if be:
+            source = source.replace("__OFFICIAL_PUBKEY_BE__", json.dumps(be)[1:-1])
+            source = source.replace("__OFFICIAL_PUBKEY_LE__", json.dumps(le)[1:-1])
     if "__PUBKEY_XML__" in source:
         key = ""
         if pubkey and os.path.exists(pubkey):
@@ -257,6 +351,7 @@ def read_script(path: str, pubkey: str = "") -> str:
 
 
 def main() -> None:
+    global MAX_OUTPUT_BYTES
     parser = argparse.ArgumentParser(description="MuMu 双 agent Frida 管线（x86_64 + ARM64 il2cpp）")
     parser.add_argument("--pkg", default="com.hypergryph.arknights")
     parser.add_argument("--script", default=os.path.join(REPO, "hook", "build", "il2cpp-unity-logs.js"))
@@ -265,6 +360,24 @@ def main() -> None:
                         help="x86_64 agent 里的 Java 层重定向脚本（HGSDK/okhttp 流量）")
     parser.add_argument("--injector", default=os.path.join(REPO, "hook", "build", "inject-gadget.js"))
     parser.add_argument("--duration", type=int, default=60)
+    parser.add_argument(
+        "--script-mode",
+        default="both",
+        choices=["trace", "dump", "both"],
+        help="hook/il2cpp-dump-trace.ts 的模式：dump 元数据落盘 / trace 调用链 / both",
+    )
+    parser.add_argument(
+        "--pubkey-mode",
+        default="asis",
+        choices=["asis", "flip", "ab", "ours", "oursonly"],
+        help="验签公钥端序 A/B：asis=不动 / flip=换成反转写法 / ab=逐次交替（一次跑出结论） / ours=换我们的公钥",
+    )
+    parser.add_argument(
+        "--max-output-bytes",
+        type=int,
+        default=MAX_OUTPUT_BYTES,
+        help="标准输出上限（字节，默认 2MB，0=不限）——防止把调用方 TUI 的会话内存撑爆",
+    )
     parser.add_argument("--no-restart", action="store_true", help="不冷启动，直接对当前进程注入")
     parser.add_argument("--host-only", action="store_true", help="只挂宿主日志，不注入 gadget")
     parser.add_argument("--install-gadget", action="store_true", help="把 ARM64 gadget 装到设备后退出")
@@ -272,6 +385,8 @@ def main() -> None:
     parser.add_argument("--pubkey", default=os.path.join(REPO, "data", "crypto", "public.xml"),
                         help="私服公钥（运行时替换客户端官方公钥用）")
     args = parser.parse_args()
+
+    MAX_OUTPUT_BYTES = int(args.max_output_bytes)
 
     if args.install_gadget:
         install_gadget(args.pkg, find_gadget_source(args.gadget))
@@ -319,7 +434,14 @@ def main() -> None:
         target = next((p for p in procs if p.name.lower() == "gadget"), procs[0] if procs else None)
         if target is None:
             raise SystemExit("gadget 未暴露进程")
-        sessions.append(attach(gadget, target.pid, read_script(args.script, args.pubkey), "arm64"))
+        sessions.append(
+            attach(
+                gadget,
+                target.pid,
+                read_script(args.script, args.pubkey, args.script_mode, args.pubkey_mode),
+                "arm64",
+            )
+        )
         print("[boot] ARM64 agent 已挂（il2cpp + guest liblog）", flush=True)
 
     print("[boot] 运行 %ds（Ctrl+C 结束）" % args.duration, flush=True)

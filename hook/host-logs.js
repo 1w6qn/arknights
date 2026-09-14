@@ -33,6 +33,13 @@
     return TAG_FILTER === null || TAG_FILTER.test(tag);
   }
 
+  // 单条日志长度上限：日志会进入调用方会话（TUI 会留在内存里），
+  // 超长单条（崩溃转储/格式串回显等）会显著放大占用，故源头截断。
+  var MAX_TEXT = 400;
+  function clip(s) {
+    return s.length > MAX_TEXT ? s.slice(0, MAX_TEXT) + "…<截断>" : s;
+  }
+
   function emit(payload) {
     if (sent >= MAX_SEND) {
       stats.suppressed += 1;
@@ -54,7 +61,7 @@
       onEnter: function (args) {
         stats.write += 1;
         var tag = cstr(args[1]);
-        if (wanted(tag)) emit({ t: "log", src: "host", fn: "log_write", tag: tag, text: cstr(args[2]) });
+        if (wanted(tag)) emit({ t: "log", src: "host", fn: "log_write", tag: tag, text: clip(cstr(args[2])) });
       },
     });
   }
@@ -73,7 +80,7 @@
           if (fmt.indexOf("%s") >= 0) extra = cstr(args[3]);
           else if (fmt.indexOf("%d") >= 0 || fmt.indexOf("%u") >= 0) extra = String(args[3].toInt32());
         }
-        emit({ t: "log", src: "host", fn: "log_print", tag: tag, text: extra === null ? fmt : fmt.replace(/%[sdu]/, extra) });
+        emit({ t: "log", src: "host", fn: "log_print", tag: tag, text: clip(extra === null ? fmt : fmt.replace(/%[sdu]/, extra)) });
       },
     });
   }

@@ -14,8 +14,11 @@
  *   1) 仓库根 node_modules（esbuild）
  *   2) tmp/npm-tools/node_modules（本仓调试时用的临时工具链）
  * 缺 esbuild 时的安装提示见下方 INSTALL_HINT。
+ *
+ * 副作用：每次构建都会先从 `lua/plugin/*.lua` 生成 `hook/build/plugin-lua.js`
+ * （插件源码表，供运行时注入 Lua VM 用），见 {@link generatePluginLua}。
  */
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
@@ -34,6 +37,41 @@ const INSTALL_HINT = [
   "  # 或本仓调试用的临时工具链：",
   "  mkdir -p tmp/npm-tools && cd tmp/npm-tools && npm i --no-audit --no-fund --ignore-scripts esbuild frida-java-bridge",
 ].join("\n");
+
+/**
+ * 读取 Lua 插件源码并生成 `hook/build/plugin-lua.js`。
+ *
+ * 为什么：`hook/il2cpp-client-redirect.ts` 要把插件系统注入游戏运行中的 Lua VM，
+ * 而注入 payload 必须自带源码（客户端拒绝任何被重新加密的资产，bundle 路线走不通）。
+ * 生成成 ES 模块由 esbuild 直接 bundle 进 hook，插件改了 `.lua` 只需重新 build。
+ *
+ * 键名 = Lua 的 require 路径（`Plugin/<文件名去扩展名>`），与 lua/plugin/PluginDefs.lua
+ * 里登记的 module 字段一致。
+ */
+function generatePluginLua() {
+  const srcDir = path.join(ROOT, "lua", "plugin");
+  const outfile = path.join(OUT_DIR, "plugin-lua.js");
+  if (!existsSync(srcDir)) {
+    console.error(`找不到插件目录：${srcDir}`);
+    process.exit(1);
+  }
+  const modules = {};
+  for (const file of readdirSync(srcDir).sort()) {
+    if (!file.endsWith(".lua")) continue;
+    const name = file.slice(0, -".lua".length);
+    modules[`Plugin/${name}`] = readFileSync(path.join(srcDir, file), "utf-8");
+  }
+  const body = [
+    "// 由 scripts/build-frida-hook.mjs 生成，勿手改（源：lua/plugin/*.lua）",
+    `export const PLUGIN_LUA = ${JSON.stringify(modules)};`,
+    "",
+  ].join("\n");
+  writeFileSync(outfile, body, "utf-8");
+  const names = Object.keys(modules);
+  console.log(
+    `generated ${path.relative(ROOT, outfile)} (${names.length} modules, ${body.length} bytes)`,
+  );
+}
 
 /**
  * 找一个可用的 esbuild 可执行文件。
@@ -90,6 +128,7 @@ const minify = !argv.includes("--no-minify");
 const names = argv.filter((arg) => !arg.startsWith("--"));
 
 mkdirSync(OUT_DIR, { recursive: true });
+generatePluginLua();
 const esbuild = resolveEsbuild();
 for (const name of names.length > 0 ? names : DEFAULT_ENTRIES) {
   build(esbuild, name, minify);
