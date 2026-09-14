@@ -761,7 +761,7 @@ main.global #detail-card { grid-column: 1 / -1; }
     <img class="login-logo" src="/admin/icon.svg" alt="DoctorateTs">
     <h1>DoctorateTs 管理后台</h1>
     <p class="login-sub">PRIVATE SERVER CONSOLE</p>
-    <label>管理令牌（data/config.json 中 admin.token）</label>
+    <label>管理令牌（ADMIN_TOKEN 环境变量或 data/config.json 的 admin.token）</label>
     <input id="login-token" type="password" placeholder="请输入管理令牌">
     <button class="primary" id="login-btn" style="width:100%;margin-top:4px;">进入后台</button>
     <p id="login-err" style="color:var(--danger);margin-top:8px;display:none;">令牌无效或管理接口未启用</p>

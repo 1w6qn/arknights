@@ -15,6 +15,7 @@ import {
   SyncStatusResponse,
 } from "./account";
 import { validateBody } from "@core/http/validate-body";
+import { rateLimit } from "@core/auth/rate-limit";
 import {
   loginSchema,
   syncDataSchema,
@@ -35,7 +36,7 @@ const PROJECT_VERSION = "1.0.0";
  * token 语义：real 模式为账号 secret（或 uid 兼容），single 模式任意 token 收敛到 singleUid
  * 版本校验 YAGNI：clientVersion/networkVersion 读取但不拦截（私服客户端版本可能滞后，避免卡登录）
  */
-router.post("/login", validateBody(loginSchema), async (req, res) => {
+router.post("/login", rateLimit({ name: "account:login" }), validateBody(loginSchema), async (req, res) => {
   const body = req.body as LoginRequest;
   const token = String(body?.token ?? "");
   const uid = await accountManager.getUidByToken(token);

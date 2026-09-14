@@ -55,7 +55,7 @@
   },
   "admin": {
     "enable": true,
-    "token": "doctorate-admin"
+    "token": ""
   },
   "authMode": "real",
   "capture": {

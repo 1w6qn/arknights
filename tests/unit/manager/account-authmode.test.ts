@@ -9,7 +9,12 @@ import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vites
  * 故用例可来回切换而不必 cast。
  */
 const configMock = vi.hoisted(() => {
-  const defaultConfig: { authMode: "single" | "real"; singleUid?: string } = {
+  const defaultConfig: {
+    authMode: "single" | "real";
+    singleUid?: string;
+    authTokenFallback?: boolean;
+    authAutoRegister?: boolean;
+  } = {
     authMode: "single",
   };
   return { default: defaultConfig };
@@ -26,7 +31,7 @@ vi.mock("@utils/file", async (importOriginal) => {
   return { ...actual, readJson: vi.fn(actual.readJson) };
 });
 
-import { accountManager, type UserConfig } from "@game/modules/account/AccountManager";
+import { accountManager, generateSecret, type UserConfig } from "@game/modules/account/AccountManager";
 import type { PlayerDataManager } from "@game/kernel/PlayerDataManager";
 import { type MockSeed } from "../../helpers";
 import config from "@core/config/index";
@@ -82,6 +87,8 @@ describe("getUidByToken 认证模式", () => {
     vi.restoreAllMocks();
     configMock.default.authMode = "single";
     configMock.default.singleUid = undefined;
+    configMock.default.authTokenFallback = undefined;
+    configMock.default.authAutoRegister = undefined;
     setConfigs({
         "1": { auth: { phone: "1" } },
         "2221": { auth: { phone: "2221" } },
@@ -150,10 +157,13 @@ describe("getUidByToken 认证模式", () => {
     expect(spy).toHaveBeenCalled();
   });
 
-  it("real 模式：有效 uid 返回原样，未知 SDK token 兜底默认账号", async () => {
+  it("real 模式：有效 uid 返回原样，未知 token 缺省不再兜底（认证绕过修复）", async () => {
     config.authMode = "real";
     expect(await accountManager.getUidByToken("2221")).toBe("2221");
-    // 宽松兜底（对齐 ODPY）：客户端 SDK 会话 token 回退第一个配置账号
+    // 缺省关闭兜底：未知 token 一律拒绝（历史行为是回退默认账号——等于任意字符串即主账号）
+    expect(await accountManager.getUidByToken("aId1QCwRP8rVkxSYsG4bCzjQ")).toBe("");
+    // 显式开启 authTokenFallback 才恢复旧兼容行为（迁移过渡用）
+    config.authTokenFallback = true;
     expect(await accountManager.getUidByToken("aId1QCwRP8rVkxSYsG4bCzjQ")).toBe("1");
   });
 
@@ -165,21 +175,16 @@ describe("getUidByToken 认证模式", () => {
     });
     expect(await accountManager.getUidByToken("secret_2221")).toBe("2221");
     expect(await accountManager.getUidByToken("secret_1")).toBe("1");
-    // 未知 SDK token 兜底默认账号（非配置 key）
-    expect(await accountManager.getUidByToken("unknown")).toBe("1");
+    // 未知 token 缺省拒绝（不再兜底默认账号）
+    expect(await accountManager.getUidByToken("unknown")).toBe("");
   });
 
-  it("registerUser 应生成账号 secret（MD5 密钥）——real 模式", async () => {
-    config.authMode = "real";
-    const uid = await accountManager.registerUser("13900009999", "pwd123456");
-    const conf = accountManager.configs[uid];
-    expect(conf.secret).toBeDefined();
-    // secret 在契约里可选，上一行已断言存在（`!` 仅类型层，运行期值不变）
-    expect(conf.secret!.length).toBe(32); // md5 hex
-    // 同 phone 生成确定性 secret
-    expect(conf.secret).toBe(
-      (await import("crypto")).createHash("md5").update("13900009999" + "7318def77669979d").digest("hex"),
-    );
+  it("generateSecret 应生成随机 token（不可由手机号推导）", async () => {
+    const a = generateSecret();
+    const b = generateSecret();
+    // base64url(32B) = 43 字符；不再是 md5(phone + 源码内公开常量)
+    expect(a).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(b).not.toBe(a);
   });
 
   it("real 模式 tokenByPhonePassword 应返回账号 secret（而非 uid）", async () => {
@@ -188,8 +193,8 @@ describe("getUidByToken 认证模式", () => {
         "1": { auth: { phone: "1" }, password: "p1", secret: "secret_1" },
     });
     expect(await accountManager.tokenByPhonePassword("1", "p1")).toBe("secret_1");
-    // 旧明文账号登录成功后惰性升级为哈希（R7——不再明文存储）
-    expect(accountManager.configs["1"].password).toMatch(/^sha256\$/);
+    // 旧明文账号登录成功后惰性升级为 scrypt（R7——不再明文/弱哈希存储）
+    expect(accountManager.configs["1"].password).toMatch(/^scrypt\$/);
   });
 
   it("getTokenByUid 应返回账号 secret（无 secret 旧账号回退 uid）", async () => {
@@ -332,11 +337,13 @@ describe("updatePassword / updatePhone（real 模式用户管理闭环）", () =
     });
   });
 
-  it("updatePassword 应哈希存储新密码", async () => {
+  it("updatePassword 应哈希存储新密码并轮换 secret（旧会话失效）", async () => {
     const ok = await accountManager.updatePassword("1", "NewPwd123");
     expect(ok).toBe(true);
     const conf = accountManager.configs["1"];
-    expect(conf.password.startsWith("sha256$")).toBe(true);
+    expect(conf.password.startsWith("scrypt$")).toBe(true);
+    // 改密同时轮换 secret：旧 token 立即失效（修复「改密无法撤销已泄露令牌」）
+    expect(conf.secret).not.toBe("secret_1");
     // 新密码可验证
     const { verifyPassword } = await import("@utils/crypt");
     expect(verifyPassword(conf.password, "NewPwd123")).toBe(true);
@@ -346,14 +353,13 @@ describe("updatePassword / updatePhone（real 模式用户管理闭环）", () =
     expect(await accountManager.updatePassword("999", "NewPwd123")).toBe(false);
   });
 
-  it("updatePhone 应更新手机并刷新 secret", async () => {
+  it("updatePhone 应更新手机并轮换随机 secret", async () => {
     const ok = await accountManager.updatePhone("1", "13812345678");
     expect(ok).toBe(true);
     const conf = accountManager.configs["1"];
     expect(conf.auth.phone).toBe("13812345678");
     expect(conf.secret).not.toBe("secret_1");
-    expect(conf.secret).toBe(
-      (await import("crypto")).createHash("md5").update("13812345678" + "7318def77669979d").digest("hex"),
-    );
+    // 随机 secret（不再由新手机号 + 公开常量确定性派生）
+    expect(conf.secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
   });
 });

@@ -15,6 +15,7 @@ import type { Request, Response } from "express";
 import path from "path";
 import config from "@core/config";
 import { logger } from "@utils/logger";
+import { timingSafeEqualString } from "@utils/crypt";
 import { getAdminConfig } from "../admin-config";
 import { adminGame } from "../game-gateway";
 import { gmService } from "./gm-service";
@@ -51,7 +52,7 @@ function hasValidToken(req: Request): boolean {
   const bearer = header.startsWith("Bearer ") ? header.slice(7) : "";
   const queryToken = typeof req.query?.token === "string" ? req.query.token : "";
   const token = bearer || (req.headers["x-admin-token"] as string) || queryToken || "";
-  return Boolean(token) && token === cfg.token;
+  return Boolean(token) && timingSafeEqualString(token, cfg.token);
 }
 
 /**

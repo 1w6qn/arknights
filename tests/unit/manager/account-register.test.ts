@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { MockInstance } from "vitest";
 // registerUser 现在会加载玩家（_loadPlayer 构造 PlayerDataManager，mission.init 需要 Immer Patches 插件）
 
-const configMock = vi.hoisted(() => ({ default: { authMode: "real" } }));
+const configMock = vi.hoisted(() => ({
+  default: { authMode: "real", authAutoRegister: false as boolean },
+}));
 vi.mock("@core/config/index", () => configMock);
 
 import { accountManager } from "@game/modules/account/AccountManager";
@@ -27,6 +29,7 @@ describe("AccountManager 创建新用户", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    configMock.default.authAutoRegister = false;
     accountManager.configs = {
       "1": asModel<UserConfig>({
         uid: "1",
@@ -50,7 +53,9 @@ describe("AccountManager 创建新用户", () => {
     // 内存配置更新（密码哈希存储——不落明文）
     expect(accountManager.configs["2"].auth.phone).toBe("13900000000");
     expect(verifyPassword(accountManager.configs["2"].password, "pwd2")).toBe(true);
-    expect(accountManager.configs["2"].password).toMatch(/^sha256\$/);
+    expect(accountManager.configs["2"].password).toMatch(/^scrypt\$/);
+    // secret 为随机 token（不再由手机号 + 公开常量 md5 派生）
+    expect(accountManager.configs["2"].secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(saveUserConfigSpy).toHaveBeenCalled();
   });
 
@@ -64,14 +69,21 @@ describe("AccountManager 创建新用户", () => {
     await expect(accountManager.registerUser("13800000000", "x")).rejects.toThrow("已存在");
   });
 
-  it("tokenByPhonePassword 账号不存在应自动注册", async () => {
+  it("tokenByPhonePassword 账号不存在缺省拒绝（不静默建号）", async () => {
+    const token = await accountManager.tokenByPhonePassword("13911112222", "pwd3");
+    expect(token).toBe("");
+    expect(accountManager.configs["2"]).toBeUndefined();
+  });
+
+  it("tokenByPhonePassword 开启 authAutoRegister 后自动注册（兼容旧行为）", async () => {
+    configMock.default.authAutoRegister = true;
     const token = await accountManager.tokenByPhonePassword("13911112222", "pwd3");
     // 自动注册返回新账号的 secret 作为 token（参考 DoctoratePy token=secret 模型）
     expect(token).toBe(accountManager.configs["2"].secret);
     expect(accountManager.configs["2"].auth.phone).toBe("13911112222");
-    // 密码哈希存储
+    // 密码哈希存储（scrypt + 随机盐）
     expect(verifyPassword(accountManager.configs["2"].password, "pwd3")).toBe(true);
-    expect(accountManager.configs["2"].password).toMatch(/^sha256\$/);
+    expect(accountManager.configs["2"].password).toMatch(/^scrypt\$/);
   });
 
   it("tokenByPhonePassword 账号存在应返回原 token（不重复创建）", async () => {

@@ -17,7 +17,7 @@ import { unlockActivity } from "../activities/shared/unlockActivity";
 import { readJson } from "@utils/file";
 import { now } from "@utils/time";
 import { writeFile, rename, rm } from "fs/promises";
-import { createHash } from "crypto";
+import { randomBytes } from "crypto";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import Emittery from "emittery";
 import { FriendRepository } from "@core/db/friend-repo";
@@ -33,7 +33,7 @@ import { registerAccountAuthPort } from "@core/auth/account-port";
 import config from "@core/config/index";
 import { migrateFromUserConfigs } from "@core/db/migrate";
 import { acquireLock } from "@utils/mutex";
-import { hashPassword, verifyPassword, isHashedPassword } from "@utils/crypt";
+import { hashPassword, verifyPassword, needsPasswordRehash } from "@utils/crypt";
 import { logger } from "@utils/logger";
 import { checkAndRepairSave, logSaveRepair } from "../../kernel/save-health";
 import { buildFreshPlayerData } from "../../kernel/fresh-player";
@@ -775,13 +775,17 @@ export class AccountManager implements BattleInfoStore {
       if (conf.disabled) {
         throw new BadRequestError("该账号已被禁用，请联系管理员");
       }
-      // 旧明文账号登录成功后惰性升级为哈希（之后不再明文存储）
-      if (!isHashedPassword(conf.password)) {
+      // 旧明文 / 旧 sha256 账号登录成功后惰性升级为 scrypt（之后不再弱哈希存储）
+      if (needsPasswordRehash(conf.password)) {
         conf.password = hashPassword(password);
       }
       return conf.secret || this.getTokenByUid(uid);
     }
-    // 账号不存在：自动注册（私服创建新用户），返回新 uid 作为 token
+    // 账号不存在：仅当显式开启 authAutoRegister 时自动注册；缺省返回空 token（调用方回 401），
+    // 避免静默建号与被用于手机号探测（历史行为默认建号）
+    if (config.authAutoRegister !== true) {
+      return "";
+    }
     const uid = await this.registerUser(phone, password);
     return this.getTokenByUid(uid);
   }
@@ -826,8 +830,8 @@ export class AccountManager implements BattleInfoStore {
 
       const userConfig: UserConfig = {
         uid: newUid,
-        password: hashPassword(password), // 哈希存储（不落明文）
-        secret: generateSecret(phoneStr),
+        password: hashPassword(password), // 哈希存储（scrypt + 随机盐，不落明文）
+        secret: generateSecret(),
         auth: {
           hgId: newUid,
           phone: phoneStr,
@@ -865,6 +869,10 @@ export class AccountManager implements BattleInfoStore {
     const conf = this.configs[uid];
     if (!conf) return false;
     conf.password = hashPassword(newPassword);
+    // 轮换 secret：改密后旧 token 立即失效（修复「改密无法撤销已泄露令牌」的缺陷）。
+    // 客户端需用新密码重新登录（`/user/auth/v1/change_password` 响应回传新 token）。
+    conf.secret = generateSecret();
+    this._secretIndex = null;
     await this.saveUserConfig();
     return true;
   }
@@ -879,7 +887,7 @@ export class AccountManager implements BattleInfoStore {
     const conf = this.configs[uid];
     if (!conf) return false;
     conf.auth.phone = newPhone;
-    conf.secret = generateSecret(newPhone);
+    conf.secret = generateSecret();
     this._secretIndex = null; // secret 变化：索引失效，下次查询重建
     await this.saveUserConfig();
     return true;
@@ -908,7 +916,7 @@ export class AccountManager implements BattleInfoStore {
     const userConfig: UserConfig = {
       uid,
       password: hashPassword("single"),
-      secret: generateSecret(`single_${uid}`),
+      secret: generateSecret(),
       auth: {
         hgId: uid,
         phone: uid,
@@ -988,8 +996,13 @@ export class AccountManager implements BattleInfoStore {
       if (hit) return this.isAccountDisabled(hit) ? "" : hit;
       // 宽松兜底（对齐 ODPY——私服单机不卡客户端流程）：未知 token（非配置账号 key，
       // 即客户端 SDK 会话 token）回退默认账号（singleUid 优先，其次第一个配置账号）。
-      // 配置账号 key 本身（uid 数字直通）仍拒绝——有 secret 的账号必须用 secret 登录。
-      if (token && !this.configs[token]) {
+      // 安全（2026-09 审阅）：该兜底等价于「任意非空字符串即主账号」，real 模式下缺省关闭，
+      // 仅 `config.authTokenFallback === true` 时启用；配置账号 key 本身（uid 数字直通）始终拒绝。
+      if (
+        config.authTokenFallback === true &&
+        token &&
+        !this.configs[token]
+      ) {
         const fallback = config.singleUid || Object.keys(this.configs)[0];
         if (fallback && this.configs[fallback]) {
           return this.isAccountDisabled(fallback) ? "" : fallback;
@@ -1016,15 +1029,16 @@ export interface FriendSortViewModel {
   recentVisited?: number;
 }
 
-/** 账号密钥渠道常量（参考 DoctoratePy USER_TOKEN_KEY——官方 appCode） */
-const USER_TOKEN_KEY = "7318def77669979d";
-
 /**
- * 生成账号密钥（参考 DoctoratePy user.py：MD5(account + 渠道密钥)——确定性）
- * @param phone - 注册手机号
+ * 生成账号密钥（登录 token）
+ *
+ * 安全（2026-09 审阅）：原实现为 `md5(phone + 硬编码渠道常量)`——常量随源码公开，
+ * 知道手机号即可离线推导出该账号 token。现改为 256 位加密随机值（base64url），
+ * 与手机号/公开常量均无关联；存量账号的旧 secret 继续可用（按存储值比对）。
+ * @returns 32 字节随机 token（base64url，43 字符）
  */
-export function generateSecret(phone: string): string {
-  return createHash("md5").update(`${phone}${USER_TOKEN_KEY}`).digest("hex");
+export function generateSecret(): string {
+  return randomBytes(32).toString("base64url");
 }
 
 /**

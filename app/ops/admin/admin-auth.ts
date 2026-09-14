@@ -7,6 +7,7 @@
  */
 import { Request, Response, NextFunction } from "express";
 import { getAdminConfig } from "./admin-config";
+import { timingSafeEqualString } from "@utils/crypt";
 
 export function adminAuth(
   req: Request,
@@ -24,7 +25,8 @@ export function adminAuth(
   const bearer = header.startsWith("Bearer ") ? header.slice(7) : "";
   const queryToken = typeof req.query?.token === "string" ? req.query.token : "";
   const token = bearer || (req.headers["x-admin-token"] as string) || queryToken || "";
-  if (!token || token !== cfg.token) {
+  // 常量时间比较（避免按字节短路泄露令牌前缀）
+  if (!token || !timingSafeEqualString(token, cfg.token)) {
     res.status(401).json({ error: "管理令牌无效" });
     return;
   }

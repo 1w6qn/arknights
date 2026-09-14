@@ -106,37 +106,96 @@ export async function decryptBattleReplay(
   return JSON.parse(await zip.files["default_entry"].async("string"));
 }
 
-/** 密码哈希前缀（sha256——私服账号存储；旧明文账号登录时惰性升级） */
-const PASSWORD_HASH_PREFIX = "sha256$";
+/** 密码哈希前缀（scrypt——私服账号存储；旧 sha256$/明文账号登录时惰性升级） */
+const PASSWORD_HASH_PREFIX = "scrypt$";
+/** 旧版哈希前缀（单轮无盐 sha256——仅用于校验存量账号，验证通过后升级为 scrypt） */
+const LEGACY_SHA256_PREFIX = "sha256$";
+/** scrypt 派生密钥长度（字节） */
+const SCRYPT_KEYLEN = 32;
+/** scrypt 盐长度（字节） */
+const SCRYPT_SALT_BYTES = 16;
 
 /**
- * 密码哈希（不可逆——账号存储不落明文）
- * @param password - 明文密码
- * @returns 带前缀的哈希字符串
+ * 定长字符串常量时间比较
+ *
+ * 长度不同直接返回 false（长度本身不是秘密）；长度相同走 `timingSafeEqual`，
+ * 避免按字节短路比较泄露前缀信息。
+ * @param a - 待比较字符串
+ * @param b - 待比较字符串
+ * @returns 是否相等
  */
-export function hashPassword(password: string): string {
-  return `${PASSWORD_HASH_PREFIX}${crypto
-    .createHash("sha256")
-    .update(password)
-    .digest("hex")}`;
+export function timingSafeEqualString(a: string, b: string): boolean {
+  const ab = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
 }
 
 /**
- * 校验密码（兼容旧明文账号）
- * 存储值带 sha256$ 前缀则哈希比较；否则按旧明文比较（匹配后调用方应惰性升级为哈希）
- * @param stored - 存储值（哈希或旧明文）
+ * 密码哈希（scrypt + 每账号随机盐，不可逆）
+ * @param password - 明文密码
+ * @returns `scrypt$<saltHex>$<hashHex>` 格式字符串
+ */
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(SCRYPT_SALT_BYTES);
+  const derived = crypto.scryptSync(password, salt, SCRYPT_KEYLEN);
+  return `${PASSWORD_HASH_PREFIX}${salt.toString("hex")}$${derived.toString("hex")}`;
+}
+
+/**
+ * 校验密码（兼容旧 sha256$ 哈希与更早的明文存储）
+ *
+ * 存储值前缀决定算法：`scrypt$` 按新方案比对；`sha256$` 按旧方案比对；
+ * 其余按旧明文比对（匹配后调用方应惰性升级为 scrypt）。所有分支均为常量时间比较。
+ * @param stored - 存储值（scrypt/sha256 哈希或旧明文）
  * @param input - 输入明文
  * @returns 是否匹配
  */
 export function verifyPassword(stored: string, input: string): boolean {
   if (!stored) return false;
   if (stored.startsWith(PASSWORD_HASH_PREFIX)) {
-    return stored === hashPassword(input);
+    const parts = stored.split("$");
+    const saltHex = parts[1];
+    const hashHex = parts[2];
+    if (!saltHex || !hashHex) return false;
+    const derived = crypto.scryptSync(
+      input,
+      Buffer.from(saltHex, "hex"),
+      hashHex.length / 2,
+    );
+    return timingSafeEqualString(derived.toString("hex"), hashHex);
   }
-  return stored === input;
+  if (stored.startsWith(LEGACY_SHA256_PREFIX)) {
+    const expect = crypto
+      .createHash("sha256")
+      .update(input)
+      .digest("hex");
+    return timingSafeEqualString(
+      expect,
+      stored.slice(LEGACY_SHA256_PREFIX.length),
+    );
+  }
+  return timingSafeEqualString(stored, input);
 }
 
-/** 是否为哈希存储（false = 旧明文，登录成功后应升级） */
+/**
+ * 是否为哈希存储（false = 旧明文，登录成功后应升级）
+ * @param stored - 存储值
+ * @returns 是否为 scrypt$/sha256$ 前缀的哈希
+ */
 export function isHashedPassword(stored: string): boolean {
-  return !!stored && stored.startsWith(PASSWORD_HASH_PREFIX);
+  return (
+    !!stored &&
+    (stored.startsWith(PASSWORD_HASH_PREFIX) ||
+      stored.startsWith(LEGACY_SHA256_PREFIX))
+  );
+}
+
+/**
+ * 是否需要在验证通过后重新哈希升级（明文/旧 sha256 → scrypt）
+ * @param stored - 存储值
+ * @returns true 表示当前存储不是最新的 scrypt 方案
+ */
+export function needsPasswordRehash(stored: string): boolean {
+  return !stored || !stored.startsWith(PASSWORD_HASH_PREFIX);
 }

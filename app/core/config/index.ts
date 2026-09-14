@@ -217,8 +217,8 @@ interface UserConfig {
   admin?: {
     /** 是否开启 /admin HTTP 管理接口 */
     enable: boolean;
-    /** 管理 API Bearer Token */
-    token: string;
+    /** 管理 API Bearer Token（缺省空——由 `ADMIN_TOKEN` 环境变量或进程内随机令牌兜底） */
+    token?: string;
     /**
      * 是否允许远程访问 GM 面板引导接口（`/gm/{config,players,data}`）
      *
@@ -229,6 +229,32 @@ interface UserConfig {
   };
   /** 认证模式：single（单例——secret 强制 1，任意 token 宽松）/ real（真实——多账号严格校验） */
   authMode?: "single" | "real";
+  /**
+   * real 模式下「未知 token 兜底到默认账号」开关（**缺省关闭**）
+   *
+   * 历史行为（对齐 DoctoratePy）把任何非配置键的非空 token 收敛到 `singleUid`/首个账号，
+   * 便于客户端 SDK 会话 token 直接换取主账号——但等价于「任意字符串即主账号」的认证绕过。
+   * 仅在明确需要该兼容行为时置 true；single 模式不受此开关影响（本就收敛到固定账号）。
+   */
+  authTokenFallback?: boolean;
+  /**
+   * 登录时未知手机号自动注册开关（**缺省关闭**）
+   *
+   * 历史行为：`/user/auth/v1/token_by_phone_password` 用不存在的手机号登录会静默建号，
+   * 可被用于批量注册与手机号探测。缺省关闭后应走显式注册端点（`/user/auth/v1/register`）。
+   */
+  authAutoRegister?: boolean;
+  /**
+   * 认证端点限流参数（进程内固定窗口，按「IP + 端点」计数）
+   *
+   * 缺省 `{ windowMs: 60000, max: 20 }`；`max <= 0` 关闭限流（仅建议本地调试）。
+   */
+  authRateLimit?: {
+    /** 窗口长度（毫秒，缺省 60000） */
+    windowMs?: number;
+    /** 窗口内最大请求数（缺省 20） */
+    max?: number;
+  };
   /** 官服操作自定义后端（enabled=true 时官服工具库/操作走自定义地址，可指向 obs 观察服务器或自建代理） */
   officialBackend?: {
     enabled?: boolean;

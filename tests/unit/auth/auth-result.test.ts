@@ -315,7 +315,7 @@ describe("auth 结果补全（参考 DoctoratePy）", () => {
   it("POST /user/auth/v1/change_password 应返回 result 0", async () => {
     const res = mockRes();
     await call(authRouter, { method: "POST", url: "/user/auth/v1/change_password", body: { newPassword: "abc12345", phoneCode: "1234" } }, res);
-    expect(res.send).toHaveBeenCalledWith({ result: 0 });
+    expect(res.send).toHaveBeenCalledWith({ result: 0, token: "secret_10000" });
   });
 
   it("POST /user/auth/v1/change_phone_check 应返回 result 0", async () => {
@@ -327,7 +327,7 @@ describe("auth 结果补全（参考 DoctoratePy）", () => {
   it("POST /user/auth/v1/change_phone 应返回 result 0", async () => {
     const res = mockRes();
     await call(authRouter, { method: "POST", url: "/user/auth/v1/change_phone", body: { newPhone: "13800000009", phoneCode: "1", newPhoneCode: "2" } }, res);
-    expect(res.send).toHaveBeenCalledWith({ result: 0 });
+    expect(res.send).toHaveBeenCalledWith({ result: 0, token: "secret_10000" });
   });
 
   it("POST /user/auth/v1/guest_login 应返回 result 3", async () => {

@@ -11,9 +11,22 @@ import { readJson } from "@utils/file";
 import { logger } from "@utils/logger";
 import { verifyPassword } from "@utils/crypt";
 import { getAccountAuthPort } from "./account-port";
+import { rateLimit } from "./rate-limit";
 import config from "../config/index";
 
 const router = Router();
+
+/**
+ * 认证端点限流（按「端点 + IP」固定窗口计数，阈值见 config.authRateLimit）
+ *
+ * 均为凭据敏感端点：登录/注册/短信/改密/换绑与 U8 渠道换 token，
+ * 无约束时可被脚本无限次尝试口令或批量建号。
+ */
+const limitLogin = rateLimit({ name: "auth:login" });
+const limitRegister = rateLimit({ name: "auth:register" });
+const limitSms = rateLimit({ name: "auth:sms" });
+const limitCredentialChange = rateLimit({ name: "auth:credential-change" });
+const limitChannelToken = rateLimit({ name: "auth:channel-token" });
 
 /** 动态服务器地址（去硬编码——协议/客服链接跟随 config.Host:PORT，与 remote-config resolveServer 一致） */
 function serverUrl(): string {
@@ -100,7 +113,7 @@ router.get("/app/v1/config", async (req, res) => {
  * @param password - 用户密码
  * @returns 包含 Token 的登录结果
  */
-router.post("/user/auth/v1/token_by_phone_password", async (req, res) => {
+router.post("/user/auth/v1/token_by_phone_password", limitLogin, async (req, res) => {
   const phone = req.body?.phone;
   const password = req.body?.password;
   // 修复（2026-09-11）：缺字段时原实现把 undefined 透传给 AccountManager，real 模式会落到
@@ -117,6 +130,15 @@ router.post("/user/auth/v1/token_by_phone_password", async (req, res) => {
     phone,
     password,
   );
+  // 凭据不匹配（real 模式不再静默建号）时返回 401——原实现会回 200 + 空 token，
+  // 客户端拿到空凭据继续走后续流程
+  if (!code) {
+    return res.status(401).send({
+      status: 1,
+      msg: "手机号或密码错误",
+      code: "CREDENTIAL_INVALID",
+    });
+  }
   res.send({
     status: 0,
     msg: "OK",
@@ -227,7 +249,12 @@ router.get("/pcSdk/userInfo", async (_req, res) => {
 
 /** OAuth2 授权共享 handler（v1 兼容旧客户端，v2 为现行版本——逻辑一致） */
 async function oauth2Grant(req: Request, res: Response): Promise<void> {
-  const code: string = req.body!.token;
+  // 原实现 `req.body!.token` 在空 body 时抛 TypeError（归一为 500）；空 token 属客户端错误
+  const code = String(req.body?.token ?? "");
+  if (!code) {
+    res.status(400).send({ status: 1, msg: "缺少 token", code: "TOKEN_REQUIRED" });
+    return;
+  }
   const uid = await getAccountAuthPort().getUidByToken(code);
   res.send({
     status: 0,
@@ -259,7 +286,7 @@ router.post("/user/oauth2/v2/grant", oauth2Grant);
  * @param extension - 渠道扩展参数，包含 code
  * @returns U8 渠道登录结果
  */
-router.post("/u8/user/v1/getToken", async (req, res) => {
+router.post("/u8/user/v1/getToken", limitChannelToken, async (req, res) => {
   const ext = parseExtension(req.body);
   if (!ext) return res.status(400).send(extensionErrorBody());
   const code: string = ext.code ?? "";
@@ -282,7 +309,7 @@ router.post("/u8/user/v1/getToken", async (req, res) => {
 });
 
 /** U8 渠道账号验证（参考 DoctoratePy userVerifyAccount——access_token 换 uid） */
-router.post("/u8/user/verifyAccount", async (req, res) => {
+router.post("/u8/user/verifyAccount", limitChannelToken, async (req, res) => {
   const ext = parseExtension(req.body);
   if (!ext) return res.status(400).send(extensionErrorBody());
   const token: string = ext.access_token ?? "";
@@ -353,7 +380,7 @@ router.post("/u8/user/auth/v1/update_agreement", async (_req, res) => {
  * 手机号密码登录（参考 DoctoratePy userLogin）
  * result: 0 成功 / 1 用户名或密码错误 / 4 该用户尚不存在
  */
-router.post("/user/auth/v1/login", async (req, res) => {
+router.post("/user/auth/v1/login", limitLogin, async (req, res) => {
   const body = req.body ?? {};
   // 官方客户端 SDK 登录形状：{ networkVersion, uid, token }（token 为 SDK 会话）
   if (body.uid != null && body.token != null && body.account == null) {
@@ -400,7 +427,7 @@ router.post("/user/auth/v1/login", async (req, res) => {
  * 手机号注册（参考 DoctoratePy userRegister）
  * result: 0 成功 / 5 <errMsg> 密码格式错误或账号已存在
  */
-router.post("/user/auth/v1/register", async (req, res) => {
+router.post("/user/auth/v1/register", limitRegister, async (req, res) => {
   const { account, password } = req.body ?? {};
   if (
     !/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d!@#$%^&*]{8,16}$/.test(password || "")
@@ -431,7 +458,7 @@ router.post("/user/auth/v1/register", async (req, res) => {
 });
 
 /** 短信验证码登录（参考 DoctoratePy userLoginBySmsCode——私服简化：账号存在即成功） */
-router.post("/user/auth/v1/login_by_smscode", async (req, res) => {
+router.post("/user/auth/v1/login_by_smscode", limitLogin, async (req, res) => {
   const { account } = req.body ?? {};
   const found = Object.entries(getAccountAuthPort().configs).find(
     ([, c]) => c.auth?.phone == account,
@@ -452,12 +479,12 @@ router.post("/user/auth/v1/login_by_smscode", async (req, res) => {
 });
 
 /** 发送短信验证码（参考 DoctoratePy userSendSmsCode——私服直接成功） */
-router.post("/user/auth/v1/send_sms_code", async (req, res) => {
+router.post("/user/auth/v1/send_sms_code", limitSms, async (req, res) => {
   res.send({ result: 0, msg: "OK" });
 });
 
 /** 发送手机验证码（参考 DoctoratePy userInfoV1SendPhoneCode） */
-router.post("/user/info/v1/send_phone_code", async (req, res) => {
+router.post("/user/info/v1/send_phone_code", limitSms, async (req, res) => {
   res.send({ status: 0, msg: "OK" });
 });
 
@@ -486,28 +513,35 @@ async function resolveAuthUid(req: Request): Promise<string> {
 }
 
 /** 修改密码（参考 DoctoratePy userChangePassword——校验格式 + 验证码通过则更新） */
-router.post("/user/auth/v1/change_password", async (req, res) => {
+router.post("/user/auth/v1/change_password", limitCredentialChange, async (req, res) => {
   const uid = await resolveAuthUid(req);
   if (!uid || !getAccountAuthPort().configs[uid]) {
     return res.send({ result: 3 });
   }
-  const { newPassword } = req.body ?? {};
-  // 1 = 密码格式错误 / 与旧密码相同；2 = 验证码错误（私服跳过短信验证，视为通过）
+  const { newPassword, oldPassword } = req.body ?? {};
+  // 1 = 密码格式错误 / 与旧密码相同 / 旧密码校验失败；2 = 验证码错误（私服跳过短信验证，视为通过）
   if (!newPassword || !PASSWORD_PATTERN.test(newPassword)) {
     return res.send({ result: 1 });
   }
+  const conf = getAccountAuthPort().configs[uid];
+  // 纵深防御（2026-09 审阅）：客户端携带旧密码时强制校验——仅有会话 token 不足以改密
   if (
-    getAccountAuthPort().configs[uid].password &&
-    verifyPassword(getAccountAuthPort().configs[uid].password, newPassword)
+    oldPassword != null &&
+    oldPassword !== "" &&
+    !verifyPassword(conf.password, String(oldPassword))
   ) {
+    return res.send({ result: 1 });
+  }
+  if (conf.password && verifyPassword(conf.password, newPassword)) {
     return res.send({ result: 1 }); // 新旧相同
   }
   await getAccountAuthPort().updatePassword(uid, newPassword);
-  res.send({ result: 0 });
+  // 改密同时轮换 secret（AccountManager.updatePassword）：回传新 token，旧会话 token 立即失效
+  res.send({ result: 0, token: getAccountAuthPort().configs[uid]?.secret });
 });
 
 /** 换绑手机检查（参考 DoctoratePy userChangePhoneCheck——私服跳过 7 天限制） */
-router.post("/user/auth/v1/change_phone_check", async (req, res) => {
+router.post("/user/auth/v1/change_phone_check", limitCredentialChange, async (req, res) => {
   const uid = await resolveAuthUid(req);
   if (!uid || !getAccountAuthPort().configs[uid]) {
     return res.send({ result: 3 });
@@ -515,13 +549,29 @@ router.post("/user/auth/v1/change_phone_check", async (req, res) => {
   res.send({ result: 0 });
 });
 
-/** 换绑手机（参考 DoctoratePy userChangePhone——校验新手机可用 + 更新 phone/secret） */
-router.post("/user/auth/v1/change_phone", async (req, res) => {
+/**
+ * 换绑手机（参考 DoctoratePy userChangePhone——校验新手机可用 + 更新 phone/secret）
+ *
+ * 纵深防御（2026-09 审阅）：客户端携带密码（`password`/`oldPassword`）时强制校验，
+ * 避免仅凭会话 token 即可换绑手机号（换绑会轮换 secret，等于接管账号）。
+ */
+router.post("/user/auth/v1/change_phone", limitCredentialChange, async (req, res) => {
   const uid = await resolveAuthUid(req);
   if (!uid || !getAccountAuthPort().configs[uid]) {
     return res.send({ result: 3 });
   }
-  const { newPhone } = req.body ?? {};
+  const { newPhone, password, oldPassword } = req.body ?? {};
+  const inputPassword = password ?? oldPassword;
+  if (
+    inputPassword != null &&
+    inputPassword !== "" &&
+    !verifyPassword(
+      getAccountAuthPort().configs[uid].password,
+      String(inputPassword),
+    )
+  ) {
+    return res.send({ result: 1 });
+  }
   // 8 = 手机号已被使用；12 = 验证码错误（私服跳过短信验证，视为通过）
   if (!newPhone || !/^\d{6,}$/.test(String(newPhone))) {
     return res.send({ result: 8 });
@@ -533,7 +583,8 @@ router.post("/user/auth/v1/change_phone", async (req, res) => {
     return res.send({ result: 8 });
   }
   await getAccountAuthPort().updatePhone(uid, String(newPhone));
-  res.send({ result: 0 });
+  // 换绑同时轮换 secret：回传新 token，旧会话 token 立即失效
+  res.send({ result: 0, token: getAccountAuthPort().configs[uid]?.secret });
 });
 
 /** 游客登录（参考 DoctoratePy userV1GuestLogin——私服返回未激活） */

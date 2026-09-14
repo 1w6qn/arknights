@@ -221,7 +221,7 @@ describe("real 模式用户管理闭环（change_password/change_phone）", () =
       { method: "POST", url: "/user/auth/v1/change_password", body: { token: "secret_10000", newPassword: "NewPass123" } },
       res,
     );
-    expect(res.send).toHaveBeenCalledWith({ result: 0 });
+    expect(res.send).toHaveBeenCalledWith({ result: 0, token: "secret_10000" });
     expect(accountManager.updatePassword).toHaveBeenCalledWith("10000", "NewPass123");
   });
 
@@ -242,7 +242,7 @@ describe("real 模式用户管理闭环（change_password/change_phone）", () =
       { method: "POST", url: "/user/auth/v1/change_phone", body: { token: "secret_10000", newPhone: "13899998888" } },
       res,
     );
-    expect(res.send).toHaveBeenCalledWith({ result: 0 });
+    expect(res.send).toHaveBeenCalledWith({ result: 0, token: "secret_10000" });
     expect(accountManager.updatePhone).toHaveBeenCalledWith("10000", "13899998888");
   });
 
@@ -258,5 +258,31 @@ describe("real 模式用户管理闭环（change_password/change_phone）", () =
       res,
     );
     expect(res.send).toHaveBeenCalledWith({ result: 8 });
+  });
+});
+
+describe("认证端点限流（rateLimit 中间件）", () => {
+  it("阈值内放行、超过阈值返回 429", async () => {
+    const { rateLimit, resetRateLimits } = await import("@core/auth/rate-limit");
+    resetRateLimits();
+    const mw = rateLimit({ name: "test:limit", windowMs: 60_000, max: 3 });
+    const req = { ip: "10.0.0.1" } as Request;
+    const next = vi.fn();
+    for (let i = 0; i < 3; i++) mw(req, mockRes() as Response, next);
+    expect(next).toHaveBeenCalledTimes(3);
+    const blocked = mockRes();
+    mw(req, blocked as Response, next);
+    expect(next).toHaveBeenCalledTimes(3);
+    expect(blocked.status).toHaveBeenCalledWith(429);
+  });
+
+  it("不同客户端 IP 独立计数（不误伤）", async () => {
+    const { rateLimit, resetRateLimits } = await import("@core/auth/rate-limit");
+    resetRateLimits();
+    const mw = rateLimit({ name: "test:limit-ip", windowMs: 60_000, max: 1 });
+    const next = vi.fn();
+    mw({ ip: "10.0.0.2" } as Request, mockRes() as Response, next);
+    mw({ ip: "10.0.0.3" } as Request, mockRes() as Response, next);
+    expect(next).toHaveBeenCalledTimes(2);
   });
 });
