@@ -60,7 +60,7 @@ describe("plugin-catalog 插件目录单一数据源", () => {
     ]);
   });
 
-  it("loadPluginCatalog 从真实 PluginDefs.lua 加载（含全部 4 个插件）", () => {
+  it("loadPluginCatalog 从真实 PluginDefs.lua 加载（含全部 6 个插件）", () => {
     const catalog = loadPluginCatalog();
     expect(catalog.length).toBeGreaterThanOrEqual(4);
     expect(catalog.map((c) => c.id)).toEqual(

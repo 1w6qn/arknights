@@ -4,10 +4,11 @@ import { createServer, Server, request } from "http";
 import { AddressInfo } from "net";
 
 /**
- * plugin-heartbeat 路由（Lua 插件生效确认 + 启停状态同步）
+ * plugin-heartbeat 路由（Lua 插件生效确认 + 启停/选项状态同步）
  *
- * GET /plugin/heartbeat            —— 生效确认（含 catalog/启用态）
- * GET /plugin/config/:id/:value    —— 客户端启停状态同步（value=0/1）
+ * GET /plugin/heartbeat              —— 生效确认（含 catalog/启用态/选项取值）
+ * GET /plugin/config/:id/:value      —— 客户端启停状态同步（value=0/1）
+ * GET /plugin/option/:id/:key/:value —— 客户端选项同步（b0/b1/n<数字>/s<字符串>）
  *
  * 通过 vi.mock 拦截 pluginConfigService，避免测试触碰真实 data/plugin/config.json。
  * mock 路径与生产 import 一致取 `@plugin/index`（裸 `@plugin` 无法被 TS 路径映射解析）。
@@ -25,12 +26,16 @@ interface PluginCatalogRow {
 const pluginServiceMock = vi.hoisted(() => ({
   has: vi.fn((id: string) => id === "enemy_hp"),
   setEnabled: vi.fn(async (_id: string, _v: boolean) => true),
+  setOption: vi.fn(async (_id: string, _key: string, value: boolean | number | string) => value),
   getAll: vi.fn(
     async (): Promise<PluginCatalogRow[]> => [
       { id: "enemy_hp", name: "敌人血量显示", desc: "", module: "Plugin/EnemyHpPlugin", enabled: true },
       { id: "plugin_panel", name: "插件管理面板", desc: "", module: "Plugin/PanelPlugin", enabled: false },
     ],
   ),
+  getAllOptions: vi.fn(async (): Promise<Record<string, Record<string, boolean | number | string>>> => ({
+    enemy_hp: { font_size: 20, color: "orange" },
+  })),
 }));
 vi.mock("@plugin/index", () => ({ pluginConfigService: pluginServiceMock }));
 
@@ -39,12 +44,13 @@ import pluginHeartbeatRouter from "@game/modules/system/plugin.routes";
 
 const mockedService = pluginServiceMock;
 
-/** 端点响应体读取视图（本用例只读这四个字段） */
+/** 端点响应体读取视图（本用例只读这些字段） */
 interface PluginEndpointBody {
   status: number;
   pluginCount: number;
   enabled: number;
   catalog: { id: string; enabled: boolean }[];
+  options?: Record<string, Record<string, boolean | number | string>>;
 }
 
 describe("plugin-heartbeat 路由", () => {
@@ -87,6 +93,12 @@ describe("plugin-heartbeat 路由", () => {
     expect(body.catalog[0]).toMatchObject({ id: "enemy_hp", enabled: true });
   });
 
+  it("GET /plugin/heartbeat 回传选项取值（客户端据此收敛）", async () => {
+    const base = await startApp();
+    const { body } = await getJson(`${base}/plugin/heartbeat`);
+    expect(body.options).toEqual({ enemy_hp: { font_size: 20, color: "orange" } });
+  });
+
   it("GET /plugin/config/:id/:value 同步启用态并持久化", async () => {
     const base = await startApp();
     const { body } = await getJson(`${base}/plugin/config/enemy_hp/1`);
@@ -106,5 +118,36 @@ describe("plugin-heartbeat 路由", () => {
     const { body } = await getJson(`${base}/plugin/config/enemy_hp/2`);
     expect(body.status).toBe(1);
     expect(mockedService.setEnabled).not.toHaveBeenCalled();
+  });
+
+  it("GET /plugin/option 解码布尔/数值/字符串并按类型持久化", async () => {
+    const base = await startApp();
+    await getJson(`${base}/plugin/option/enemy_hp/show_max/b1`);
+    expect(mockedService.setOption).toHaveBeenLastCalledWith("enemy_hp", "show_max", true);
+    await getJson(`${base}/plugin/option/enemy_hp/font_size/n24`);
+    expect(mockedService.setOption).toHaveBeenLastCalledWith("enemy_hp", "font_size", 24);
+    await getJson(`${base}/plugin/option/enemy_hp/color/sorange`);
+    expect(mockedService.setOption).toHaveBeenLastCalledWith("enemy_hp", "color", "orange");
+  });
+
+  it("GET /plugin/option 非法编码返回 status=1 且不持久化", async () => {
+    const base = await startApp();
+    const { body } = await getJson(`${base}/plugin/option/enemy_hp/font_size/24`);
+    expect(body.status).toBe(1);
+    expect(mockedService.setOption).not.toHaveBeenCalled();
+  });
+
+  it("GET /plugin/option 未知插件返回 status=1 且不持久化", async () => {
+    const base = await startApp();
+    const { body } = await getJson(`${base}/plugin/option/nope/font_size/n24`);
+    expect(body.status).toBe(1);
+    expect(mockedService.setOption).not.toHaveBeenCalled();
+  });
+
+  it("GET /plugin/option 服务端校验失败时回传 status=1", async () => {
+    mockedService.setOption.mockRejectedValueOnce(new Error("非法选项键: 1bad"));
+    const base = await startApp();
+    const { body } = await getJson(`${base}/plugin/option/enemy_hp/1bad/n1`);
+    expect(body).toMatchObject({ status: 1, msg: "非法选项键: 1bad" });
   });
 });

@@ -17,6 +17,7 @@ vi.mock("@utils/sse", () => ({ createSse: vi.fn(() => () => {}), sseSend: vi.fn(
 vi.mock("@plugin/index", () => ({
   pluginConfigService: {
     getAll: vi.fn(),
+    getAllOptions: vi.fn(),
     setEnabled: vi.fn(),
   },
 }));
@@ -82,11 +83,15 @@ describe("admin 插件管理端点", () => {
         enabled: true,
       }),
     ]);
+    vi.mocked(pluginConfigService.getAllOptions).mockResolvedValue({
+      enemy_hp: { font_size: 20 },
+    });
     const res = mockRes();
     await call({ method: "GET", url: "/api/plugin" }, res);
     expect(pluginConfigService.getAll).toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({
       plugins: [{ id: "enemy_hp", name: "敌人血量显示", desc: "", enabled: true }],
+      options: { enemy_hp: { font_size: 20 } },
     });
   });
 

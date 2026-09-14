@@ -28,6 +28,12 @@ local PluginDefs = {
     module = "Plugin/PanelPlugin",
   },
   {
+    id = "options_panel",
+    name = "插件选项面板",
+    desc = "游戏内调节各插件参数（开关/数值/枚举）并同步服务端",
+    module = "Plugin/OptionsPanelPlugin",
+  },
+  {
     -- 曾经漏登记：模块打进 bundle 也从不被 require（死代码），私服请求重定向失效
     id = "network_redirect",
     name = "网络重定向",

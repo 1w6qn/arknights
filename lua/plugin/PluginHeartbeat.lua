@@ -1,9 +1,10 @@
 --[[
   PluginHeartbeat.lua —— 插件生效确认心跳 + 服务端状态同步
   插件系统在游戏内构建 UI 后，经游戏原生 UISender 向服务端发送请求：
-    - GET  /plugin/heartbeat  生效确认（响应含服务端启停状态，best-effort 应用）
+    - GET  /plugin/heartbeat  生效确认（响应含服务端启停状态 + 选项取值，best-effort 应用）
     - GET  /plugin/config/<id>/<0|1>  客户端启停状态推送（路径编码，无需参数表约定）
-  用于真机验证「插件是否真正加载生效」，并让管理端/面板的启停状态保持同步。
+    - GET  /plugin/option/<id>/<key>/<b0|b1|n数字|s字符串>  客户端选项推送
+  用于真机验证「插件是否真正加载生效」，并让管理端/面板的启停状态与选项取值保持同步。
 
   时序说明：内置 bundle 由 DefinedFix 在 HotfixProcesser.Do 阶段引导（先于
   ModelMgr.Init / 网络就绪）。因此：
@@ -18,6 +19,7 @@
 local PluginHeartbeat = {}
 local eutil = CS.Torappu.Lua.Util
 local PluginHotfix = require("Plugin/PluginHotfix")
+local PluginOptions = require("Plugin/PluginOptions")
 
 local _MAX_RETRY = 6
 local _RETRY_DELAY_SEC = 5
@@ -25,7 +27,7 @@ local _RETRY_DELAY_SEC = 5
 local _autoConfirmed = false
 
 --[[
-  解析心跳响应并应用服务端启停状态（best-effort）。
+  解析心跳响应并应用服务端启停状态与选项取值（best-effort）。
   响应体可能直接为 {catalog=...}，也可能被游戏网络层包一层 {result=...}。
   @param data 心跳响应数据
 --]]
@@ -37,17 +39,54 @@ local function _OnHeartbeatResponse(data)
       body = data.result
     end
     local catalog = body.catalog
-    if type(catalog) ~= "table" then return end
-    for _, p in ipairs(catalog) do
-      if type(p) == "table" and p.id ~= nil then
-        local enabled = (p.enabled == true)
-        local cur = PluginManager.me:GetPlugin(tostring(p.id))
-        if cur ~= nil and cur.enabled ~= enabled then
-          PluginManager.me:SetEnabled(tostring(p.id), enabled)
+    if type(catalog) == "table" then
+      for _, p in ipairs(catalog) do
+        if type(p) == "table" and p.id ~= nil then
+          local enabled = (p.enabled == true)
+          local cur = PluginManager.me:GetPlugin(tostring(p.id))
+          if cur ~= nil and cur.enabled ~= enabled then
+            PluginManager.me:SetEnabled(tostring(p.id), enabled)
+          end
+        end
+      end
+    end
+    -- 选项取值：{ options = { <插件id> = { <选项键> = 值 } } }
+    local options = body.options
+    if type(options) == "table" then
+      for id, values in pairs(options) do
+        if type(values) == "table" then
+          for key, value in pairs(values) do
+            PluginOptions:ApplyServer(tostring(id), tostring(key), value)
+          end
         end
       end
     end
   end, debug.traceback)
+end
+
+--[[
+  URL 路径段编码：仅放行 RFC3986 非保留字符，其余按 %XX 转义
+  （枚举取值如 "Alpha3" 原样通过；含特殊字符的取值也不会破坏路径）。
+  @param value 待编码值
+  @return 编码后的字符串
+--]]
+local function _UrlEncode(value)
+  return (tostring(value):gsub("[^%w%-%._~]", function(c)
+    return string.format("%%%02X", string.byte(c))
+  end))
+end
+
+--[[
+  选项取值编码为单段路径值（与服务端 plugin.routes.ts 的解码口径一致）：
+    true/false → b1/b0；number → n<数字>；其余 → s<URL 编码字符串>
+  @param value 选项取值
+  @return 编码字符串
+--]]
+local function _EncodeOption(value)
+  if value == true then return "b1" end
+  if value == false then return "b0" end
+  if type(value) == "number" then return "n" .. string.format("%g", value) end
+  return "s" .. _UrlEncode(value)
 end
 
 --[[
@@ -195,7 +234,25 @@ function PluginHeartbeat.PushState(id, value)
       return
     end
     local v = value and "1" or "0"
-    UISender.me:SendGet("/plugin/config/" .. tostring(id) .. "/" .. v, nil, { useMask = false })
+    UISender.me:SendGet("/plugin/config/" .. _UrlEncode(id) .. "/" .. v, nil, { useMask = false })
+  end, debug.traceback)
+end
+
+--[[
+  客户端选项取值推送：选项面板改动（或重置）后调用，best-effort 同步到服务端
+  data/plugin/config.json 的 options 字段。服务端在下次心跳响应里回传，管理端与
+  游戏内面板最终收敛到同一取值（见 Plugin/PluginOptions）。
+  @param id    插件标识
+  @param key   选项键
+  @param value 选项取值（boolean / number / string）
+--]]
+function PluginHeartbeat.PushOption(id, key, value)
+  xpcall(function()
+    if not _SenderReady() then
+      return
+    end
+    local url = "/plugin/option/" .. _UrlEncode(id) .. "/" .. _UrlEncode(key) .. "/" .. _EncodeOption(value)
+    UISender.me:SendGet(url, nil, { useMask = false })
   end, debug.traceback)
 end
 

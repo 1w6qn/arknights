@@ -6,7 +6,10 @@ export {
   PluginConfigService,
   pluginConfigService,
   __resetPluginConfigService,
+  isValidOptionKey,
+  isValidOptionValue,
   type PluginDefinition,
+  type PluginOptionValue,
 } from "./plugin-config-service";
 export { loadPluginCatalog, parsePluginDefs, FALLBACK_CATALOG, type PluginCatalogEntry } from "./plugin-catalog";
 export {

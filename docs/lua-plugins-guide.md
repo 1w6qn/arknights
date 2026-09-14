@@ -1,6 +1,6 @@
 # 游戏内 Lua 插件系统 — 使用与真机验证指南
 
-> 在明日方舟客户端内，用游戏原生 XLua 热更 + 纯 Lua hotfix + 游戏内 Lua UI，实现敌人血量显示、敌人属性面板、战斗辅助，并提供现代化插件管理面板。
+> 在明日方舟客户端内，用游戏原生 XLua 热更 + 纯 Lua hotfix + 游戏内 Lua UI，实现敌人血量显示、敌人属性面板、战斗辅助，并提供现代化插件管理面板与插件选项面板（开关/数值/枚举实时调节 + 服务端同步）。
 > 设计见 `.trae/specs/lua-plugins/spec.md`；实施任务见 `tasks.md` / `checklist.md`。
 
 ## 1. 源码结构
@@ -11,12 +11,16 @@ lua/plugin/                    ← 插件明文源码
 ├── PluginHotfix.lua           ← 共享 hotfix 注册表（多插件 hook 同方法互不覆盖）
 ├── PluginDefs.lua             ← 插件清单（id/name/desc/module）
 ├── PluginManager.lua          ← 注册表：加载/启停/配置持久化（自举全局）
-├── PluginHeartbeat.lua        ← 生效确认心跳 + 服务端启停状态同步
+├── PluginConfigFile.lua       ← 配置文件（plugin_config.json）共享读写：enabled 与 options 互不覆盖
+├── PluginOptions.lua          ← 插件选项定义 + 取值存储 + 变更订阅（单一数据源）
+├── PluginUI.lua               ← UnityEngine.UI 控件工厂（图片/文本/按钮/容器 + 浮动按钮 + Canvas 重试）
+├── PluginHeartbeat.lua        ← 生效确认心跳 + 服务端启停/选项双向同步
 ├── NetworkRedirectPlugin.lua  ← 私服引导（DefinedFix 首个 hotfixer，早于网络初始化）
-├── EnemyHpPlugin.lua          ← 敌人血量显示（UIUnitHUD.Attach）
-├── EnemyInfoPlugin.lua        ← 敌人属性面板（动态 UnityEngine.UI，触摸 + 鼠标）
-├── BattleAssistPlugin.lua     ← 战斗辅助（时间轴/倍速/TAS 单帧步进）
-└── PanelPlugin.lua            ← 插件管理面板（浮动按钮 + 列表开关，延迟挂载）
+├── EnemyHpPlugin.lua          ← 敌人血量显示（UIUnitHUD.Attach，字号/颜色/偏移走选项）
+├── EnemyInfoPlugin.lua        ← 敌人属性面板（动态 UnityEngine.UI，触摸 + 鼠标；透明度/停靠侧/拾取半径走选项）
+├── BattleAssistPlugin.lua     ← 战斗辅助（时间轴/倍速/TAS 单帧步进；时间轴开关/字号/按键走选项）
+├── PanelPlugin.lua            ← 插件管理面板（浮动按钮 + 列表开关，延迟挂载）
+└── OptionsPanelPlugin.lua     ← 插件选项面板（页签 + 开关/数值/枚举控件 + 一键重置）
 ```
 
 > 每个插件 = 一个继承 `BasePlugin`（→ 官方 `HotfixBase`）的自包含 hotfixer，逐条登记在
@@ -185,13 +189,41 @@ pnpm run watch:lua -- --once  # 只重打包一次后退出（CI / 手动触发�
 > `Fix_ex` 是完整替换，`fixFunc` 里**不会**传 `orig`；若要调用原方法请改用 `Hotfix`。
 > `Load` 失败（OnLoad 中途抛错）时已注册补丁会被自动回滚，不会残留半应用 hook。
 
+### 2.3 插件选项系统（PluginOptions + 选项面板）
+
+插件的可调参数（开关 / 数值 / 枚举）集中在 `lua/plugin/PluginOptions.lua` 声明，**单一数据源**：
+选项定义（类型、默认值、取值域、显示名）只在这里写一份，面板渲染、插件读取、服务端同步都以它为准。
+
+- **声明**：`PluginOptions.Defs` = 每插件一条 `{ id, options = { { key, label, type, default, desc, ... } } }`。
+  三种类型：`switch`（布尔）/ `number`（按 `min`/`max` 夹取并吸附到 `step` 网格，`format` 控制显示）/ `enum`（取 `choices[i].value`）。
+- **取值**：`PluginOptions:Get(id, key)`（未配置或脏数据回退默认值）/ `Set`（归一化 → 落盘 → 广播）/
+  `Reset(id)`（恢复默认）/ `ApplyServer(id, key, value)`（应用服务端下发值，与本地生效值相同则跳过，
+  避免心跳反复写盘 / 回推）。默认值即当前硬编码行为，未改选项时插件行为不变。
+- **订阅**：插件在 `OnLoad` 里 `PluginOptions.Subscribe(fn)`、`OnUnload` 里 `Unsubscribe`；
+  面板改值或服务端下发后即时重应用（血量文本字号/颜色/偏移、属性面板透明度/停靠侧/拾取半径、战斗辅助时间轴开关/字号/按键），无需重进战斗。
+- **持久化**：仍是一份 `persistentDataPath/plugin_config.json`，结构
+  `{ enabled = {...}, options = { <插件id> = { <选项键> = 值 } } }`；经 `Plugin/PluginConfigFile` 的
+  `Read`/`Update` 做「读 → 改 → 写」，`enabled`（PluginManager）与 `options`（PluginOptions）互不覆盖
+  （两块各自整文件覆盖会互相清空，是真机复现过的缺陷）。
+- **游戏内调节**：`Plugin/OptionsPanelPlugin`（插件 id `options_panel`）提供右下角「选项」浮动按钮：
+  左侧插件页签，右侧按选项定义渲染控件（开关 / − 数值 + / < 枚举 >），底部「重置本插件」；
+  改动即时生效并 `PluginHeartbeat.PushOption` 同步服务端，面板重建时标题与容器保留。
+- **服务端同步**：心跳响应回传 `options`（`{ <插件id> = { <选项键> = 值 } }`），客户端 best-effort 应用；
+  服务端只做「插件 id 存在 + 键名合法 + 标量合法」校验，不重复维护选项定义域（定义域变更只改 `PluginOptions.lua`）。
+- **选项编码（路径式）**：`boolean → b0/b1`、`number → n<数字>`、`string → s<URL 编码字符串>`，
+  与 `PluginHeartbeat._EncodeOption` / `plugin.routes.ts#decodeOptionValue` 一一对应。
+
 ## 3. 启用流程（服务端）
 
 - admin 端点（需 `adminAuth` 令牌，默认 `doctorate-admin`）：
-  - `GET /admin/api/plugin`            → 插件列表（含启用状态）
+  - `GET /admin/api/plugin`            → 插件列表（含启用状态与选项取值 `options`）
   - `POST /admin/api/plugin/<id>/enable`  → 启用
   - `POST /admin/api/plugin/<id>/disable` → 停用
-- 配置持久化于 `data/plugin/config.json`（`{ "enabled": { "<id>": bool } }`）。
+- 客户端端点（Lua 侧经 `UISender.me:SendGet` 调用，见 `lua/plugin/PluginHeartbeat.lua`）：
+  - `GET /plugin/heartbeat`                 → 生效确认；响应含 `catalog`（启停态）与 `options`（选项取值）
+  - `GET /plugin/config/<id>/<0|1>`         → 客户端启停状态推送
+  - `GET /plugin/option/<id>/<key>/<编码值>` → 客户端选项取值推送（`b0`/`b1`/`n24`/`sorange`）
+- 配置持久化于 `data/plugin/config.json`（`{ "enabled": { "<id>": bool }, "options": { "<id>": { "<key>": 标量 } } }`）。
 - **单一数据源**：服务端插件目录由 `app/ops/plugin/plugin-catalog.ts` 从 `lua/plugin/PluginDefs.lua` 动态解析（无需在 TS 侧重复维护清单）；解析失败回退内置目录。新增插件只需改 `PluginDefs.lua` 并重打包即可，admin API 自动反映。
 - **启停状态双向同步**：游戏内面板切换插件 → 客户端持久化本地 `plugin_config.json`，并经 `PluginHeartbeat.PushState` 推送 `GET /plugin/config/<id>/<0|1>` 到服务端 `data/plugin/config.json`；管理端 enable/disable 写入同一配置源，客户端在心跳响应（best-effort 回调，真机需按 UISender 回调约定校准）中应用服务端状态。管理端与面板最终收敛到同一状态。
 - **加载容错**：单个插件 require/实例化/初始化失败不拖垮系统——`PluginManager` 记录错误，其余插件照常加载；游戏内面板会把失败插件标为红色 `ERR` 并显示错误摘要（`ON/OFF` 按钮禁用）。
@@ -217,6 +249,17 @@ pnpm run watch:lua -- --once  # 只重打包一次后退出（CI / 手动触发�
 - 登录后主界面出现右下角「插件」浮动按钮（面板在引导阶段延迟挂载：Canvas 就绪或首次进入战斗后出现），点击开合管理面板。
 - 面板列出各插件，点「切换」实时启停，并持久化到客户端 `persistentDataPath/plugin_config.json`，同时推送服务端 `data/plugin/config.json`。
 
+### 4.5 插件选项面板
+- 右下角「选项」浮动按钮（在「插件」按钮上方），点击开合选项面板；面板贴屏幕右侧，与左侧的插件面板错开。
+- 左侧三个页签（敌人血量显示 / 敌人属性面板 / 战斗辅助）切换，右侧渲染该插件的选项控件：
+  开关（已开启/已关闭）、数值（− / 值 / +，按 step 步进）、枚举（< / 当前项 / >）；
+  底部「重置本插件」一键恢复默认。
+- 改值即时生效：例如把「文本字号」加到 18 后，战斗中血条血量文本立即变大；
+  把「暂停/继续按键」改成 Z 后，战斗中按 Z 暂停/继续（默认 X）。
+- 服务端验证：改值后服务日志出现 `[PluginHeartbeat] 客户端插件选项同步: <id>.<key>=<值>`，
+  `data/plugin/config.json` 的 `options` 字段出现该取值；重启客户端后取值仍生效（本地配置 + 心跳回传双保险）。
+- 取值确已生效：`GET /admin/api/plugin` 响应里的 `options` 与游戏内面板显示一致。
+
 ## 5. 版本漂移校准
 
 `reference/arknights-2.7.61-csharp` 的 `.cs` 源文件已被 gitignore 移除（仅剩 csproj），方法签名以 `[uc]lua` hotfixer 与 Arknights-Assist JS 为准。若真机报错，按如下方式校准：
@@ -233,6 +276,12 @@ pnpm run watch:lua -- --once  # 只重打包一次后退出（CI / 手动触发�
 |---|---|
 | `pack-lua-bundle` 多资产打包/解包 | vitest |
 | `pack-lua-plugins` 产出结构 | vitest |
-| `PluginConfigService` 读写/幂等/回退 | vitest |
+| `PluginConfigService` 启停读写/幂等/回退 | vitest |
+| `PluginConfigService` 选项读写/校验/清洗/与启停互不覆盖 | vitest |
+| `PluginDefs.lua` 目录解析（含新增插件自动纳入） | vitest |
 | admin 插件端点 | vitest |
+| `/plugin/heartbeat`、`/plugin/config/:id/:value`、`/plugin/option/:id/:key/:value` 路由 | vitest |
+| Lua 侧选项归一化/持久化往返/订阅/Reset（`PluginOptions` + `PluginConfigFile` + `PluginManager`） | fengari 冒烟（一次性脚本 `tmp/lua-smoke.js`，40 断言；非 CI） |
+| 选项面板/插件面板控件逻辑（页签、加值、枚举循环、开关落盘、重置、开合、停用清理、标题保留） | fengari + UnityEngine.UI 桩冒烟（`tmp/lua-ui-smoke.js`，29 断言；非 CI） |
+| Lua 插件语法 | `luaparse` 逐文件解析（一次性；非 CI） |
 | Lua 插件实际加载/UI 显示/热更 | 真机手动（见 §4） |

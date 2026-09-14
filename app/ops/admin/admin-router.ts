@@ -1289,9 +1289,13 @@ router.get("/api/config", (_req: Request, res: Response) => {
   res.json(config);
 });
 
-/** 插件列表（含启用状态） */
+/** 插件列表（含启用状态与选项取值） */
 router.get("/api/plugin", async (_req: Request, res: Response) => {
-  res.json({ plugins: await pluginConfigService.getAll() });
+  const [plugins, options] = await Promise.all([
+    pluginConfigService.getAll(),
+    pluginConfigService.getAllOptions(),
+  ]);
+  res.json({ plugins, options });
 });
 
 /** 启用插件 */

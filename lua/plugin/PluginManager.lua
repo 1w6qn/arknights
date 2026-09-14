@@ -6,35 +6,9 @@
 --]]
 local PluginManager = Class("PluginManager")
 local eutil = CS.Torappu.Lua.Util
-
--- 顶层不再 require rapidjson / CS.System.IO.File：引导阶段可能不可用，
--- 若顶层 require 失败会拖垮整个插件系统。改为惰性获取 + pcall 兜底。
-local _jsonMod = nil
-local _fileType = nil
-
---[[
-  惰性获取 rapidjson 模块（失败缓存 false，避免每次重试）。
-  @return rapidjson 模块或 nil
---]]
-local function _Json()
-  if _jsonMod == nil then
-    local ok, mod = pcall(function() return require("rapidjson") end)
-    _jsonMod = ok and mod or false
-  end
-  return _jsonMod or nil
-end
-
---[[
-  惰性获取 System.IO.File 类型（失败缓存 false）。
-  @return File 类型或 nil
---]]
-local function _File()
-  if _fileType == nil then
-    local ok, f = pcall(function() return CS.System.IO.File end)
-    _fileType = ok and f or false
-  end
-  return _fileType or nil
-end
+-- 配置文件（plugin_config.json）读写收敛在 Plugin/PluginConfigFile：
+-- 启停态与本插件系统之外写入的 options 字段必须互不覆盖（读 → 改 → 写）。
+local PluginConfigFile = require("Plugin/PluginConfigFile")
 
 -- 单例
 PluginManager.me = nil
@@ -46,19 +20,15 @@ function PluginManager:ctor()
   self._plugins = {}        -- [id] = BasePlugin 实例（加载成功）
   self._defs = {}           -- [id] = 定义表
   self._errors = {}         -- [id] = 错误信息（加载失败）
-  self._configPath = nil    -- 持久化文件路径（懒计算）
   self._initialized = false
 end
 
 --[[
-  计算并返回配置持久化路径。
+  返回配置持久化路径（经 PluginConfigFile 计算并缓存）。
   @return 配置文件绝对路径
 --]]
 function PluginManager:_GetConfigPath()
-  if self._configPath == nil then
-    self._configPath = CS.UnityEngine.Application.persistentDataPath .. "/plugin_config.json"
-  end
-  return self._configPath
+  return PluginConfigFile.Path()
 end
 
 --[[
@@ -66,55 +36,29 @@ end
   @return table：[id] = bool
 --]]
 function PluginManager:_ReadConfig()
+  local cfg = PluginConfigFile.Read()
+  local stored = cfg.enabled
   local enabled = {}
   for _, def in ipairs(PluginDefs) do
-    enabled[def.id] = true -- 默认全部启用
-  end
-  local path = self:_GetConfigPath()
-  local file = _File()
-  if file ~= nil then
-    local okPath, exists = pcall(function() return file.Exists(path) end)
-    if okPath and exists then
-      local okRead, text = pcall(function() return file.ReadAllText(path) end)
-      if okRead then
-        local json = _Json()
-        if json ~= nil then
-          local okParse, cfg = pcall(function() return json.decode(text) end)
-          if okParse and type(cfg) == "table" and type(cfg.enabled) == "table" then
-            for id, v in pairs(cfg.enabled) do
-              enabled[id] = (v == true)
-            end
-          end
-        end
-      end
-    end
+    local value = nil
+    if type(stored) == "table" then value = stored[def.id] end
+    enabled[def.id] = (value == nil) and true or (value == true) -- 缺省全部启用
   end
   return enabled
 end
 
 --[[
   把启用态配置写入磁盘（幂等；依赖不可用或写入失败仅静默，不阻断业务）。
-  全量持久化：先并入既有配置（含加载失败插件的历史状态），再覆盖当前插件状态，
-  避免加载失败插件的状态被误重置。
+  经 PluginConfigFile.Update 读 → 改 → 写：既有配置（含加载失败插件的历史状态、
+  以及 PluginOptions 负责的 options 字段）原样保留，只覆盖当前插件的启用态。
 --]]
 function PluginManager:_SaveConfig()
-  local payload = { enabled = {} }
-  -- 并入既有配置（含加载失败插件的历史启停状态）
-  local prev = self:_ReadConfig()
-  for id, v in pairs(prev) do
-    payload.enabled[id] = v
-  end
-  -- 覆盖当前已加载插件的实际状态
-  for defId, plugin in pairs(self._plugins) do
-    payload.enabled[defId] = plugin.enabled
-  end
-  local json = _Json()
-  if json == nil then return end
-  local ok, text = pcall(function() return json.encode(payload) end)
-  if not ok then return end
-  xpcall(function()
-    CS.Torappu.FileUtil.WriteToFile(text, self:_GetConfigPath(), false)
-  end, debug.traceback)
+  PluginConfigFile.Update(function(cfg)
+    if type(cfg.enabled) ~= "table" then cfg.enabled = {} end
+    for defId, plugin in pairs(self._plugins) do
+      cfg.enabled[defId] = plugin.enabled
+    end
+  end)
 end
 
 --[[
