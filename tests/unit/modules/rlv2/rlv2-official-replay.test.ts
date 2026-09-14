@@ -119,7 +119,7 @@ vi.mock("@utils/crypt", () => ({
   decryptBattleData: vi.fn().mockResolvedValue({ completeState: 2, finalHp: 8, isPerfect: 1 }),
 }));
 
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { mockPlayerData, asModel } from "../../../helpers";
 import type { PlayerRoguelikeV2 } from "@game/modules/roguelike/rlv2-model";
 import type { RoguelikeV2Manager } from "@game/modules/roguelike/logic";

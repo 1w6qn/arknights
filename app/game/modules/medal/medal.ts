@@ -25,7 +25,7 @@ import excel from "@excel/excel";
 import { ItemBundle } from "@excel/excel";
 import { now } from "@utils/time";
 import moment from "moment";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import type { EventMap } from "../../kernel/events";
 import type { PassStageStats } from "../../kernel/events/medal";
 import { TypedEventEmitter } from "../../kernel/events/runtime";

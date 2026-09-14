@@ -7,7 +7,7 @@ export {
   pluginConfigService,
   __resetPluginConfigService,
   type PluginDefinition,
-} from "./PluginConfigService";
+} from "./plugin-config-service";
 export { loadPluginCatalog, parsePluginDefs, FALLBACK_CATALOG, type PluginCatalogEntry } from "./plugin-catalog";
 export {
   ensureLuaModBuilt,

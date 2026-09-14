@@ -8,7 +8,7 @@ vi.mock("express-http-context2", () => ({
 }));
 
 // mock accountManager（PlayerDataManager 构造依赖）
-vi.mock("@game/modules/account/AccountManager", () => ({
+vi.mock("@game/modules/account/account-manager", () => ({
   accountManager: {
     init: vi.fn().mockResolvedValue(undefined),
     getBattleInfo: vi.fn().mockResolvedValue({}),
@@ -65,7 +65,7 @@ vi.mock("@excel/excel", () => ({
 import type { Response } from "express";
 import type { JsonValue } from "@excel/json-value";
 import httpContext from "express-http-context2";
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { mockPlayerData } from "../../helpers";
 import router from "@game/modules/roguelike/routes";
 

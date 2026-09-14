@@ -427,3 +427,8 @@ export const startInfoShareSchema = z.object({});
 export const visitBuildingSchema = z.object({
   friendId: z.string(),
 });
+/** 查看他人留言板（CS: BuildingPayloadGetMessageBoardContentRequest { uid?, friendId? }） */
+export const getMessageBoardContentSchema = z.object({
+  uid: z.string().optional(),
+  friendId: z.string().optional(),
+});

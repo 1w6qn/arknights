@@ -14,7 +14,7 @@
  * - 六维换算为攻略明文（进攻×20≈攻击、守备×2≈防御、耐久×100≈HP、法抗×0.5、攻速=间隔倒数×10）
  */
 import fs from "node:fs";
-import { PlayerDataManager } from "../../../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../../../kernel/player-data-manager";
 import { ArkdexCreature, ItemBundle } from "@excel/excel";
 import excel from "@excel/excel";
 import { isJsonArray, isJsonObject, type JsonValue } from "@excel/json-value";

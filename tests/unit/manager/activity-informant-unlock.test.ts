@@ -17,7 +17,7 @@ import type { ItemBundle, ItemTable } from "@excel/excel";
 import type { CharacterData } from "@excel/types_excel_gen";
 import type { PlayerActivity } from "@excel/types-playerdata";
 import type { PlayerDataModel } from "@game/kernel/playerdata";
-import type { UserConfig } from "@game/modules/account/AccountManager";
+import type { UserConfig } from "@game/modules/account/account-manager";
 import type { MockSeed } from "../../helpers";
 
 vi.mock("@excel/excel", () => {
@@ -150,11 +150,11 @@ vi.mock("@excel/excel", () => {
   };
 });
 
-vi.mock("@game/kernel/PlayerDataManager", () => ({
+vi.mock("@game/kernel/player-data-manager", () => ({
   PlayerDataManager: vi.fn(),
 }));
 
-vi.mock("@game/modules/account/AccountManager", () => {
+vi.mock("@game/modules/account/account-manager", () => {
   const mockAccountConfigs: Record<string, MockAccountBattleConfig> = {
     "10000": {
       battle: {
@@ -205,7 +205,7 @@ import { asPlayerManager, mockPlayerData } from "../../helpers";
 import { BattleManager } from "@game/modules/battle/battle";
 import { unlockActivity } from "@game/modules/activities/shared/unlockActivity";
 import { syncAct44SideEntry } from "@game/modules/activities/act44side/informant";
-import { accountManager } from "@game/modules/account/AccountManager";
+import { accountManager } from "@game/modules/account/account-manager";
 
 /** 关卡窄视图（工厂 StageTable.stages 只声明用例读到的窗口/解锁字段） */
 interface StageView {

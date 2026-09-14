@@ -37,7 +37,7 @@ const configMock = vi.hoisted((): { default: AuthConfigMock } => ({
 vi.mock("@core/config/index", () => configMock);
 
 // mock accountManager：提供 configs（login/register 用）+ 基础方法
-vi.mock("@game/modules/account/AccountManager", () => {
+vi.mock("@game/modules/account/account-manager", () => {
   const configs = {
     "10000": {
       uid: "10000",
@@ -66,7 +66,7 @@ vi.mock("@utils/file", () => ({
 vi.mock("@utils/logger", () => ({ logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } }));
 
 import authRouter from "@core/auth/auth";
-import { accountManager } from "@game/modules/account/AccountManager";
+import { accountManager } from "@game/modules/account/account-manager";
 import { registerAccountAuthPort } from "@core/auth/account-port";
 // 账号端口注册：core/kernel 不再直连本模块（R1/R2），mock 的 accountManager 需显式注册进端口注册表
 registerAccountAuthPort(accountManager);

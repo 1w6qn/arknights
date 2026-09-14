@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { PlayerDataModel } from "@game/kernel/playerdata";
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { mockPlayerData, type MockSeed } from "../../helpers";
 
 /**

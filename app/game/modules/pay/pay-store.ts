@@ -8,7 +8,7 @@
  */
 import fs from "node:fs";
 import { ItemBundle } from "@excel/excel";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { now } from "@utils/time";
 import { readJsonSync } from "@utils/file";
 

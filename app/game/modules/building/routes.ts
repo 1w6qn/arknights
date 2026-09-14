@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { getPlayer, getPlayerOptional } from "../../kernel/http/request-context";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import {
   AccelerateOrderRequest,
   AccelerateOrderResponse,
@@ -130,7 +130,7 @@ import {
   TakeClueFromBoardRequest,
   TakeClueFromBoardResponse,
 } from "./models";
-import * as B from "./schemas";
+import * as B from "./building.schema";
 import { validateBody } from "@core/http/validate-body";
 
 const router = Router();
@@ -204,7 +204,7 @@ router.post("/setBuildingAssist", validateBody(B.setBuildingAssistSchema), async
 // ==================== 房间管理 ====================
 
 /** 建造房间 */
-router.post("/buildRoom", async (req, res) => {
+router.post("/buildRoom", validateBody(B.buildRoomSchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as BuildRoomRequest;
   await player.building.buildRoom(body);
@@ -298,7 +298,7 @@ router.post("/gainIntimacy", validateBody(B.gainIntimacySchema), async (req, res
 });
 
 /** 获得全部信赖（简化实现） */
-router.post("/gainAllIntimacy", async (req, res) => {
+router.post("/gainAllIntimacy", validateBody(B.gainAllIntimacySchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as GainAllIntimacyRequest;
   // 修复：响应含 normal/assist 计数（CS BuildingGainAllIntimacyResponse）
@@ -319,7 +319,7 @@ router.post("/gainAssistIntimacy", validateBody(B.gainAssistIntimacySchema), asy
 });
 
 /** 确认私人宿舍信赖 */
-router.post("/confirmPrivateDormIntimacy", async (req, res) => {
+router.post("/confirmPrivateDormIntimacy", validateBody(B.confirmPrivateDormIntimacySchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as ConfirmPrivateDormIntimacyRequest;
   await player.building.confirmPrivateDormIntimacy(body);
@@ -337,7 +337,7 @@ router.post("/accelerateOrder", validateBody(B.accelerateOrderSchema), async (re
 });
 
 /** 加速方案（简化实现） */
-router.post("/accelerateSolution", async (req, res) => {
+router.post("/accelerateSolution", validateBody(B.accelerateSolutionSchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as AccelerateSolutionRequest;
   await player.building.accelerateSolution(body);
@@ -353,7 +353,7 @@ router.post("/deliveryOrder", validateBody(B.deliveryOrderSchema), async (req, r
 });
 
 /** 批量完成订单 */
-router.post("/deliveryBatchOrder", async (req, res) => {
+router.post("/deliveryBatchOrder", validateBody(B.deliveryBatchOrderSchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as DeliveryBatchOrderRequest;
   // 修复：官方字段为 slotList（结算每个贸易站全部库存订单），响应 delivered 对齐 CS
@@ -365,7 +365,7 @@ router.post("/deliveryBatchOrder", async (req, res) => {
 });
 
 /** 删除订单（简化实现） */
-router.post("/deleteOrder", async (req, res) => {
+router.post("/deleteOrder", validateBody(B.deleteOrderSchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as DeleteOrderRequest;
   await player.building.deleteOrder(body);
@@ -385,7 +385,7 @@ router.post("/settleManufacture", validateBody(B.settleManufactureSchema), async
 });
 
 /** 贸易站结算（简化实现） */
-router.post("/settleSale", async (req, res) => {
+router.post("/settleSale", validateBody(B.settleSaleSchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as SettleSaleRequest;
   await player.building.settleSale(body);
@@ -393,7 +393,7 @@ router.post("/settleSale", async (req, res) => {
 });
 
 /** 更换制造方案（收获后一键补货入口） */
-router.post("/changeManufactureSolution", async (req, res) => {
+router.post("/changeManufactureSolution", validateBody(B.changeManufactureSolutionSchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as ChangeManufactureSolutionRequest;
   const { change } = await player.building.changeManufactureSolution(body);
@@ -412,7 +412,7 @@ router.post("/changeSaleSolution", validateBody(B.changeSaleSolutionSchema), asy
 });
 
 /** 更换自定义方案 */
-router.post("/changeDiySolution", async (req, res) => {
+router.post("/changeDiySolution", validateBody(B.changeDiySolutionSchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as ChangeDiySolutionRequest;
   await player.building.changeDiySolution(body);
@@ -465,7 +465,7 @@ router.post("/sendClueAuto", validateBody(B.sendClueAutoSchema), async (req, res
 });
 
 /** 接收线索到库存（简化实现） */
-router.post("/receiveClueToStock", async (req, res) => {
+router.post("/receiveClueToStock", validateBody(B.receiveClueToStockSchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as ReceiveClueToStockRequest;
   await player.building.receiveClueToStock(body);
@@ -527,7 +527,7 @@ router.post("/getClueFriendList", validateBody(B.getClueFriendListSchema), async
 });
 
 /** 获取会客室情报分享奖励（访客列表） */
-router.post("/getInfoShareReward", async (req, res) => {
+router.post("/getInfoShareReward", validateBody(B.getInfoShareRewardSchema), async (req, res) => {
   const player = getPlayer();
   req.body as GetInfoShareRewardRequest;
   const result = await player.building.getInfoShareReward();
@@ -599,7 +599,7 @@ router.post("/changePresetName", validateBody(B.changePresetNameSchema), async (
 });
 
 /** 保存自定义预设方案（简化实现） */
-router.post("/saveDiyPresetSolution", async (req, res) => {
+router.post("/saveDiyPresetSolution", validateBody(B.saveDiyPresetSolutionSchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as SaveDiyPresetSolutionRequest;
   await player.building.saveDiyPresetSolution(body);
@@ -649,7 +649,7 @@ router.post("/cleanRoomSlot", validateBody(B.cleanRoomSlotSchema), async (req, r
 });
 
 /** 从留言板取回线索（官方路由名：BuildingMeetingClueTakeClueFromBoardRequest → /takeClueFromBoard） */
-router.post("/takeClueFromBoard", async (req, res) => {
+router.post("/takeClueFromBoard", validateBody(B.takeClueFromBoardSchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as TakeClueFromBoardRequest;
   await player.building.takeClueFromBoard(body);
@@ -701,7 +701,7 @@ router.post("/getRecentVisitors", validateBody(B.getRecentVisitorsSchema), async
 });
 
 /** 获取留言板内容（会客室留言板；CS BuildingPayloadGetMessageBoardContentResponse） */
-router.post("/getMessageBoardContent", async (req, res) => {
+router.post("/getMessageBoardContent", validateBody(B.getMessageBoardContentSchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as GetOthersMessageBoardContentRequest;
   const result = await player.building.getMessageBoardContent(body);
@@ -723,7 +723,7 @@ router.post("/getOthersMessageBoardContent", validateBody(B.getOthersMessageBoar
 });
 
 /** 获取缩略图 URL（简化实现：私服无云端缩略图，返回空列表） */
-router.post("/getThumbnailUrl", async (req, res) => {
+router.post("/getThumbnailUrl", validateBody(B.getThumbnailUrlSchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as GetThumbnailUrlRequest;
   const result = await player.building.getThumbnailUrl(body);
@@ -734,7 +734,7 @@ router.post("/getThumbnailUrl", async (req, res) => {
 });
 
 /** 发送表情（简化实现） */
-router.post("/sendEmoji", async (req, res) => {
+router.post("/sendEmoji", validateBody(B.sendEmojiSchema), async (req, res) => {
   const player = getPlayer();
   const body = req.body as SendEmojiRequest;
   await player.building.sendEmoji(body);

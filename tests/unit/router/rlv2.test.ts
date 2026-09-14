@@ -5,7 +5,7 @@ vi.mock("express-http-context2", () => ({
 }));
 
 import type { Response } from "express";
-import rlv2Router from "@game/modules/roguelike/handler";
+import rlv2Router from "@game/modules/roguelike/rlv2.routes";
 
 /** rlv2 请求体视图（本文件各端点字段合集） */
 interface Rlv2Body {

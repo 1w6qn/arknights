@@ -1,9 +1,13 @@
 /**
  * 契约先行守卫（schema-first）
  *
- * 强制「新路由先落 contract」：modules 各模块 routes 与 activities 各族 router 下所有 POST 路由
+ * 强制「新路由先落 contract」：modules 各模块与 activities 各族的路由文件下所有 POST 路由
  * 必须经 validateBody 校验（契约层 modules/<模块>/*.schema.ts 定义请求形状）。
- * GET 路由（无 body）豁免；plugin-heartbeat 为内部 GET 端点豁免。
+ * GET 路由（无 body）豁免；multipart 上传端点（无 JSON body）豁免。
+ *
+ * 2026-09-14 命名统一：路由载体只剩 `routes.ts` / `*.routes.ts`（原 `handler.ts`
+ * 与 `router.ts` 已改名），因此 building/gacha 等文件**自动进入扫描面**——它们此前
+ * 因命名不在册而长期逃过校验，本次一并补齐 validateBody。
  */
 import { describe, it, expect } from "vitest";
 import path from "node:path";
@@ -14,10 +18,8 @@ const APP_ROOT = path.join(__dirname, "../../../app");
 describe("契约先行守卫", () => {
   it("router 层 POST 路由必须经 validateBody 校验（契约先行）", () => {
     const offenders: string[] = [];
-    // 路由面 = 各模块 routes.ts / 次路由 *.routes.ts / plugin-heartbeat.ts（原 domain/router 的对应物）。
-    // 注意：building/gacha 等 handler.ts 在旧守卫（仅扫 domain/router + domain/activity）中不在册，
-    // 维持 HEAD 等价范围不纳入；是否扩展到 handler 面留待 T4 边界守卫裁决。
-    const ROUTER_FACE = /(?:^|[\\/])routes\.ts$|(?:^|[\\/])[\w-]+\.routes\.ts$|(?:^|[\\/])plugin-heartbeat\.ts$/;
+    // 路由面 = 各模块 `routes.ts` / 次路由 `<域>.routes.ts` / activities 族（整目录）。
+    const ROUTER_FACE = /(?:^|[\\/])routes\.ts$|(?:^|[\\/])[\w-]+\.routes\.ts$/;
     const MODULES_DIR = path.join(APP_ROOT, "game/modules");
     const ACTIVITIES_DIR = path.join(MODULES_DIR, "activities");
     // 原实现先扫一遍 modules 取 routes 面、再整扫一遍 activities（activities 是 modules 的子目录，

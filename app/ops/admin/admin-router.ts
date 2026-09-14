@@ -6,7 +6,7 @@
  */
 import { Router, Request, Response } from "express";
 import path from "path";
-import { adminService } from "./AdminService";
+import { adminService } from "./admin-service";
 import { adminAuth } from "./admin-auth";
 import { ADMIN_ENDPOINTS } from "./api-spec";
 import { buildOpenApi } from "./openapi";
@@ -73,7 +73,7 @@ import {
   unlockStageSchema,
   uploadPixelArtSchema,
   setUserDisabledSchema,
-} from "./schemas";
+} from "./admin.schema";
 
 const router = Router();
 

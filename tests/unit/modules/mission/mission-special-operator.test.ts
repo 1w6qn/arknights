@@ -244,7 +244,7 @@ const excelMock = vi.hoisted((): ExcelMockView => {
 
 vi.mock("@excel/excel", () => ({ default: excelMock }));
 
-vi.mock("@game/kernel/PlayerDataManager", () => ({
+vi.mock("@game/kernel/player-data-manager", () => ({
   PlayerDataManager: vi.fn(),
 }));
 

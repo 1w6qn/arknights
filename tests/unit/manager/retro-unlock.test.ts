@@ -24,7 +24,7 @@ const excelMock = mockExcelWith({
 });
 
 import type { PlayerDataModel } from "@game/kernel/playerdata";
-import { RetroManager } from "@game/modules/retro/RetroManager";
+import { RetroManager } from "@game/modules/retro/retro-manager";
 import {
   asPlayerManager,
   mockExcelWith,

@@ -10,8 +10,8 @@
  */
 import { buildMaxedSkills, buildMaxedEquip } from "@ops/admin/maxout";
 import { GACHA_RULE_TYPE } from "@game/modules/gacha/gacha";
-import { accountManager } from "@game/modules/account/AccountManager";
-import { mailManager } from "@game/modules/mail/MailManager";
+import { accountManager } from "@game/modules/account/account-manager";
+import { mailManager } from "@game/modules/mail/mail-manager";
 import { unlockActivity, forcedActivityIds } from "@game/modules/activities/shared/unlockActivity";
 import { listCrisisSeasons } from "@game/modules/crisis/crisis-seasons";
 import { loadOrders, markPaid } from "@game/modules/pay/pay-store";

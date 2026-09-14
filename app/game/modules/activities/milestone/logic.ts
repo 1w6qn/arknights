@@ -143,7 +143,7 @@ import {
 } from "../shared/activity";
 import { validateBody } from "@core/http/validate-body";
 
-import { PlayerDataManager } from "../../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../../kernel/player-data-manager";
 import type { PlayerTemplateShop } from "../../../kernel/playerdata";
 import { activityDetailJson, asShape } from "../shared/activity-json";
 

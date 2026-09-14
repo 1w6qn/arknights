@@ -13,23 +13,23 @@ import { InventoryManager } from "./inventory";
 import { GainItemPipeline } from "./inventory-pipeline";
 import { TroopManager } from "../modules/character/troop";
 import { DungeonManager } from "../modules/dungeon/dungeon";
-import { HomeManager } from "../modules/home/HomeManager";
+import { HomeManager } from "../modules/home/home-manager";
 import { StatusManager } from "../modules/user/status";
 import { CheckInManager } from "../modules/checkin/checkin";
-import { StoryreviewManager } from "../modules/storyreview/StoryreviewManager";
+import { StoryreviewManager } from "../modules/storyreview/storyreview-manager";
 import { MissionManager } from "../modules/mission/logic";
 import { ShopManager } from "../modules/shop/logic";
 import { RecruitManager } from "../modules/gacha/recruit";
 import { RoguelikeV2Manager } from "../modules/roguelike/logic";
 import { BattleManager } from "../modules/battle/battle";
 import { GachaManager } from "../modules/gacha/logic";
-import { SocialManager } from "../modules/social/SocialManager";
+import { SocialManager } from "../modules/social/social-manager";
 import { DexNavManager } from "../modules/dexnav/dexnav";
 import { MedalManager } from "../modules/medal/medal";
 import { BuildingManager } from "../modules/building/logic";
 import { FriendDataWithNameCard, FriendMedalBoard } from "./social-model";
 import { OpenServerManager } from "../modules/activities/checkin/openServer";
-import { PlayerStatus } from "./PlayerStatus";
+import { PlayerStatus } from "./player-status";
 import {
   composePlayerChildModules,
   type PlayerChildModules,
@@ -43,11 +43,11 @@ import { PlayerDataDelta, RoguelikePushMessage } from "./http/common";
 import { Draft } from "mutative";
 import { logger } from "@utils/logger";
 import { TypedEventEmitter } from "./events/runtime";
-import { CharRotationManager } from "../modules/character/CharRotationManager";
-import { RetroManager } from "../modules/retro/RetroManager";
+import { CharRotationManager } from "../modules/character/char-rotation-manager";
+import { RetroManager } from "../modules/retro/retro-manager";
 import { CharManager } from "../modules/character/char";
 import { EquipmentMissionManager } from "../modules/equipmentMission/equipmentMission";
-import { AprilFoolManager } from "../modules/aprilFool/AprilFoolManager";
+import { AprilFoolManager } from "../modules/aprilFool/april-fool-manager";
 import { BossRushManager } from "../modules/activities/bossRush/bossrush";
 import { AutoChessManager } from "../modules/autochess/autochess";
 

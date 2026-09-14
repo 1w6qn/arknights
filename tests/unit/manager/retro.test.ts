@@ -119,7 +119,7 @@ const excelMock = mockExcelWith({
       },
 });
 
-vi.mock("@game/kernel/PlayerDataManager", () => ({
+vi.mock("@game/kernel/player-data-manager", () => ({
   PlayerDataManager: vi.fn(),
 }));
 
@@ -136,7 +136,7 @@ import {
   mockPlayerData,
   mockTypedEventEmitter,
 } from "../../helpers";
-import { RetroManager } from "@game/modules/retro/RetroManager";
+import { RetroManager } from "@game/modules/retro/retro-manager";
 
 /**
  * RetroManager 单元测试

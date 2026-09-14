@@ -4,7 +4,7 @@ import { mockGainItem } from "../../helpers";
 vi.mock("express-http-context2", () => ({
   default: { get: vi.fn(), set: vi.fn() },
 }));
-vi.mock("@game/modules/mail/MailManager", () => ({
+vi.mock("@game/modules/mail/mail-manager", () => ({
   MailManager: vi.fn(),
   mailManager: {
     listMailbox: vi.fn().mockResolvedValue([{ mailId: 1 }]),
@@ -17,7 +17,7 @@ vi.mock("@game/modules/mail/MailManager", () => ({
 
 import mailRouter from "@game/modules/mail/routes";
 import httpContext from "express-http-context2";
-import { mailManager } from "@game/modules/mail/MailManager";
+import { mailManager } from "@game/modules/mail/mail-manager";
 
 import type { Response } from "express";
 /** 路由测试请求体视图（本文件各端点字段合集） */

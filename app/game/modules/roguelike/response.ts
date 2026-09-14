@@ -4,11 +4,11 @@
  * 官方抓包确认的响应节过滤规则与黑流树海 zone 索引映射集中于此；
  * handler 只保留路由注册（薄壳）。
  */
-import type { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import type { PlayerDataManager } from "../../kernel/player-data-manager";
 import type { PlayerRoguelikeV2 } from "./rlv2";
 import type { RoguelikePushMessage } from "../../kernel/http/common";
 import { isBlackstream } from "./theme-rules";
-import * as ReqSchema from "./schemas";
+import * as ReqSchema from "./rlv2.schema";
 import { logger } from "@utils/logger";
 
 /** 响应运行时校验开关（环境变量 RLV2_RESPONSE_SCHEMA，默认开启；设 "0"/"false" 关闭） */

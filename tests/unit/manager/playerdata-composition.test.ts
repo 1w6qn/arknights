@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import type { PlayerDataModel } from "@game/kernel/playerdata";
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import {
   asChildModules,
   mockPlayerData,

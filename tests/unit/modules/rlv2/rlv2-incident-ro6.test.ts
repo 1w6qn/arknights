@@ -217,7 +217,7 @@ const excelMock = vi.hoisted(() => ({
 
 vi.mock("@excel/excel", () => ({ default: excelMock }));
 
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import type {
   PlayerRoguelikePendingEvent,
   PlayerRoguelikeV2,

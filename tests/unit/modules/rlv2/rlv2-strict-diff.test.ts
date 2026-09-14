@@ -11,7 +11,7 @@ vi.mock("@utils/crypt", () => ({
   decryptBattleData: vi.fn().mockResolvedValue({ completeState: 2, finalHp: 8, isPerfect: 1 }),
 }));
 
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { mockPlayerData, asModel } from "../../../helpers";
 import excel from "@excel/excel";
 import { isJsonArray, isJsonObject, type JsonValue } from "@excel/json-value";

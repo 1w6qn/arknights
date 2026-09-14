@@ -9,7 +9,7 @@
  * 后续若需将门面下沉为接口或替换上下文存储，仅需改本文件一处。
  */
 import httpContext from "express-http-context2";
-import type { PlayerDataManager } from "../PlayerDataManager";
+import type { PlayerDataManager } from "../player-data-manager";
 
 /** 上下文存储键（魔数字符串收拢于此） */
 const PLAYER_KEY = "playerData";

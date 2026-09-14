@@ -31,8 +31,8 @@ vi.mock("@utils/file", async (importOriginal) => {
   return { ...actual, readJson: vi.fn(actual.readJson) };
 });
 
-import { accountManager, generateSecret, type UserConfig } from "@game/modules/account/AccountManager";
-import type { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { accountManager, generateSecret, type UserConfig } from "@game/modules/account/account-manager";
+import type { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { type MockSeed } from "../../helpers";
 import config from "@core/config/index";
 import { readJson } from "@utils/file";

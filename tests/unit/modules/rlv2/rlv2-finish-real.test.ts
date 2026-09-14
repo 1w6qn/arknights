@@ -5,7 +5,7 @@ vi.mock("@utils/crypt", () => ({
   decryptBattleData: vi.fn().mockResolvedValue({ completeState: 1, finalHp: 8, isPerfect: 1 }),
 }));
 
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { rlv2Response } from "@game/modules/roguelike/response";
 import { mockPlayerData, asModel } from "../../../helpers";
 import type { PlayerRoguelikeV2 } from "@game/modules/roguelike/rlv2-model";

@@ -9,7 +9,7 @@ import { writeFile as writeFileAsync } from "fs/promises";
 import * as path from "path";
 import { openDatabase } from "@core/db/database";
 import { UserRepository } from "@core/db/user-repo";
-import type { UserConfig } from "@game/modules/account/AccountManager";
+import type { UserConfig } from "@game/modules/account/account-manager";
 import type { OfficialPlayerData } from "./official-api";
 
 const DATA_USER_DIR = path.join(__dirname, "../data/user");

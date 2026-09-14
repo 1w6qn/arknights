@@ -117,7 +117,7 @@ const excelMock = vi.hoisted(() => ({
 }));
 vi.mock("@excel/excel", () => excelMock);
 
-vi.mock("@game/kernel/PlayerDataManager", () => ({
+vi.mock("@game/kernel/player-data-manager", () => ({
   PlayerDataManager: vi.fn(),
 }));
 
@@ -136,7 +136,7 @@ import {
   type MockUpdateRecipe,
 } from "../../helpers";
 import { BuildingManager } from "@game/modules/building/logic";
-import { accountManager } from "@game/modules/account/AccountManager";
+import { accountManager } from "@game/modules/account/account-manager";
 import type { MeetingRoom, StatusExt, RoomTimestamp } from "@game/modules/building/logic/ext-types";
 import type { EventMap } from "@game/kernel/events";
 import type {

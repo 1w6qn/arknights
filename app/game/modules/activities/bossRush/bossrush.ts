@@ -13,7 +13,7 @@
  * excel 数据源：excel.ActivityTable.basicInfo[actId].type === "BOSS_RUSH"，
  * 活动详情位于 excel.ActivityTable.activity.bossRush[actId]（ActivityBossRushData）。
  */
-import { PlayerDataManager } from "../../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../../kernel/player-data-manager";
 import { TypedEventEmitter } from "../../../kernel/events/runtime";
 import type { Draft } from "mutative";
 import type { PlayerDataModel } from "../../../kernel/playerdata";

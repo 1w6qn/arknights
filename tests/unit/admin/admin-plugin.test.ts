@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import { asModel } from "../../helpers";
 import type { PluginCatalogEntry } from "@ops/plugin";
 
-vi.mock("@ops/admin/AdminService", () => ({
+vi.mock("@ops/admin/admin-service", () => ({
   adminService: {},
 }));
 vi.mock("@ops/admin/admin-auth", () => ({

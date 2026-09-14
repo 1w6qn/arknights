@@ -5,7 +5,7 @@ vi.mock("@utils/crypt", () => ({
 }));
 vi.mock("@utils/time", () => ({ now: () => 1786434411 }));
 
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { mockPlayerData, asModel } from "../../../helpers";
 import { isJsonArray, isJsonObject, type JsonValue } from "@excel/json-value";
 import type {

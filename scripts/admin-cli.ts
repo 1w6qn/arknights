@@ -77,8 +77,8 @@ import { isJsonObject } from "@excel/json-value";
 import type { JsonObject, JsonValue } from "@excel/json-value";
 import { isOfficialAction } from "@ops/admin/official-ops";
 import type { OfficialAction } from "@ops/admin/official-ops";
-import { accountManager } from "@game/modules/account/AccountManager";
-import { adminService } from "@ops/admin/AdminService";
+import { accountManager } from "@game/modules/account/account-manager";
+import { adminService } from "@ops/admin/admin-service";
 import config from "@core/config/index";
 import { captureManager } from "@capture/capture-manager";
 import { logService } from "@logs/log-service";
@@ -1446,7 +1446,7 @@ async function runGacha(args: string[], flags: { [key: string]: string }): Promi
  * @param args - [uid?]（缺省 singleUid）
  */
 async function runMaxAccount(args: string[]): Promise<void> {
-  const { accountManager } = await import("@game/modules/account/AccountManager");
+  const { accountManager } = await import("@game/modules/account/account-manager");
   const config = (await import("@core/config/index")).default;
   const uid = args[0] || config.singleUid || "1";
   const player = await accountManager.getPlayerData(uid);

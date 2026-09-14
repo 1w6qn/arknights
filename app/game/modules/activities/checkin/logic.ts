@@ -142,7 +142,7 @@ import {
   ActivityStubResponse,
 } from "../shared/activity";
 
-import { PlayerDataManager } from "../../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../../kernel/player-data-manager";
 import { activityDetailJson, asShape } from "../shared/activity-json";
 
 /* ===== excel 活动详情消费面（未建模 JSON 的局部视图，仅读取官方表） ===== */

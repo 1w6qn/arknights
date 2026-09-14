@@ -22,7 +22,7 @@ import { Draft } from "mutative";
 import { logger } from "@utils/logger";
 import { BadRequestError } from "@core/http/errors";
 import type { ExcelData } from "../../kernel/excel-port";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { PlayerDataModel, PlayerConsumableItem } from "../../kernel/playerdata";
 
 /** 保险库存取参数（库存物品：按数量计库存） */

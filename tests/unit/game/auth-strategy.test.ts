@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Request } from "express";
 
 // 策略模块经 @game/modules/account/AccountManager 访问 accountManager —— mock 以便隔离验证
-vi.mock("@game/modules/account/AccountManager", () => ({
+vi.mock("@game/modules/account/account-manager", () => ({
   accountManager: { getUidByToken: vi.fn(), registerUser: vi.fn() },
 }));
 
-import { accountManager } from "@game/modules/account/AccountManager";
+import { accountManager } from "@game/modules/account/account-manager";
 import { registerAccountAuthPort } from "@core/auth/account-port";
 // 账号端口注册：core/kernel 不再直连本模块（R1/R2），mock 的 accountManager 需显式注册进端口注册表
 registerAccountAuthPort(accountManager);

@@ -22,7 +22,7 @@ const GAME_ROOT = path.join(APP_ROOT, "game");
 const BASELINE_FILE = path.join(__dirname, "excel-singleton-baseline.json");
 
 /** 组合根：端口默认值绑定点，允许直连单例（唯一豁免） */
-export const COMPOSITION_ROOT = "app/game/kernel/PlayerDataManager.ts";
+export const COMPOSITION_ROOT = "app/game/kernel/player-data-manager.ts";
 
 /** excel 数据层自身：读写盘实现，豁免 */
 export const EXCEL_LAYER_PREFIX = "app/game/excel/";
@@ -142,7 +142,7 @@ describe("excel 数据端口守卫（单例直连棘轮）", () => {
     expect(portSrc).toMatch(/export type ExcelData = Pick<Excel,/);
 
     const pdmSrc = fs.readFileSync(
-      path.join(APP_ROOT, "game", "kernel", "PlayerDataManager.ts"),
+      path.join(APP_ROOT, "game", "kernel", "player-data-manager.ts"),
       "utf-8",
     );
     expect(pdmSrc).toMatch(/get excel\(\): ExcelData/);

@@ -43,7 +43,7 @@ vi.mock("@excel/excel", () => ({
 
 import type { Response } from "express";
 import httpContext from "express-http-context2";
-import charmRouter from "@game/modules/activities/charm/router";
+import charmRouter from "@game/modules/activities/charm/routes";
 import { mockPlayerData } from "../../helpers";
 import type { MockPlayerDataManager } from "../../helpers";
 import type { RecycleCharmsRequest } from "@game/modules/activities/shared/activity";

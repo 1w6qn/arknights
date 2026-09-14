@@ -8,7 +8,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { GainItemPipeline, type PipelineItem } from "@game/kernel/inventory-pipeline";
-import type { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import type { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { mockTypedEventEmitter } from "../../helpers";
 
 /** 记录到的 emit（事件名 + 载荷实参） */

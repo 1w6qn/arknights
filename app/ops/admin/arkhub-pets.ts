@@ -22,7 +22,7 @@ import {
   type GatewayFrame,
   type PbField,
 } from "@game/modules/activities/arkhub/public";
-import type { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import type { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { logger } from "@utils/logger";
 
 /** 从官服户籍提取的枢纽数据（私服扩展形状） */

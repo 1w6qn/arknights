@@ -6,7 +6,7 @@ import { settleDormComfortCredit } from "../building/public";
 import { accountManager } from "../account/public";
 import type { FriendDataWithNameCard } from "../../kernel/social-model";
 import { pickKeys, pickLoose } from "@utils/object";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import { NameCardMedalType, PlayerNameCardMisc } from "../../kernel/playerdata";
 import { domainLog } from "@utils/logger";

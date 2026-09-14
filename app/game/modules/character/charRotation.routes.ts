@@ -13,7 +13,7 @@ import {
   setCurrentSchema,
   updatePresetSchema,
 } from "./charRotation.schema";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import {
   CharRotationCreatePresetRequest,
   CharRotationCreatePresetResponse,

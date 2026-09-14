@@ -43,7 +43,7 @@ vi.mock("@excel/excel", () => ({
 
 import type { Response } from "express";
 import httpContext from "express-http-context2";
-import shopRouter from "@game/modules/shop/handler";
+import shopRouter from "@game/modules/shop/routes";
 import { mockPlayerData, asModel } from "../../helpers";
 import type { SkinGoodList } from "@excel/excel";
 import type { SkinTable } from "@excel/types_excel_gen";

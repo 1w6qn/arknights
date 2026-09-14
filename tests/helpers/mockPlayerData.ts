@@ -1,6 +1,6 @@
 import type { Mock } from "vitest";
 import type { Draft } from "mutative";
-import type { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import type { PlayerDataManager } from "@game/kernel/player-data-manager";
 import type { PlayerDataModel } from "@game/kernel/playerdata";
 import type { PlayerDeltaResponse, RoguelikePushMessage } from "@game/kernel/http/common";
 import type { TypedEventEmitter } from "@game/kernel/events/runtime";

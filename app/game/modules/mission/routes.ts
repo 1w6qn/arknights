@@ -4,7 +4,7 @@
  */
 import { Router } from "express";
 import { getPlayer, getPlayerOptional } from "../../kernel/http/request-context";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { validateBody } from "@core/http/validate-body";
 import {
   confirmMissionSchema,
@@ -13,7 +13,7 @@ import {
   exchangeMissionRewardsSchema,
   confirmMissionListSchema,
   confirmMultiGroupMissionListSchema,
-} from "./schemas";
+} from "./mission.schema";
 import { ItemBundle } from "@excel/excel";
 import {
   AutoConfirmMissionsRequest,

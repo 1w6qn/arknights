@@ -1,5 +1,5 @@
 import { TypedEventEmitter } from "../../kernel/events/runtime";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { ItemBundle, ItemType } from "@excel/excel";
 import type { ItemBundleInput } from "../../kernel/inventory-pipeline";
 import excel from "@excel/excel";

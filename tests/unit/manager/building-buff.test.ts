@@ -101,7 +101,7 @@ vi.mock("@excel/excel", () => excelMock);
 const timeMock = vi.hoisted(() => ({ now: 1234567890 }));
 vi.mock("@utils/time", () => ({ now: () => timeMock.now }));
 
-vi.mock("@game/kernel/PlayerDataManager", () => ({
+vi.mock("@game/kernel/player-data-manager", () => ({
   PlayerDataManager: vi.fn(),
 }));
 
@@ -492,7 +492,7 @@ describe("BuildingManager 干员技能（buff）集成", () => {
 
   it("getInfoShareReward：按 changeScale 推进会客室干员体力（会话增量，避免空 delta 死循环）", async () => {
     // accountManager 返回空好友 → list 为空；chars 体力按档位随时间累积
-    const { accountManager } = await import("@game/modules/account/AccountManager");
+    const { accountManager } = await import("@game/modules/account/account-manager");
     vi.spyOn(accountManager, "getSocial").mockResolvedValue({ friends: [], friendRequests: [], visited: [] });
     vi.spyOn(accountManager, "getPlayerFriendInfo").mockResolvedValue(
       asModel<Awaited<ReturnType<typeof accountManager.getPlayerFriendInfo>>>({}),
@@ -510,7 +510,7 @@ describe("BuildingManager 干员技能（buff）集成", () => {
   });
 
   it("getInfoShareReward：同步推进 infoShare 字段（会话 ts 更新 + reward 待领取指示）", async () => {
-    const { accountManager } = await import("@game/modules/account/AccountManager");
+    const { accountManager } = await import("@game/modules/account/account-manager");
     vi.spyOn(accountManager, "getSocial").mockResolvedValue({ friends: [], friendRequests: [], visited: [] });
     vi.spyOn(accountManager, "getPlayerFriendInfo").mockResolvedValue(
       asModel<Awaited<ReturnType<typeof accountManager.getPlayerFriendInfo>>>({}),

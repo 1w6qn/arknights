@@ -1,4 +1,4 @@
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import { ItemBundle } from "@excel/excel";
 import type { JsonValue } from "@excel/json-value";

@@ -1,6 +1,6 @@
 import { PlayerCharacter } from "../../kernel/model";
 import { ItemBundle } from "@excel/excel";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import { Draft } from "mutative";
 import { PlayerDataModel } from "../../kernel/playerdata";

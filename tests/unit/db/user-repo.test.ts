@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { openDatabase, SCHEMA_SQL, closeDatabase } from "@core/db/database";
 import type { SqlDatabase } from "@core/db/types";
 import { UserRepository, migrateUsersFromJsonFile } from "@core/db/user-repo";
-import type { UserConfig } from "@game/modules/account/AccountManager";
+import type { UserConfig } from "@game/modules/account/account-manager";
 import { asModel } from "../../helpers";
 
 /**

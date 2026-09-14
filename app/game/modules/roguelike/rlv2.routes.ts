@@ -21,7 +21,7 @@ router.use((_req, _res, next) => {
   player?.modules?.rlv2?.clearPushMessages();
   next();
 });
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { RoguelikePushMessage } from "../../kernel/http/common";
 import { isBlackstream } from "./theme-rules";
 import {
@@ -151,7 +151,7 @@ import {
   SetTroopCarryRequest,
   SetTroopCarryResponse,
 } from "./models";
-import * as ReqSchema from "./schemas";
+import * as ReqSchema from "./rlv2.schema";
 import { rlv2Response, SEC } from "./response";
 import { validateBody } from "@core/http/validate-body";
 import { logger } from "@utils/logger";

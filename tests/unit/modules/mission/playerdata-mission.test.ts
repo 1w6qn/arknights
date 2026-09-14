@@ -81,7 +81,7 @@ vi.mock("moment", () => ({ default: () => ({ diff: () => 0 }) }));
 
 import { mockPlayerData, type MockSeed } from "../../../helpers/mockPlayerData";
 import type { PlayerDataModel } from "@game/kernel/playerdata";
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { MissionManager } from "@game/modules/mission/logic";
 
 /**

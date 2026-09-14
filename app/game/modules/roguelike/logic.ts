@@ -12,7 +12,7 @@ import { RoguelikeTroopManager } from "./troop";
 import { RoguelikeMapManager } from "./map";
 import { PlayerSquad } from "../../kernel/model";
 import { RoguelikeBattleManager } from "./battle";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { PlayerDataModel } from "../../kernel/playerdata";
 import { BattleData } from "../../kernel/battle-model";
 import { RoguelikePoolManager } from "./pool";

@@ -11,7 +11,7 @@ const accountMock = vi.hoisted(() => ({
   getUidByToken: vi.fn(),
   getUserConfig: vi.fn(),
 }));
-vi.mock("@game/modules/account/AccountManager", () => ({
+vi.mock("@game/modules/account/account-manager", () => ({
   accountManager: accountMock,
 }));
 

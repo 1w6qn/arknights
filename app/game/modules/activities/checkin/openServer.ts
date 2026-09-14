@@ -1,7 +1,7 @@
 import excel from "@excel/excel";
 import { ItemBundle, ItemType } from "@excel/excel";
 import { checkBetween, now } from "@utils/time";
-import { PlayerDataManager } from "../../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../../kernel/player-data-manager";
 import moment from "moment";
 import { OpenServerItemData } from "@excel/excel";
 import { TypedEventEmitter } from "../../../kernel/events/runtime";

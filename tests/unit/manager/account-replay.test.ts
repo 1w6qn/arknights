@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { openDatabase, SCHEMA_SQL, closeDatabase } from "@core/db/database";
 import type { SqlDatabase } from "@core/db/types";
 import { ReplayRepository } from "@core/db/replay-repo";
-import { AccountManager } from "@game/modules/account/AccountManager";
-import type { UserConfig } from "@game/modules/account/AccountManager";
+import { AccountManager } from "@game/modules/account/account-manager";
+import type { UserConfig } from "@game/modules/account/account-manager";
 import { BattleStore } from "@game/kernel/battle-store";
 import { asModel } from "../../helpers";
 

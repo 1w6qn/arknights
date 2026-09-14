@@ -9,7 +9,7 @@
  * 调用方：网关回调（index.ts 注入 arkhub-gateway-local）、Phase 2 的 ARKDEX/
  * ARKPIXEL 玩法路由。所有函数幂等可重复调用（计数取 max/累加）。
  */
-import { PlayerDataManager } from "../../../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../../../kernel/player-data-manager";
 import { ItemBundle } from "@excel/excel";
 import { logger } from "@utils/logger";
 import type { Draft } from "mutative";

@@ -14,7 +14,7 @@ import { accountManager } from "../account/public";
 import { ItemBundle } from "@excel/excel";
 import { randomChoice } from "@utils/random";
 import { domainLogger } from "@utils/logger";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import { random } from "@utils/random";
 import { getIn } from "@utils/json-path";

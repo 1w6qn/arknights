@@ -12,7 +12,7 @@ import { isJsonObject, type JsonValue } from "@excel/json-value";
 
 import { Router } from "express";
 import { getPlayer, getPlayerOptional } from "../../kernel/http/request-context";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { ShopError } from "./errors";
 import excel from "@excel/excel";
 import config from "@core/config/index";
@@ -101,7 +101,7 @@ import {
   emptyRequestSchema,
   getGoodPurchaseStateSchema,
   useVoucherSkinSchema,
-} from "./schemas";
+} from "./shop.schema";
 import { validateBody } from "@core/http/validate-body";
 
 const router = Router();

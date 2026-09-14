@@ -5,7 +5,7 @@
  * 路由文件不再导出业务函数（裁决见 docs/architecture-coupling-adjudication.md）。
  * 状态逻辑参考 ODPY arkodc 类（写入 user.arkodc.topics[topicId].position / rewards）。
  */
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import excel from "@excel/excel";
 import { isJsonObject } from "@excel/json-value";
 import type { JsonValue } from "@excel/json-value";

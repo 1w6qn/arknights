@@ -9,7 +9,7 @@
  */
 import { logger } from "@utils/logger";
 import config from "@core/config/index";
-import type { PlayerDataManager } from "../../../../kernel/PlayerDataManager";
+import type { PlayerDataManager } from "../../../../kernel/player-data-manager";
 import { ARKHUB_ACT_ID, ARKHUB_ERR } from "../domain/state";
 import {
   arkhubOnDuelSettle,

@@ -17,7 +17,7 @@
  * await player.gainItem.add({ id: "4002", type: "DIAMOND", count: 1 }).handle(); // 发放
  * ```
  */
-import type { PlayerDataManager } from "./PlayerDataManager";
+import type { PlayerDataManager } from "./player-data-manager";
 import type { TypedEventEmitter } from "./events/runtime";
 import { ItemBundle, ItemType } from "@excel/excel";
 

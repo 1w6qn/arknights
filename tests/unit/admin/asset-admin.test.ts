@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { NextFunction, Request, Response } from "express";
 
-vi.mock("@ops/admin/AdminService", () => ({
+vi.mock("@ops/admin/admin-service", () => ({
   adminService: {
     status: vi.fn().mockResolvedValue({ online: true }),
     logs: vi.fn().mockResolvedValue([]),

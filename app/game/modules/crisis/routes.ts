@@ -37,7 +37,7 @@ import {
   recalRuneBattleFinishSchema,
   recalRuneBattleStartSchema,
 } from "./crisis.schema";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import type { PlayerCrisis, PlayerDataModel } from "../../kernel/playerdata";
 import {
   asCrisisV1Permanent,

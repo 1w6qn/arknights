@@ -105,7 +105,7 @@ const adminServiceMock = vi.hoisted(() => ({
   grantChar: vi.fn().mockResolvedValue({ isNew: 1, name: "x" }),
 }));
 
-vi.mock("@ops/admin/AdminService", () => ({
+vi.mock("@ops/admin/admin-service", () => ({
   AdminService: class {
     maxAllChars = adminServiceMock.maxAllChars;
     unlockAllStages = adminServiceMock.unlockAllStages;

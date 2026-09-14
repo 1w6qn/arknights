@@ -5,7 +5,7 @@ import { now } from "@utils/time";
 import { getFurnitureThemeId } from "@excel/building_excel";
 import { isJsonObject } from "@excel/json-value";
 import { PlayerDataModel, PlayerStatus } from "./playerdata";
-import { PlayerDataManager } from "./PlayerDataManager";
+import { PlayerDataManager } from "./player-data-manager";
 import { Draft } from "mutative";
 import type { PipelineItem } from "./inventory-pipeline";
 import { TypedEventEmitter } from "./events/runtime";

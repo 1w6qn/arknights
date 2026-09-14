@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import type { JsonValue } from "@excel/json-value";
 import { asModel } from "../../helpers";
 
-vi.mock("@ops/admin/AdminService", () => ({
+vi.mock("@ops/admin/admin-service", () => ({
   adminService: {
     status: vi.fn().mockResolvedValue({ online: true }),
     listUsers: vi.fn().mockResolvedValue([{ uid: "1" }]),
@@ -111,7 +111,7 @@ vi.mock("@utils/sse", () => ({
 
 import adminRouter from "@ops/admin/admin-router";
 import { cliExec } from "@ops/admin/cli-exec";
-import { adminService } from "@ops/admin/AdminService";
+import { adminService } from "@ops/admin/admin-service";
 import { captureManager } from "@capture/capture-manager";
 import { logService } from "@logs/log-service";
 import { createSse, sseSend } from "@utils/sse";

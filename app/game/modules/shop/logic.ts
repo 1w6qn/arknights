@@ -8,7 +8,7 @@
 import { ItemBundle } from "@excel/excel";
 import type { Draft } from "mutative";
 import type { PlayerDataModel, PlayerShop } from "../../kernel/playerdata";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { readJsonSync } from "@utils/file";
 import { ChooseGPItem, ClassicGoodList, GPGoodList, HighGoodList, LevelGPItem, LMTGSGood, MonthlySubItem, NormalGPItem, PeriodicityGroup, PeriodicityGPItem, QCObject, REPGoodList, SocialGoodList, SocialShopData } from "@excel/excel";
 import excel from "@excel/excel";

@@ -6,7 +6,7 @@
  * - 勋章追踪模板事件（template 语义的事件名），由各玩法动作 emit，
  *   MedalManager 的勋章模板按 template 名订阅
  */
-import type { PlayerDataManager } from "../PlayerDataManager";
+import type { PlayerDataManager } from "../player-data-manager";
 import type { PlayerCharacter } from "../model";
 
 /**

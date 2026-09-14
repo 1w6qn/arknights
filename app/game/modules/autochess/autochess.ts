@@ -16,7 +16,7 @@
  * - 单人/多人模式（SINGLE/MULTI）按协议形状返回 battleId/team，结算按会话默认
  *   curRound=1 推进（真实回合数依赖实时对战服务，见 TODO 注释），不虚构回合数。
  */
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import excel from "@excel/excel";
 import type { ActAutoChessData } from "@excel/excel";

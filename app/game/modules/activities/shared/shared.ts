@@ -3,7 +3,7 @@
  *
  * 多活动族共用的模块级函数集中于此，各族 router 按需导入。
  */
-import { PlayerDataManager } from "../../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../../kernel/player-data-manager";
 import { ItemBundle, ItemType } from "@excel/excel";
 import excel from "@excel/excel";
 import { logger } from "@utils/logger";

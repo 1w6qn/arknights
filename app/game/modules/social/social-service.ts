@@ -6,7 +6,7 @@
  * 由 AccountManager 持有并委托——公共方法签名保留在门面上，调用点零改动。
  */
 import type { FriendRepository } from "@core/db/friend-repo";
-import type { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import type { PlayerDataManager } from "../../kernel/player-data-manager";
 import type { TypedEventEmitter } from "../../kernel/events/runtime";
 
 /**

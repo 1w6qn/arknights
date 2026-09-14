@@ -38,7 +38,7 @@ vi.mock("@excel/excel", () => ({
   },
 }));
 
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import type { EventMap } from "@game/kernel/events";
 import { mockPlayerData } from "../../../helpers";
 

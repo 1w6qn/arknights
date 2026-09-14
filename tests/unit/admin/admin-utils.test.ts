@@ -4,7 +4,7 @@ import {
   buildMailItem,
   nextMailId,
   MailDB,
-} from "@game/modules/mail/MailManager";
+} from "@game/modules/mail/mail-manager";
 import type { ItemBundle } from "@excel/excel";
 import { now } from "@utils/time";
 import { parseArgs } from "../../../scripts/admin-cli";

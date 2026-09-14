@@ -78,7 +78,7 @@ const excelMock = mockExcelWith({
       },
 });
 
-vi.mock("@game/kernel/PlayerDataManager", () => ({
+vi.mock("@game/kernel/player-data-manager", () => ({
   PlayerDataManager: vi.fn(),
 }));
 
@@ -95,7 +95,7 @@ import {
   mockPlayerData,
   mockTypedEventEmitter,
 } from "../../helpers";
-import { StoryreviewManager } from "@game/modules/storyreview/StoryreviewManager";
+import { StoryreviewManager } from "@game/modules/storyreview/storyreview-manager";
 
 /**
  * StoryreviewManager 单元测试

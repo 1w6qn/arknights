@@ -21,7 +21,7 @@ vi.mock("@excel/excel", () => {
   };
 });
 
-vi.mock("@game/kernel/PlayerDataManager", () => ({
+vi.mock("@game/kernel/player-data-manager", () => ({
   PlayerDataManager: vi.fn(),
 }));
 
@@ -37,7 +37,7 @@ vi.mock("@utils/crypt", () => ({
 }));
 
 import { asPlayerManager, mockPlayerData, mockTypedEventEmitter } from "../../helpers";
-import { AprilFoolManager } from "@game/modules/aprilFool/AprilFoolManager";
+import { AprilFoolManager } from "@game/modules/aprilFool/april-fool-manager";
 import { decryptBattleData } from "@utils/crypt";
 
 /**

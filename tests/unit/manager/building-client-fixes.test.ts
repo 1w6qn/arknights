@@ -73,7 +73,7 @@ const excelMock = vi.hoisted(() => ({
 vi.mock("@excel/excel", () => excelMock);
 const timeMock = vi.hoisted(() => ({ now: 1787000000 }));
 vi.mock("@utils/time", () => ({ now: () => timeMock.now, checkBetween: () => true, userTimestamp: () => timeMock.now }));
-vi.mock("@game/kernel/PlayerDataManager", () => ({ PlayerDataManager: vi.fn() }));
+vi.mock("@game/kernel/player-data-manager", () => ({ PlayerDataManager: vi.fn() }));
 
 import {
   mockPlayerData,

@@ -1,7 +1,7 @@
 /* 上帝视角实时修改：applyRlv2Patch 路径补丁（set/del/inc，含数组下标）单测 */
 // 读取端（root 为 JSON 域记录）按下钻路径逐个单向断言为已知夹具形状。
 import { describe, it, expect } from "vitest";
-import { applyRlv2Patch } from "@ops/admin/AdminService";
+import { applyRlv2Patch } from "@ops/admin/admin-service";
 
 describe("applyRlv2Patch（上帝视角实时修改补丁）", () => {
   it("set 赋值标量并自动创建中间路径", () => {

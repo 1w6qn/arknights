@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtemp, rm, readFile, mkdir } from "fs/promises";
 import { join } from "path";
 import os from "os";
-import { PluginConfigService } from "@plugin/PluginConfigService";
+import { PluginConfigService } from "@plugin/plugin-config-service";
 
 const tempDirs: string[] = [];
 

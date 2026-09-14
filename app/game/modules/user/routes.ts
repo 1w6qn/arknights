@@ -5,7 +5,7 @@
 import { Router } from "express";
 import type { Draft } from "mutative";
 import { getPlayer, getPlayerOptional } from "../../kernel/http/request-context";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import type { PlayerDataModel } from "../../kernel/playerdata";
 import { parseMultipartForm } from "@utils/multipart";
 import excel from "@excel/excel";

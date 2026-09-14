@@ -41,7 +41,7 @@ vi.mock("@excel/excel", () => ({
   },
 }));
 
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import type { PlayerRoguelikeV2, PlayerRoguelikePendingEvent } from "@game/modules/roguelike/rlv2-model";
 import type { RoguelikePendingEvent } from "@game/modules/roguelike/events";
 import { RLV2_SEED_LENGTH } from "@game/modules/roguelike/game-init";

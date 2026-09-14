@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { AdminService } from "@ops/admin/AdminService";
-import { accountManager } from "@game/modules/account/AccountManager";
+import { AdminService } from "@ops/admin/admin-service";
+import { accountManager } from "@game/modules/account/account-manager";
 import { readJsonSync, writeJson } from "@utils/file";
 import config from "@core/config/index";
-import type { UserConfig } from "@game/modules/account/AccountManager";
+import type { UserConfig } from "@game/modules/account/account-manager";
 import { mockPlayerData, asPlayerManager, asModel } from "../../helpers";
 
 /** excel mock 行形状（本文件用到的字段即可） */
@@ -64,7 +64,7 @@ vi.mock("@excel/excel", () => ({
   },
 }));
 
-vi.mock("@game/kernel/PlayerDataManager", () => ({ PlayerDataManager: vi.fn() }));
+vi.mock("@game/kernel/player-data-manager", () => ({ PlayerDataManager: vi.fn() }));
 vi.mock("@ops/admin/official-ops", () => ({ runGachaSync: vi.fn() }));
 vi.mock("fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("fs/promises")>();

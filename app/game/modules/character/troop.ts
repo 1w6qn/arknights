@@ -7,7 +7,7 @@ import {
   reconcileCharEquips,
   reconcileCharSkills,
 } from "../../kernel/char-skills";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import { BadRequestError } from "@core/http/errors";
 import { isJsonObject } from "@excel/json-value";

@@ -7,8 +7,8 @@ const configMock = vi.hoisted(() => ({
 }));
 vi.mock("@core/config/index", () => configMock);
 
-import { accountManager } from "@game/modules/account/AccountManager";
-import type { UserConfig } from "@game/modules/account/AccountManager";
+import { accountManager } from "@game/modules/account/account-manager";
+import type { UserConfig } from "@game/modules/account/account-manager";
 import { mockPlayerData, asPlayerManager, asModel } from "../../helpers";
 import { hashPassword, verifyPassword } from "@utils/crypt";
 

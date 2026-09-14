@@ -8,7 +8,7 @@
  */
 import { describe, it, expect } from "vitest";
 import type { PlayerDataModel } from "@game/kernel/playerdata";
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import {
   asExcelPort,
   mockExcel,

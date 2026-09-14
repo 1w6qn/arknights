@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { JsonValue } from "@excel/json-value";
-import type { UserConfig } from "@game/modules/account/AccountManager";
+import type { UserConfig } from "@game/modules/account/account-manager";
 import { asModel } from "../../helpers";
 
 // databases 存档写入 mock（防真实落盘）；账号注册走 SQLite（:memory:）

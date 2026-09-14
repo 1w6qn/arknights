@@ -96,7 +96,7 @@ describe("架构解耦守卫", () => {
   });
 
   it("PlayerDataManager 组合根须经 player-composition 工厂，不内联 new 子模块", () => {
-    const pdmFile = path.join(APP_ROOT, "game", "kernel", "PlayerDataManager.ts");
+    const pdmFile = path.join(APP_ROOT, "game", "kernel", "player-data-manager.ts");
     const factoryFile = path.join(APP_ROOT, "game", "kernel", "player-composition.ts");
     expect(fs.existsSync(factoryFile)).toBe(true);
     // 组合工厂必须存在且 PDM 引用它（子模块创建收敛到可覆写策略）

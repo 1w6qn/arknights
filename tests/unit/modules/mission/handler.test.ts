@@ -7,7 +7,7 @@ vi.mock("express-http-context2", () => ({
   default: { get: vi.fn(), set: vi.fn() },
 }));
 
-import missionRouter from "@game/modules/mission/handler";
+import missionRouter from "@game/modules/mission/routes";
 import httpContext from "express-http-context2";
 
 /** 路由处理器的测试请求视图：只声明被测分支读到的三个成员 */

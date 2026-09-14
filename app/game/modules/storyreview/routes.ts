@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { getPlayer, getPlayerOptional } from "../../kernel/http/request-context";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { now } from "@utils/time";
 import {
   MarkStoryAcceKnownRequest,

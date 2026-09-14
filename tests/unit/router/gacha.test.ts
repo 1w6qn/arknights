@@ -36,7 +36,7 @@ vi.mock("@excel/excel", () => ({
   },
 }));
 
-import gachaRouter from "@game/modules/gacha/handler";
+import gachaRouter from "@game/modules/gacha/routes";
 import type { Response } from "express";
 import httpContext from "express-http-context2";
 

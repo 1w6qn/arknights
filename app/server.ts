@@ -23,7 +23,7 @@ import auth from "@core/auth/auth";
 import asset from "@ops/assets/asset";
 import game, { setup } from "./game/app";
 import bodyParser from "body-parser";
-import { accountManager } from "@game/modules/account/AccountManager";
+import { accountManager } from "@game/modules/account/account-manager";
 
 /**
  * 应用启动入口函数

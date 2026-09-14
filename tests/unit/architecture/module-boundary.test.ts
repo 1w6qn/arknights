@@ -47,21 +47,21 @@ export interface Violation { rule: string; file: string; spec: string }
  *
  * 现存豁免仅为**不属 kernel 提取范畴**的残余项：4 条 R3（battle→act44side、
  * charm→home、user/routes→account 协议 ×2，处置为门面/事件/落位修正）+
- * 1 条 modules→ops（system/plugin-heartbeat，需插件宿主端口）。
+ * 1 条 modules→ops（system/plugin.routes，需插件宿主端口）。
  * R1（core→game/ops）与 R2（kernel→modules）已全部清零，并由下方用例固化——
  * 新增越界引用必须走此表并说明理由。
  */
 const EXEMPTIONS: { file: string; spec: string; reason: string }[] = [
   { file: "app/game/modules/battle/battle.ts", spec: "../activities/act44side/informant", reason: "battle 引用活动族 informant 状态机" },
   { file: "app/game/modules/charm/routes.ts", spec: "../home/home", reason: "charm 读取 home 主界面数据" },
-  { file: "app/game/modules/system/plugin-heartbeat.ts", spec: "@plugin/index", reason: "system 插件心跳是插件宿主入口，需直连 ops 插件注册表（端口化待做）" },
+  { file: "app/game/modules/system/plugin.routes.ts", spec: "@plugin/index", reason: "system 插件心跳是插件宿主入口，需直连 ops 插件注册表（端口化待做）" },
   { file: "app/game/modules/user/routes.ts", spec: "../account/user", reason: "user 路由引用 account 协议/校验（路由层耦合，需下沉）" },
   { file: "app/game/modules/user/routes.ts", spec: "../account/user.schema", reason: "user 路由引用 account 协议/校验（路由层耦合，需下沉）" },
 ];
 
 /** 组合根：PlayerDataManager/player-composition 按架构显式组装各模块 manager，R2 豁免 */
 const COMPOSITION_ROOTS = new Set([
-  "app/game/kernel/PlayerDataManager.ts",
+  "app/game/kernel/player-data-manager.ts",
   "app/game/kernel/player-composition.ts",
 ]);
 
@@ -71,7 +71,8 @@ const AGGREGATION_ROOT = "app/game/modules/activities/index.ts";
 /** R4 显式豁免：存量合理路由载体（不在约定命名内但确属路由文件），每条必须带 reason */
 const R4_EXEMPTIONS: { file: string; reason: string }[] = [
   { file: "app/game/modules/activities/index.ts", reason: "活动路由聚合根（default 聚合 /activity 前缀 + rootRouter 根级路由），聚合中心即约定位置" },
-  { file: "app/game/modules/system/plugin-heartbeat.ts", reason: "system 模块第二路由文件（插件心跳，独立 /plugin 前缀，与 routes.ts 的 audit 路由并存）" },
+  // 2026-09-14 命名统一：原 system/plugin-heartbeat.ts 已改名 system/plugin.routes.ts，
+  // 符合 `*.routes.ts` 约定，该条豁免随之删除。
 ];
 
 /** 边界规则检查器（纯函数，供全量扫描与负样本共用） */
@@ -154,9 +155,11 @@ describe("模块边界守卫", () => {
   });
 
   it("R4：Express Router 只允许在约定路由文件中创建", () => {
-    // 约定路由文件：routes.ts / router.ts / *.routes.ts / *.router.ts / handler.ts（模块五文件约定的路由载体）。
+    // 约定路由文件（2026-09-14 命名统一后只剩两种）：`routes.ts`（模块/活动族主载体）
+    // 与 `<域>.routes.ts`（同一模块的第二个路由文件，如 charRotation/mailCollection/rlv2/plugin）。
+    // 原 `router.ts` / `handler.ts` 已全部改名，不再接受。
     // 扫描范围仅限 app/game/——core/ops 的基础设施路由（网关/管理面板/资源服务）是服务入口，不受业务路由位置约束。
-    const conventionRouteFile = /(^|\/)(routes|router|handler)\.ts$|\.(routes|router)\.ts$/;
+    const conventionRouteFile = /(^|\/)routes\.ts$|\.routes\.ts$/;
     const offenders = allFiles.filter((f) => {
       // ????????? app/ ????checkImport/modOf ????????
       const rel = path.relative(path.resolve(APP_ROOT, ".."), f).replace(/\\/g, "/");
@@ -187,8 +190,8 @@ describe("模块边界守卫", () => {
 
   it("R2：组合根白名单固定为 2 个文件（防止扩表）", () => {
     expect([...COMPOSITION_ROOTS].sort()).toEqual([
-      "app/game/kernel/PlayerDataManager.ts",
       "app/game/kernel/player-composition.ts",
+      "app/game/kernel/player-data-manager.ts",
     ]);
   });
 
@@ -250,7 +253,7 @@ describe("模块边界守卫", () => {
     expect(
       checkImport(
         "app/game/modules/activities/bossRush/bossrush",
-        "../../account/AccountManager",
+        "../../account/account-manager",
       ),
     ).toMatchObject({ rule: /^R3/ });
     expect(

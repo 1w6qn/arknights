@@ -18,7 +18,7 @@
 import { Router } from "express";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getPlayer, getPlayerOptional } from "../../kernel/http/request-context";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { ItemBundle } from "@excel/excel";
 import { now } from "@utils/time";
 import { readJsonSync } from "@utils/file";

@@ -100,12 +100,12 @@
       "unknown": 1,
       "object": 0
     },
-    "app/game/kernel/PlayerDataManager.ts": {
+    "app/game/kernel/player-data-manager.ts": {
       "any": 0,
       "unknown": 2,
       "object": 0
     },
-    "app/game/kernel/PlayerStatus.ts": {
+    "app/game/kernel/player-status.ts": {
       "any": 0,
       "unknown": 1,
       "object": 0
@@ -155,7 +155,7 @@
       "unknown": 9,
       "object": 0
     },
-    "app/game/modules/account/AccountManager.ts": {
+    "app/game/modules/account/account-manager.ts": {
       "any": 0,
       "unknown": 3,
       "object": 0
@@ -265,7 +265,7 @@
       "unknown": 3,
       "object": 0
     },
-    "app/game/modules/gacha/handler.ts": {
+    "app/game/modules/gacha/routes.ts": {
       "any": 0,
       "unknown": 1,
       "object": 0
@@ -330,7 +330,7 @@
       "unknown": 2,
       "object": 0
     },
-    "app/game/modules/roguelike/schemas.ts": {
+    "app/game/modules/roguelike/rlv2.schema.ts": {
       "any": 0,
       "unknown": 2,
       "object": 0
@@ -355,7 +355,7 @@
       "unknown": 5,
       "object": 0
     },
-    "app/game/modules/shop/handler.ts": {
+    "app/game/modules/shop/routes.ts": {
       "any": 0,
       "unknown": 2,
       "object": 0

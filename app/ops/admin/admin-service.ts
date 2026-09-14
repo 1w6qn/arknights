@@ -13,7 +13,7 @@ import * as path from "path";
 import { captureManager } from "@capture/capture-manager";
 import excel from "@excel/excel";
 import { getRoomPhase } from "@excel/building_excel";
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { PlayerDataModel } from "@game/kernel/playerdata";
 import type { PlayerCharEquipInfo, PlayerCharacter } from "@game/kernel/model";
 import { acceptJsonValue, delIn, getIn, incIn, setIn } from "@utils/json-path";
@@ -541,6 +541,19 @@ export class AdminService {
     } catch (e) {
       logger.warn("AdminService", `审计日志写入失败: ${(e as Error).message}`);
     }
+  }
+
+  /**
+   * 审计写入端口实现（`AuditLogSource.append`）
+   *
+   * 供 core 侧（auth 路由的登录/改密事件、鉴权中间件失败）经 `logService.audit`
+   * 写入同一条审计流；失败仅告警不阻断（见 `_audit`）。
+   * @param action - 动作标识
+   * @param uid - 相关账号 uid（无则空串）
+   * @param detail - 明细
+   */
+  async append(action: string, uid: string, detail: string): Promise<void> {
+    await this._audit(action, uid, detail);
   }
 
   /** 用户列表（按 uid 排序；filter 匹配 uid/昵称/手机号，空返回全部） */

@@ -22,7 +22,7 @@ vi.mock("@excel/excel", () => {
   };
 });
 
-vi.mock("@game/kernel/PlayerDataManager", () => ({
+vi.mock("@game/kernel/player-data-manager", () => ({
   PlayerDataManager: vi.fn(),
 }));
 
@@ -38,7 +38,7 @@ import {
   mockPlayerData,
   mockTypedEventEmitter,
 } from "../../helpers";
-import { HomeManager } from "@game/modules/home/HomeManager";
+import { HomeManager } from "@game/modules/home/home-manager";
 
 /**
  * HomeManager 单元测试

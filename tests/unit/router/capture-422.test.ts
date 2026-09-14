@@ -8,7 +8,7 @@ import { describe, it, expect, vi } from "vitest";
 import type { NextFunction, Response } from "express";
 import type { ZodSchema } from "zod";
 import type { JsonValue } from "@excel/json-value";
-import * as Building from "@game/modules/building/schemas";
+import * as Building from "@game/modules/building/building.schema";
 import * as BusinessCard from "@game/modules/businessCard/businessCard.schema";
 import { validateBody } from "@core/http/validate-body";
 

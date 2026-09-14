@@ -97,3 +97,5 @@ export const choosePoolUpSchema = z.object({
 export const getFreeCharSchema = z.object({
   poolId: z.string(),
 });
+/** 抽卡会话状态（客户端 POST /gacha 裸路径；服务端未读取请求体） */
+export const gachaSessionStateSchema = z.object({});

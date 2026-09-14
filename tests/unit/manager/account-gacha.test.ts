@@ -18,8 +18,8 @@ vi.mock("@utils/file", async (importOriginal) => {
   return { ...actual, readJson: vi.fn(actual.readJson) };
 });
 
-import { accountManager } from "@game/modules/account/AccountManager";
-import type { UserConfig } from "@game/modules/account/AccountManager";
+import { accountManager } from "@game/modules/account/account-manager";
+import type { UserConfig } from "@game/modules/account/account-manager";
 import { asModel } from "../../helpers";
 
 describe("AccountManager 抽卡保底计数", () => {

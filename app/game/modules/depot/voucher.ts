@@ -18,7 +18,7 @@
 import { ItemBundle, ItemType } from "@excel/excel";
 import { readJsonSync } from "@utils/file";
 import type { ExcelData } from "../../kernel/excel-port";
-import type { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import type { PlayerDataManager } from "../../kernel/player-data-manager";
 
 /** 凭证信息（对应 voucher.json 中的数据结构） */
 export interface VoucherInfo {

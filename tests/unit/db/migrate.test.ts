@@ -3,8 +3,8 @@ import { SCHEMA_SQL, openDatabase, closeDatabase } from "@core/db/database";
 import type { SqlDatabase } from "@core/db/types";
 import { FriendRepository } from "@core/db/friend-repo";
 import { migrateFromUserConfigs } from "@core/db/migrate";
-import { accountManager } from "@game/modules/account/AccountManager";
-import type { UserConfig } from "@game/modules/account/AccountManager";
+import { accountManager } from "@game/modules/account/account-manager";
+import type { UserConfig } from "@game/modules/account/account-manager";
 import { asModel } from "../../helpers";
 
 /**

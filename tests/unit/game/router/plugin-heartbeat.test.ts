@@ -35,7 +35,7 @@ const pluginServiceMock = vi.hoisted(() => ({
 vi.mock("@plugin/index", () => ({ pluginConfigService: pluginServiceMock }));
 
 // eslint-disable-next-line import/first
-import pluginHeartbeatRouter from "@game/modules/system/plugin-heartbeat";
+import pluginHeartbeatRouter from "@game/modules/system/plugin.routes";
 
 const mockedService = pluginServiceMock;
 

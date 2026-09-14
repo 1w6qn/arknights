@@ -249,7 +249,7 @@ vi.mock("@excel/excel", () => {
   };
 });
 
-vi.mock("@game/kernel/PlayerDataManager", () => ({
+vi.mock("@game/kernel/player-data-manager", () => ({
   PlayerDataManager: vi.fn(),
 }));
 
@@ -287,7 +287,7 @@ const accountState = vi.hoisted((): MockAccountState => ({
   },
 }));
 
-vi.mock("@game/modules/account/AccountManager", () => {
+vi.mock("@game/modules/account/account-manager", () => {
   const mockAccountConfigs = accountState.configs;
 
   return {
@@ -538,7 +538,7 @@ describe("BattleManager", () => {
       expect(result.result).toBe(1);
       expect(result.battleId).toBe("");
       expect(mockPlayer._playerdata.status!.ap).toBe(5); // 未扣
-      const { accountManager } = await import("@game/modules/account/AccountManager");
+      const { accountManager } = await import("@game/modules/account/account-manager");
       const before = vi.mocked(accountManager.saveBattleInfo).mock.calls.length;
       // 再试一次：仍拒绝且不新增 saveBattleInfo 调用（不产生战斗信息）
       await startBattle(manager, {
@@ -867,7 +867,7 @@ describe("BattleManager", () => {
         battleData: { isCheat: "0", completeTime: 100 },
       });
 
-      const { accountManager } = await import("@game/modules/account/AccountManager");
+      const { accountManager } = await import("@game/modules/account/account-manager");
       const calls = vi.mocked(accountManager.saveBattleRecord).mock.calls;
       const saved = calls[calls.length - 1][0];
       expect(saved.battleId).toBe(started.battleId);
@@ -1383,7 +1383,7 @@ describe("BattleManager", () => {
 
   describe("start 保存助战好友信息", () => {
     async function lastSavedBattleInfo() {
-      const { accountManager } = await import("@game/modules/account/AccountManager");
+      const { accountManager } = await import("@game/modules/account/account-manager");
       const calls = vi.mocked(accountManager.saveBattleInfo).mock.calls;
       return calls[calls.length - 1][2];
     }

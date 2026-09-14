@@ -1,4 +1,4 @@
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import { decryptBattleData } from "@utils/crypt";
 import type { BattleData } from "../../kernel/battle-model";

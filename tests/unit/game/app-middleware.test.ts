@@ -23,7 +23,7 @@ const accountMock = vi.hoisted(() => ({
     updatePhone: vi.fn(),
   },
 }));
-vi.mock("@game/modules/account/AccountManager", () => accountMock);
+vi.mock("@game/modules/account/account-manager", () => accountMock);
 import { registerAccountAuthPort } from "@core/auth/account-port";
 registerAccountAuthPort(accountMock.accountManager);
 vi.mock("express-http-context2", () => ({

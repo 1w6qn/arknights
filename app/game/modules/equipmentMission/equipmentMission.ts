@@ -29,7 +29,7 @@ import excel from "@excel/excel";
 import type { Draft } from "mutative";
 import type { PlayerDataModel } from "../../kernel/playerdata";
 import { logger } from "@utils/logger";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { BattleInfo } from "../../kernel/battle-info-store";
 import { BattleData, BattleStats } from "../../kernel/battle-model";
 import { BadRequestError } from "@core/http/errors";

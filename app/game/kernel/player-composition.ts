@@ -11,32 +11,32 @@
  * 故组合仍在父构造期执行，但「构造哪些、顺序如何」已从业务类剥离为可覆写策略。
  * 构造顺序即事件订阅顺序，必须与迁移前完全一致，以保证事件派发顺序不变。
  */
-import type { PlayerDataManager } from "./PlayerDataManager";
+import type { PlayerDataManager } from "./player-data-manager";
 import type { TypedEventEmitter } from "./events/runtime";
 
 import { StatusManager } from "../modules/user/status";
 import { InventoryManager } from "./inventory";
 import { TroopManager } from "../modules/character/troop";
 import { DungeonManager } from "../modules/dungeon/dungeon";
-import { HomeManager } from "../modules/home/HomeManager";
-import { CharRotationManager } from "../modules/character/CharRotationManager";
+import { HomeManager } from "../modules/home/home-manager";
+import { CharRotationManager } from "../modules/character/char-rotation-manager";
 import { CheckInManager } from "../modules/checkin/checkin";
-import { StoryreviewManager } from "../modules/storyreview/StoryreviewManager";
+import { StoryreviewManager } from "../modules/storyreview/storyreview-manager";
 import { MissionManager } from "../modules/mission/logic";
 import { ShopManager } from "../modules/shop/logic";
 import { BattleManager } from "../modules/battle/battle";
 import { RecruitManager } from "../modules/gacha/recruit";
 import { RoguelikeV2Manager } from "../modules/roguelike/logic";
-import { SocialManager } from "../modules/social/SocialManager";
+import { SocialManager } from "../modules/social/social-manager";
 import { GachaManager } from "../modules/gacha/logic";
 import { DexNavManager } from "../modules/dexnav/dexnav";
 import { BuildingManager } from "../modules/building/logic";
 import { OpenServerManager } from "../modules/activities/checkin/openServer";
-import { RetroManager } from "../modules/retro/RetroManager";
+import { RetroManager } from "../modules/retro/retro-manager";
 import { CharManager } from "../modules/character/char";
 import { EquipmentMissionManager } from "../modules/equipmentMission/equipmentMission";
 import { MedalManager } from "../modules/medal/medal";
-import { AprilFoolManager } from "../modules/aprilFool/AprilFoolManager";
+import { AprilFoolManager } from "../modules/aprilFool/april-fool-manager";
 import { BossRushManager } from "../modules/activities/bossRush/bossrush";
 import { AutoChessManager } from "../modules/autochess/autochess";
 

@@ -61,7 +61,7 @@ vi.mock("@excel/excel", () => {
   };
 });
 
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { RoguelikeScrapManager } from "@game/modules/roguelike/modules/scrap";
 import type { RoguelikePendingEvent } from "@game/modules/roguelike/events";
 import type {

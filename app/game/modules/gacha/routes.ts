@@ -7,7 +7,7 @@
 
 import { Router } from "express";
 import { getPlayer, getPlayerOptional } from "../../kernel/http/request-context";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { GACHA_RULE_TYPE } from "./gacha";
 import { setIn } from "@utils/json-path";
 import { validateBody } from "@core/http/validate-body";
@@ -24,7 +24,8 @@ import {
   tenAdvancedGachaSchema,
   choosePoolUpSchema,
   getFreeCharSchema,
-} from "./schemas";
+  gachaSessionStateSchema,
+} from "./gacha.schema";
 import excel from "@excel/excel";
 import type { ItemBundle } from "@excel/excel";
 import {
@@ -264,7 +265,7 @@ router.post("/getFreeChar", validateBody(getFreeCharSchema), async (req, res) =>
 });
 
 /** 抽卡会话状态（客户端 POST /gacha 裸路径；返回空增量 stub） */
-router.post("/", async (req, res) => {
+router.post("/", validateBody(gachaSessionStateSchema), async (req, res) => {
   const player = getPlayer();
   res.send(player.delta satisfies { playerDataDelta: unknown });
 });

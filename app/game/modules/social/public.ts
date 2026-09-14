@@ -11,4 +11,4 @@
  * 注：好友/名片数据形状（`FriendDataWithNameCard` 等）已上移 `@game/kernel/social-model`，
  * 跨模块**类型**引用不再需要本门面。
  */
-export { SocialService } from "./SocialService";
+export { SocialService } from "./social-service";

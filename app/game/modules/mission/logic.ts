@@ -22,7 +22,7 @@ import { checkBetween, now, userTimestamp } from "@utils/time";
 import type { EventMap } from "../../kernel/events";
 import { TypedEventEmitter } from "../../kernel/events/runtime";
 import { MissionData } from "@excel/excel";
-import { PlayerDataManager } from "../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../kernel/player-data-manager";
 import { logger } from "@utils/logger";
 import { readJsonSync } from "@utils/file";
 import { registerMissionTriggers } from "./trigger";

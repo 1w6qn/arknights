@@ -95,7 +95,7 @@ vi.mock("@excel/excel", () => ({
   },
 }));
 
-vi.mock("@game/modules/account/AccountManager", () => ({
+vi.mock("@game/modules/account/account-manager", () => ({
   accountManager: {
     getBeforeNonHitCnt: vi.fn().mockResolvedValue(0),
     saveBeforeNonHitCnt: vi.fn().mockResolvedValue(undefined),
@@ -108,7 +108,7 @@ import { GainItemPipeline } from "@game/kernel/inventory-pipeline";
 import { GachaManager } from "@game/modules/gacha/logic";
 import { setRandSource, resetRandSource } from "@utils/random";
 import { GachaType } from "@game/modules/gacha/gacha";
-import { accountManager } from "@game/modules/account/AccountManager";
+import { accountManager } from "@game/modules/account/account-manager";
 import excelData from "@excel/excel";
 
 /**

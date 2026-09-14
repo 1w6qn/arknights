@@ -12,7 +12,7 @@
 import excel from "@excel/excel";
 import config from "@core/config/index";
 import { readJson } from "@utils/file";
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { acceptJsonValue, setIn } from "@utils/json-path";
 import type { PlayerDataModel } from "@excel/types-playerdata";
 import {

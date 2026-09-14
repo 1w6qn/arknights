@@ -24,7 +24,7 @@ vi.mock("@excel/excel", () => ({
   },
 }));
 
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { mockPlayerData } from "../../../helpers";
 import type { RoguelikeV2Manager } from "@game/modules/roguelike/logic";
 

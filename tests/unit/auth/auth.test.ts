@@ -5,7 +5,7 @@ import type { JsonValue } from "@excel/json-value";
 const configMock = vi.hoisted(() => ({ default: { authMode: "single" } }));
 vi.mock("@core/config/index", () => configMock);
 
-vi.mock("@game/modules/account/AccountManager", () => ({
+vi.mock("@game/modules/account/account-manager", () => ({
   accountManager: {
     tokenByPhonePassword: vi.fn().mockResolvedValue("token_123"),
     getUidByToken: vi.fn().mockResolvedValue("10000"),
@@ -18,11 +18,11 @@ vi.mock("@utils/file", () => ({
 }));
 
 import authRouter from "@core/auth/auth";
-import { accountManager } from "@game/modules/account/AccountManager";
+import { accountManager } from "@game/modules/account/account-manager";
 import { registerAccountAuthPort } from "@core/auth/account-port";
 // 账号端口注册：core/kernel 不再直连本模块（R1/R2），mock 的 accountManager 需显式注册进端口注册表
 registerAccountAuthPort(accountManager);
-import type { UserConfig } from "@game/modules/account/AccountManager";
+import type { UserConfig } from "@game/modules/account/account-manager";
 import { asModel } from "../../helpers";
 
 /** auth 路由的测试请求视图：只声明用例传入且被测分支读到的成员（真实 express Request 可赋给它） */

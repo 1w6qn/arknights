@@ -31,7 +31,7 @@ vi.mock("@excel/excel", () => ({
   },
 }));
 
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { mockPlayerData } from "../../../helpers";
 
 /** rlv2 组合根替身类型（真实 `PlayerDataManager.rlv2`） */

@@ -5,7 +5,7 @@ import { Router } from "express";
 import * as ReqSchema from "../shared/activity.schema";
 
 import { getPlayer, getPlayerOptional } from "../../../kernel/http/request-context";
-import { PlayerDataManager } from "../../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../../kernel/player-data-manager";
 import {
   ActCheckinvsSignRequest,
   ActCheckinvsSignResponse,

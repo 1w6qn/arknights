@@ -52,7 +52,7 @@ vi.mock("@excel/excel", () => {
   return { default: facade };
 });
 
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import type { PlayerDataModel } from "@game/kernel/playerdata";
 import { mockPlayerData, type MockSeed } from "../../../helpers/mockPlayerData";
 import {

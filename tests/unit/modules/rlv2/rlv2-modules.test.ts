@@ -84,7 +84,7 @@ vi.mock("@excel/excel", () => ({
   },
 }));
 
-import { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import { PlayerDataManager } from "@game/kernel/player-data-manager";
 import { mockPlayerData, asModel } from "../../../helpers";
 import { BLACKSTREAM_CONSTRUCTIONS } from "@game/modules/roguelike/data/blackstream-data";
 import type { PlayerRoguelikeV2 } from "@game/modules/roguelike/rlv2-model";

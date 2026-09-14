@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from "vitest";
-import { AdminService } from "@ops/admin/AdminService";
-import { accountManager } from "@game/modules/account/AccountManager";
-import type { UserConfig } from "@game/modules/account/AccountManager";
-import { mailManager } from "@game/modules/mail/MailManager";
+import { AdminService } from "@ops/admin/admin-service";
+import { accountManager } from "@game/modules/account/account-manager";
+import type { UserConfig } from "@game/modules/account/account-manager";
+import { mailManager } from "@game/modules/mail/mail-manager";
 import type { MailItem } from "@game/modules/mail/mail.model";
 import { mockPlayerData, asModel, asPlayerManager } from "../../helpers";
 import type { MockPlayerDataManager, MockStatusManager } from "../../helpers";
 import type { PlayerCharacter, PlayerDataModel } from "@game/kernel/playerdata";
-import type { PlayerDataManager } from "@game/kernel/PlayerDataManager";
+import type { PlayerDataManager } from "@game/kernel/player-data-manager";
 import type { PlayerRoguelikeV2 } from "@game/modules/roguelike/rlv2-model";
 import type { ItemBundle } from "@excel/excel";
 import config from "@core/config/index";

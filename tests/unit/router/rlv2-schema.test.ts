@@ -12,7 +12,7 @@ import { describe, it, expect, vi } from "vitest";
 import type { NextFunction, Response } from "express";
 import type { ZodSchema } from "zod";
 import type { JsonValue } from "@excel/json-value";
-import * as ReqSchema from "@game/modules/roguelike/schemas";
+import * as ReqSchema from "@game/modules/roguelike/rlv2.schema";
 import { validateBody } from "@core/http/validate-body";
 
 /** 校验中间件的请求视图：只声明被测分支读到的 body */

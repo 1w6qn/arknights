@@ -10,7 +10,7 @@ import {
   ActivityStubRequest,
   ActivityStubResponse,
 } from "../shared/activity";
-import { PlayerDataManager } from "../../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../../kernel/player-data-manager";
 
 /**
  * interlockRefresh 活动族业务逻辑（建议 11：族包五件套——router 仅路由注册，业务收敛于 logic）

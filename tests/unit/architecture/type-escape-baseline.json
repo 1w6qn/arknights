@@ -2,7 +2,7 @@
   "total": 9,
   "counts": {
     "app/game/excel/excel.ts": 1,
-    "app/game/modules/account/AccountManager.ts": 1,
+    "app/game/modules/account/account-manager.ts": 1,
     "app/game/modules/battle/battle.ts": 1,
     "app/game/modules/roguelike/logic.ts": 3,
     "app/game/modules/roguelike/troop.ts": 1,

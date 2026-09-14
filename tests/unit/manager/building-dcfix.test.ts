@@ -60,7 +60,7 @@ vi.mock("@excel/excel", () => excelMock);
 const timeMock = vi.hoisted(() => ({ now: 1234567890 }));
 vi.mock("@utils/time", () => ({ now: () => timeMock.now }));
 
-vi.mock("@game/kernel/PlayerDataManager", () => ({
+vi.mock("@game/kernel/player-data-manager", () => ({
   PlayerDataManager: vi.fn(),
 }));
 
@@ -75,7 +75,7 @@ import {
 import {
   workshopSynthesisSchema,
   deliveryOrderSchema,
-} from "@game/modules/building/schemas";
+} from "@game/modules/building/building.schema";
 import { BuildingManager } from "@game/modules/building/logic";
 import type { BuildingWithExt, RoomTimestamp } from "@game/modules/building/logic/ext-types";
 import type {

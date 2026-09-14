@@ -12,7 +12,7 @@
  *
  * 真实时间模式（timestamp 缺省/-1）不做任何改动，保持现有行为。
  */
-import { PlayerDataManager } from "../../../kernel/PlayerDataManager";
+import { PlayerDataManager } from "../../../kernel/player-data-manager";
 import { defaultAct44State } from "../act44side/public";
 import excel from "@excel/excel";
 import { userTimestamp } from "@utils/time";
