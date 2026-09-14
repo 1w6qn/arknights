@@ -17,6 +17,7 @@ import config from "@core/config/index";
 import { routes } from "./routes";
 import { createAuthStrategy, type AuthStrategy } from "./kernel/http/auth-strategy";
 import { responseSchemaMiddleware } from "./kernel/http/resp-schema";
+import { logService } from "@logs/log-service";
 
 /** Express 应用实例 */
 const app = express();
@@ -66,6 +67,12 @@ export const authMiddleware: express.RequestHandler = async (req, res, next) => 
     // real 模式：未携带 secret → 匿名放行（不注入 playerData，业务路由自行处理）；
     // 携带了 secret 但解析失败 → 401
     if (req.headers?.secret) {
+      // 鉴权失败审计（2026-09 审阅）：记录来源与路径，便于发现被篡改/盗用的 secret
+      void logService.audit(
+        "authInvalidSecret",
+        "",
+        `ip=${String(req.ip || req.socket?.remoteAddress || "unknown")} path=${req.path}`,
+      );
       return res.status(401).send({ status: 401, msg: "无效的 secret" });
     }
     next();

@@ -181,6 +181,32 @@ describe("auth 路由", () => {
     );
   });
 
+  it("POST /u8/user/v1/getToken 未知渠道凭据应返回 result 1 + 空 uid（不再假成功）", async () => {
+    vi.mocked(accountManager.getUidByToken).mockResolvedValueOnce("");
+    const res = mockRes();
+    await call(
+      authRouter,
+      { method: "POST", url: "/u8/user/v1/getToken", body: { extension: JSON.stringify({ code: "bad" }) } },
+      res,
+    );
+    expect(res.send).toHaveBeenCalledWith(
+      expect.objectContaining({ result: 1, uid: "", error: "无效的渠道凭据" }),
+    );
+  });
+
+  it("POST /u8/user/verifyAccount 未知渠道凭据应返回 result 1", async () => {
+    vi.mocked(accountManager.getUidByToken).mockResolvedValueOnce("");
+    const res = mockRes();
+    await call(
+      authRouter,
+      { method: "POST", url: "/u8/user/verifyAccount", body: { extension: JSON.stringify({ access_token: "bad" }) } },
+      res,
+    );
+    expect(res.send).toHaveBeenCalledWith(
+      expect.objectContaining({ result: 1, uid: "" }),
+    );
+  });
+
   it("POST /user/online/v1/loginout 应返回登出成功结果（参考 DoctoratePy onlineV1LoginOut）", async () => {
     const res = mockRes();
     await call(authRouter, { method: "POST", url: "/user/online/v1/loginout" }, res);
@@ -232,7 +258,22 @@ describe("real 模式用户管理闭环（change_password/change_phone）", () =
       { method: "POST", url: "/user/auth/v1/change_password", body: { token: "secret_10000", newPassword: "short" } },
       res,
     );
-    expect(res.send).toHaveBeenCalledWith({ result: 1 });
+    expect(res.send).toHaveBeenCalledWith({ result: 1, code: "PASSWORD_FORMAT_INVALID" });
+  });
+
+  it("change_password 旧密码不符应返回 result 1 + OLD_PASSWORD_INVALID（不落新密码）", async () => {
+    const res = mockRes();
+    await call(
+      authRouter,
+      {
+        method: "POST",
+        url: "/user/auth/v1/change_password",
+        body: { token: "secret_10000", newPassword: "NewPass123", oldPassword: "wrong-old" },
+      },
+      res,
+    );
+    expect(res.send).toHaveBeenCalledWith({ result: 1, code: "OLD_PASSWORD_INVALID" });
+    expect(accountManager.updatePassword).not.toHaveBeenCalled();
   });
 
   it("change_phone 应调用 updatePhone（新手机未被占用）", async () => {
@@ -257,7 +298,7 @@ describe("real 模式用户管理闭环（change_password/change_phone）", () =
       { method: "POST", url: "/user/auth/v1/change_phone", body: { token: "secret_10000", newPhone: "13899998888" } },
       res,
     );
-    expect(res.send).toHaveBeenCalledWith({ result: 8 });
+    expect(res.send).toHaveBeenCalledWith({ result: 8, code: "PHONE_TAKEN" });
   });
 });
 
