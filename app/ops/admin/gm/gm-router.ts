@@ -108,6 +108,23 @@ function currentUid(): string {
 /** GM 面板路由 */
 const router = Router();
 
+/**
+ * 面板访问门禁（2026-09 审阅：静态页与 API 用法原先对任何来源开放）
+ *
+ * 非回环访问需显式开启 `admin.allowRemote`（与引导端点一致）；开启后页面可加载，
+ * 引导数据仍各自校验管理令牌。放在静态挂载之前，因此静态资源与引导端点一并受控。
+ * @param req - Express 请求
+ * @param res - Express 响应
+ * @param next - 放行回调
+ */
+router.use((req: Request, res: Response, next) => {
+  if (isLoopback(req) || config.admin?.allowRemote === true) {
+    next();
+    return;
+  }
+  res.status(403).json({ detail: "GM 面板仅限本机访问（或开启 admin.allowRemote）" });
+});
+
 /** 面板静态资源（index.html / gm.css / js/*.js；开发期禁缓存） */
 router.use(
   express.static(PANEL_DIR, {

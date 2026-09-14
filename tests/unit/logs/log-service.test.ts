@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { logService } from "@logs/log-service";
+import { logService, registerAuditLogSource } from "@logs/log-service";
 import { logger } from "@utils/logger";
 
 // 测试专用独立临时日志目录（LOG_DIR 注入），绝不碰真实 logs/
@@ -28,6 +28,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  registerAuditLogSource(undefined);
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -116,5 +117,32 @@ describe("logService（统一日志服务）", () => {
     unsub();
     logService.emitAudit({ ts: 2, action: "x", uid: "", detail: "" });
     expect(events.length).toBe(1);
+  });
+
+  it("audit 经已注册 AuditLogSource.append 写入（core 侧安全事件）", async () => {
+    const written: string[] = [];
+    registerAuditLogSource({
+      logs: async () => [],
+      append: async (action, uid, detail) => {
+        written.push(`${action}:${uid}:${detail}`);
+      },
+    });
+    await logService.audit("authLoginFailed", "", "账号=138***00 ip=10.0.0.1");
+    expect(written).toEqual(["authLoginFailed::账号=138***00 ip=10.0.0.1"]);
+    // 读取端口未受影响（同一实现同时提供读写）
+    expect(await logService.readAuditLog()).toEqual([]);
+  });
+
+  it("audit 写入端未注册/写入抛错时不阻断调用方", async () => {
+    // 未注册：降级为普通日志
+    await expect(logService.audit("authLogin", "1", "ok")).resolves.toBeUndefined();
+    // 写入端抛错：捕获后正常返回
+    registerAuditLogSource({
+      logs: async () => [],
+      append: async () => {
+        throw new Error("disk full");
+      },
+    });
+    await expect(logService.audit("authLogin", "1", "ok")).resolves.toBeUndefined();
   });
 });

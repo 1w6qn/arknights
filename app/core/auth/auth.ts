@@ -12,6 +12,7 @@ import { logger } from "@utils/logger";
 import { verifyPassword } from "@utils/crypt";
 import { getAccountAuthPort } from "./account-port";
 import { rateLimit } from "./rate-limit";
+import { logService } from "@logs/log-service";
 import config from "../config/index";
 
 const router = Router();
@@ -63,6 +64,19 @@ function parseExtension(body: { extension?: string } | undefined): U8ExtensionPa
 /** extension 解析失败的统一 400 响应体（U8 渠道两端点共用） */
 function extensionErrorBody(): { status: number; msg: string; code: string } {
   return { status: 1, msg: "extension 缺失或不是合法 JSON", code: "EXTENSION_INVALID" };
+}
+
+/** 请求来源地址（审计用——不信任转发头，取直连地址） */
+function clientIp(req: Request): string {
+  return String(req.ip || req.socket?.remoteAddress || "unknown");
+}
+
+/** 审计用账号脱敏（保留前 3 位与后 2 位，避免审计日志留全量手机号） */
+function maskAccount(value: unknown): string {
+  const s = String(value ?? "");
+  if (!s) return "";
+  if (s.length <= 5) return "***";
+  return `${s.slice(0, 3)}***${s.slice(-2)}`;
 }
 
 /**
@@ -120,6 +134,7 @@ router.post("/user/auth/v1/token_by_phone_password", limitLogin, async (req, res
   // 「账号不存在→自动注册」分支并以未捕获异常收场（HTTP 500）；空凭据属客户端错误 → 400
   if (typeof phone !== "string" || phone.length === 0 ||
       typeof password !== "string" || password.length === 0) {
+    void logService.audit("authLoginRejected", "", `缺少凭据 ip=${clientIp(req)}`);
     return res.status(400).send({
       status: 1,
       msg: "手机号与密码不能为空",
@@ -133,12 +148,23 @@ router.post("/user/auth/v1/token_by_phone_password", limitLogin, async (req, res
   // 凭据不匹配（real 模式不再静默建号）时返回 401——原实现会回 200 + 空 token，
   // 客户端拿到空凭据继续走后续流程
   if (!code) {
+    void logService.audit(
+      "authLoginFailed",
+      "",
+      `凭据不匹配 账号=${maskAccount(phone)} ip=${clientIp(req)}`,
+    );
     return res.status(401).send({
       status: 1,
       msg: "手机号或密码错误",
       code: "CREDENTIAL_INVALID",
     });
   }
+  const uid = await getAccountAuthPort().getUidByToken(code);
+  void logService.audit(
+    "authLogin",
+    uid,
+    `账号=${maskAccount(phone)} ip=${clientIp(req)}`,
+  );
   res.send({
     status: 0,
     msg: "OK",
@@ -291,6 +317,22 @@ router.post("/u8/user/v1/getToken", limitChannelToken, async (req, res) => {
   if (!ext) return res.status(400).send(extensionErrorBody());
   const code: string = ext.code ?? "";
   const uid = await getAccountAuthPort().getUidByToken(code);
+  // 修复（2026-09 审阅）：原实现未命中时仍回 result 0 + 空 uid，客户端会带着空凭据继续走流程；
+  // 改为 result 1（保持 200 与官服响应形状，SDK 按 result 判失败）
+  if (!uid) {
+    void logService.audit("authChannelRejected", "", `U8 getToken ip=${clientIp(req)}`);
+    return res.send({
+      result: 1,
+      captcha: {},
+      error: "无效的渠道凭据",
+      uid: "",
+      channelUid: "",
+      token: code,
+      isGuest: 0,
+      extension: JSON.stringify({ isMinor: false, isAuthenticate: false }),
+      isNew: false,
+    });
+  }
   // 对齐官服抓包结构：captcha/error/isNew 字段（2026-08-07 auth/u8/user/v1/getToken）
   res.send({
     result: 0,
@@ -314,6 +356,19 @@ router.post("/u8/user/verifyAccount", limitChannelToken, async (req, res) => {
   if (!ext) return res.status(400).send(extensionErrorBody());
   const token: string = ext.access_token ?? "";
   const uid = await getAccountAuthPort().getUidByToken(token);
+  // 修复（2026-09 审阅）：未命中不再回 result 0 + 空 uid（同 getToken）
+  if (!uid) {
+    void logService.audit("authChannelRejected", "", `U8 verifyAccount ip=${clientIp(req)}`);
+    return res.send({
+      result: 1,
+      uid: "",
+      error: "无效的渠道凭据",
+      extension: JSON.stringify({ isGuest: true }),
+      channelUid: "",
+      token,
+      isGuest: 1,
+    });
+  }
   res.send({
     result: 0,
     uid,
@@ -388,8 +443,14 @@ router.post("/user/auth/v1/login", limitLogin, async (req, res) => {
     const uid = await getAccountAuthPort().getUidByToken(String(body.token ?? ""));
     const conf = getAccountAuthPort().configs[uid];
     if (!uid || !conf) {
+      void logService.audit(
+        "authLoginFailed",
+        "",
+        `SDK token 无匹配账号 ip=${clientIp(req)}`,
+      );
       return res.send({ result: 4 });
     }
+    void logService.audit("authLogin", uid, `SDK 登录 ip=${clientIp(req)}`);
     return res.send({
       result: 0,
       uid,
@@ -405,13 +466,24 @@ router.post("/user/auth/v1/login", limitLogin, async (req, res) => {
     ([, c]) => c.auth?.phone == account,
   );
   if (!found) {
+    void logService.audit(
+      "authLoginFailed",
+      "",
+      `账号不存在 账号=${maskAccount(account)} ip=${clientIp(req)}`,
+    );
     return res.send({ result: 4 });
   }
   const [uid, conf] = found;
-  // 密码校验（支持 sha256 哈希存储 + 旧明文兼容）
+  // 密码校验（scrypt/sha256 哈希存储 + 旧明文兼容）
   if (!verifyPassword(conf.password, password)) {
+    void logService.audit(
+      "authLoginFailed",
+      uid,
+      `密码错误 ip=${clientIp(req)}`,
+    );
     return res.send({ result: 1 });
   }
+  void logService.audit("authLogin", uid, `账号密码登录 ip=${clientIp(req)}`);
   res.send({
     result: 0,
     uid,
@@ -432,6 +504,11 @@ router.post("/user/auth/v1/register", limitRegister, async (req, res) => {
   if (
     !/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d!@#$%^&*]{8,16}$/.test(password || "")
   ) {
+    void logService.audit(
+      "authRegisterRejected",
+      "",
+      `密码格式不符 账号=${maskAccount(account)} ip=${clientIp(req)}`,
+    );
     return res.send({
       result: 5,
       errMsg:
@@ -442,10 +519,20 @@ router.post("/user/auth/v1/register", limitRegister, async (req, res) => {
     (c) => c.auth?.phone == account,
   );
   if (exists) {
+    void logService.audit(
+      "authRegisterRejected",
+      "",
+      `账号已存在 账号=${maskAccount(account)} ip=${clientIp(req)}`,
+    );
     return res.send({ result: 5, errMsg: "该账户已存在，请检查注册信息" });
   }
   const uid = await getAccountAuthPort().registerUser(account, password);
   const token = getAccountAuthPort().configs[uid]?.secret || uid;
+  void logService.audit(
+    "authRegister",
+    uid,
+    `账号=${maskAccount(account)} ip=${clientIp(req)}`,
+  );
   res.send({
     result: 0,
     uid,
@@ -512,16 +599,20 @@ async function resolveAuthUid(req: Request): Promise<string> {
   return getAccountAuthPort().getUidByToken(token);
 }
 
-/** 修改密码（参考 DoctoratePy userChangePassword——校验格式 + 验证码通过则更新） */
+/**
+ * 修改密码（参考 DoctoratePy userChangePassword——校验格式 + 验证码通过则更新）
+ *
+ * 错误码（`result` 保持官服语义不变，追加 `code` 细分，客户端只读 result 时行为不变）：
+ * 3 + NOT_LOGGED_IN / 1 + PASSWORD_FORMAT_INVALID / 1 + OLD_PASSWORD_INVALID / 1 + PASSWORD_UNCHANGED
+ */
 router.post("/user/auth/v1/change_password", limitCredentialChange, async (req, res) => {
   const uid = await resolveAuthUid(req);
   if (!uid || !getAccountAuthPort().configs[uid]) {
-    return res.send({ result: 3 });
+    return res.send({ result: 3, code: "NOT_LOGGED_IN" });
   }
   const { newPassword, oldPassword } = req.body ?? {};
-  // 1 = 密码格式错误 / 与旧密码相同 / 旧密码校验失败；2 = 验证码错误（私服跳过短信验证，视为通过）
   if (!newPassword || !PASSWORD_PATTERN.test(newPassword)) {
-    return res.send({ result: 1 });
+    return res.send({ result: 1, code: "PASSWORD_FORMAT_INVALID" });
   }
   const conf = getAccountAuthPort().configs[uid];
   // 纵深防御（2026-09 审阅）：客户端携带旧密码时强制校验——仅有会话 token 不足以改密
@@ -530,12 +621,18 @@ router.post("/user/auth/v1/change_password", limitCredentialChange, async (req, 
     oldPassword !== "" &&
     !verifyPassword(conf.password, String(oldPassword))
   ) {
-    return res.send({ result: 1 });
+    void logService.audit(
+      "authChangePasswordRejected",
+      uid,
+      `旧密码校验失败 ip=${clientIp(req)}`,
+    );
+    return res.send({ result: 1, code: "OLD_PASSWORD_INVALID" });
   }
   if (conf.password && verifyPassword(conf.password, newPassword)) {
-    return res.send({ result: 1 }); // 新旧相同
+    return res.send({ result: 1, code: "PASSWORD_UNCHANGED" });
   }
   await getAccountAuthPort().updatePassword(uid, newPassword);
+  void logService.audit("authChangePassword", uid, `ip=${clientIp(req)}`);
   // 改密同时轮换 secret（AccountManager.updatePassword）：回传新 token，旧会话 token 立即失效
   res.send({ result: 0, token: getAccountAuthPort().configs[uid]?.secret });
 });
@@ -544,7 +641,7 @@ router.post("/user/auth/v1/change_password", limitCredentialChange, async (req, 
 router.post("/user/auth/v1/change_phone_check", limitCredentialChange, async (req, res) => {
   const uid = await resolveAuthUid(req);
   if (!uid || !getAccountAuthPort().configs[uid]) {
-    return res.send({ result: 3 });
+    return res.send({ result: 3, code: "NOT_LOGGED_IN" });
   }
   res.send({ result: 0 });
 });
@@ -570,19 +667,29 @@ router.post("/user/auth/v1/change_phone", limitCredentialChange, async (req, res
       String(inputPassword),
     )
   ) {
-    return res.send({ result: 1 });
+    void logService.audit(
+      "authChangePhoneRejected",
+      uid,
+      `密码校验失败 ip=${clientIp(req)}`,
+    );
+    return res.send({ result: 1, code: "PASSWORD_INVALID" });
   }
   // 8 = 手机号已被使用；12 = 验证码错误（私服跳过短信验证，视为通过）
   if (!newPhone || !/^\d{6,}$/.test(String(newPhone))) {
-    return res.send({ result: 8 });
+    return res.send({ result: 8, code: "PHONE_FORMAT_INVALID" });
   }
   const taken = Object.values(getAccountAuthPort().configs).some(
     (c) => c.auth?.phone == newPhone,
   );
   if (taken) {
-    return res.send({ result: 8 });
+    return res.send({ result: 8, code: "PHONE_TAKEN" });
   }
   await getAccountAuthPort().updatePhone(uid, String(newPhone));
+  void logService.audit(
+    "authChangePhone",
+    uid,
+    `新手机号=${maskAccount(newPhone)} ip=${clientIp(req)}`,
+  );
   // 换绑同时轮换 secret：回传新 token，旧会话 token 立即失效
   res.send({ result: 0, token: getAccountAuthPort().configs[uid]?.secret });
 });

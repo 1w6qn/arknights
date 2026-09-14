@@ -8,6 +8,7 @@
 import { Request, Response, NextFunction } from "express";
 import { getAdminConfig } from "./admin-config";
 import { timingSafeEqualString } from "@utils/crypt";
+import { logService } from "@logs/log-service";
 
 export function adminAuth(
   req: Request,
@@ -27,6 +28,12 @@ export function adminAuth(
   const token = bearer || (req.headers["x-admin-token"] as string) || queryToken || "";
   // 常量时间比较（避免按字节短路泄露令牌前缀）
   if (!token || !timingSafeEqualString(token, cfg.token)) {
+    // 鉴权失败审计（2026-09 审阅）：记录来源与路径，便于发现令牌爆破/探测
+    void logService.audit(
+      "adminAuthFailed",
+      "",
+      `ip=${String(req.ip || req.socket?.remoteAddress || "unknown")} path=${req.path}`,
+    );
     res.status(401).json({ error: "管理令牌无效" });
     return;
   }

@@ -11,7 +11,7 @@
  */
 import { readdir, readFile, rm } from "fs/promises";
 import * as path from "path";
-import { subscribeLog, logDir, LogEvent } from "@utils/logger";
+import { subscribeLog, logDir, LogEvent, logger } from "@utils/logger";
 
 /** 服务器日志文件名前缀 */
 const SERVER_PREFIX = "server-";
@@ -75,6 +75,14 @@ export interface AuditLogSource {
    * @param limit - 最大条数
    */
   logs(limit: number): Promise<AuditLogEntry[]>;
+
+  /**
+   * 追加一条审计条目（可选——写入端同样由 ops/admin 提供；缺省时 core 侧降级为普通日志）
+   * @param action - 动作标识
+   * @param uid - 相关账号 uid（无则空串）
+   * @param detail - 明细
+   */
+  append?(action: string, uid: string, detail: string): Promise<void>;
 }
 
 /** 已注册的审计日志源（未注册 = ops/admin 尚未加载，读取返回空） */
@@ -183,6 +191,28 @@ class LogService {
       if (kw && !(`${e.action} ${e.uid ?? ""} ${e.detail}`.includes(kw))) return false;
       return true;
     });
+  }
+
+  /**
+   * 写入审计条目（经已注册的 {@link AuditLogSource} 的写入端）
+   *
+   * core 侧（auth 路由、鉴权中间件）需要记录登录/鉴权失败等安全事件，但审计日志的
+   * 持久化实现在 ops/admin（R1：core 不得依赖 ops），故经端口写入。写入端未注册
+   * （ops/admin 未加载：纯 core 单测、CLI）时降级为普通 WARN 日志，便于排查。
+   * @param action - 动作标识
+   * @param uid - 相关账号 uid（无则空串）
+   * @param detail - 明细
+   */
+  async audit(action: string, uid: string, detail: string): Promise<void> {
+    if (!auditSource?.append) {
+      logger.warn("audit", `[${action}] uid=${uid} ${detail}`);
+      return;
+    }
+    try {
+      await auditSource.append(action, uid, detail);
+    } catch (e) {
+      logger.warn("audit", `[${action}] 审计写入失败：${(e as Error).message}`);
+    }
   }
 
   /** 清空服务器日志（确认词保护；删除全部 server-*.log） */
