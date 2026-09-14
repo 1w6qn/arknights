@@ -52,9 +52,29 @@ router.get("/get_latest", async (req, res) => {
 });
 
 
-/** 版本信息别名（/api/game/get_latest_game_info，与 get_latest 同响应） */
-router.get("/get_latest_game_info", async (_req, res) => {
-  res.send({});
+/**
+ * 游戏版本信息（HGGameUpdateSDK.GetLatestGame 调用，game 侧热更门禁）。
+ *
+ * ⚠️ 不可返回 `{}`：客户端会解析出空 version + action=3，随后**静默卡死**——
+ * network_config / version / hot_update_list 一概不再请求（实测 2026-09-14：私服返回 `{}`
+ * 后客户端 140s 无任何请求，本地 Bundles/hot_update_list.json 与 persistent_res_list.json
+ * 完全未更新；同一客户端在门禁放行的那一轮才会走到热更）。
+ *
+ * 官方响应（game 侧抓包，2026-09-13）：`version` 回显请求里的 version（游戏包版本，如 77.0.0），
+ * code/updateType/state 全 0 表示"无更新、状态正常"。
+ *
+ * @route GET /api/game/get_latest_game_info
+ * @param version - 游戏包版本（客户端带上来的 version，如 77.0.0）
+ * @returns 游戏版本信息（code/version/updateType/state）
+ */
+router.get("/get_latest_game_info", async (req, res) => {
+  res.send({
+    code: 0,
+    version: String(req.query.version ?? ""),
+    updateType: 0,
+    updateInfo: "",
+    state: 0,
+  });
 });
 
 /** 其余 /api/game/<subpath>（ODPY 对齐 catch-all，stub） */

@@ -247,6 +247,25 @@ export async function main(skipUpdate: boolean = false, offline: boolean = false
 }
 
 /**
+ * 读取客户端 Lua 明文参考里的期望版本（`GlobalConfig.lua` 的 `CUR_FUNC_VER`）。
+ *
+ * 客户端 `entry.lua` 用它做版本门禁：与 `CS.Torappu.VersionCompat.CUR_FUNC_VER` 不等时
+ * 顶层直接 `return`，整套 Lua 初始化（含 `HotfixProcesser.Do` 插件加载）变成空实现。
+ * 参考目录由提取/重打包流程生成（gitignore），缺失时返回 null 由调用方退回官服值。
+ * @returns `V###` 形式版本串；参考缺失或不可解析时 null
+ */
+function readClientLuaFuncVer(): string | null {
+  try {
+    const p = path.join(__dirname, "..", "data", "[uc]lua", "GlobalConfig.lua");
+    if (!fs.existsSync(p)) return null;
+    const m = /CUR_FUNC_VER\s*=\s*"([^"]+)"/.exec(fs.readFileSync(p, "utf8"));
+    return m?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 同步最新游戏版本与网络配置（参考 odpy tools/update_config.py）
  * - 版本：Android（默认）+ Windows（独立 resVersion——Windows 客户端资源路径用）
  * - 网络配置：拉取官服 network_config 的 funcVer，变化时旧 configs 复制到新 funcVer
@@ -283,12 +302,25 @@ export async function syncGameVersion(): Promise<boolean> {
     }
 
     // 3. funcVer 网络配置同步
+    //
+    // ⚠️ 官服**未签名**请求 `/config/prod/official/network_config` 返回的 funcVer 可能是较旧档位
+    // （实测 2026-09-14：官服返回 V070，而 2.7.71 客户端 Lua 的 `GlobalConfig.CUR_FUNC_VER` 是 V077）。
+    // 该值参与客户端 Lua 版本门禁（`entry.lua` 顶层不等即 return，整套 Lua 初始化变空实现），
+    // 所以优先采用「客户端 Lua 期望值」：能从本地明文参考 `data/[uc]lua/GlobalConfig.lua` 读到就用它，
+    // 读不到才退回官服值（见 docs/lua-load-chain-reconstructed-2026-09-14.md §4.1）。
     try {
       const ncRes = await fetch(`${CONF_API}/config/prod/official/network_config`);
       if (ncRes.ok) {
         const ncData = await ncRes.json();
         const content = JSON.parse(ncData.content);
-        const funcVer: string | undefined = content.funcVer;
+        const syncedFuncVer: string | undefined = content.funcVer;
+        const expectedFuncVer = readClientLuaFuncVer();
+        const funcVer = expectedFuncVer ?? syncedFuncVer;
+        if (syncedFuncVer && expectedFuncVer && syncedFuncVer !== expectedFuncVer) {
+          log(
+            `⚠️ 官服 funcVer=${syncedFuncVer} 与客户端 Lua 期望 ${expectedFuncVer} 不一致：按 ${expectedFuncVer} 下发（官服未签名请求可能是旧档位）`,
+          );
+        }
         if (funcVer && configData.NetworkConfig?.configs) {
           const configs = configData.NetworkConfig.configs;
           if (!configs[funcVer]) {

@@ -179,9 +179,11 @@ app.get("/config/prod/official/network_config", (req, res) => {
     sign: "sign",
     content: JSON.stringify({
       configVer: "5",
-      funcVer: "V070",
+      // 必须与客户端 Lua 的 `GlobalConfig.CUR_FUNC_VER` 一致：不一致会让 `entry.lua` 顶层早退，
+      // 整套 Lua 初始化（含插件加载）变空实现。见 docs/lua-load-chain-reconstructed-2026-09-14.md §4.1
+      funcVer: "V077",
       configs: {
-        V070: {
+        V077: {
           override: true,
           network: {
             gs: BASE,

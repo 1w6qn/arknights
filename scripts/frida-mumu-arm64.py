@@ -49,6 +49,7 @@ MuMu 的进程是 x86_64 的 `app_process64`，而游戏的 Unity/il2cpp 是 ARM
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import socket
@@ -158,6 +159,15 @@ def install_gadget(pkg: str, gadget: str) -> None:
     print("[setup] " + listing.strip(), flush=True)
 
 
+def push_pubkey(local_path: str) -> None:
+    """把私服公钥推到设备（运行时重定向脚本会用它替换官方公钥）。"""
+    if not os.path.exists(local_path):
+        print("[boot] 未找到公钥 %s，跳过推送（脚本会跳过公钥替换）" % local_path, flush=True)
+        return
+    adb("push", local_path, "/data/local/tmp/doctoratets-pubkey.xml")
+    print("[boot] 已推送公钥 → /data/local/tmp/doctoratets-pubkey.xml", flush=True)
+
+
 def ensure_forward(port: int) -> None:
     """确保 adb forward 存在（Windows 侧 loopback）。"""
     adb("forward", "tcp:%d" % port, "tcp:%d" % port)
@@ -228,12 +238,22 @@ def attach(device, target: int, source: str, label: str):
     return session
 
 
-def read_script(path: str) -> str:
-    """读脚本，找不到时给出构建提示。"""
+def read_script(path: str, pubkey: str = "") -> str:
+    """读脚本；把 __PUBKEY_XML__ 占位符替换为私服公钥（运行时重定向脚本要用）。"""
     if not os.path.exists(path):
         raise SystemExit("脚本不存在：%s\n先执行 node scripts/build-frida-hook.mjs（或 pnpm run frida:build）" % path)
     with open(path, "r", encoding="utf-8") as fh:
-        return fh.read()
+        source = fh.read()
+    if "__PUBKEY_XML__" in source:
+        key = ""
+        if pubkey and os.path.exists(pubkey):
+            with open(pubkey, "r", encoding="utf-8") as fh:
+                key = fh.read().strip()
+        if key:
+            # 用 JSON 转义后嵌入，避免引号/换行破坏脚本
+            source = source.replace("__PUBKEY_XML__", json.dumps(key)[1:-1])
+        source = source.replace("__PUBKEY_PATH__", "/data/local/tmp/doctoratets-pubkey.xml")
+    return source
 
 
 def main() -> None:
@@ -241,12 +261,16 @@ def main() -> None:
     parser.add_argument("--pkg", default="com.hypergryph.arknights")
     parser.add_argument("--script", default=os.path.join(REPO, "hook", "build", "il2cpp-unity-logs.js"))
     parser.add_argument("--host-script", default=os.path.join(REPO, "hook", "host-logs.js"))
+    parser.add_argument("--java-script", default=os.path.join(REPO, "hook", "build", "java-redirect.js"),
+                        help="x86_64 agent 里的 Java 层重定向脚本（HGSDK/okhttp 流量）")
     parser.add_argument("--injector", default=os.path.join(REPO, "hook", "build", "inject-gadget.js"))
     parser.add_argument("--duration", type=int, default=60)
     parser.add_argument("--no-restart", action="store_true", help="不冷启动，直接对当前进程注入")
     parser.add_argument("--host-only", action="store_true", help="只挂宿主日志，不注入 gadget")
     parser.add_argument("--install-gadget", action="store_true", help="把 ARM64 gadget 装到设备后退出")
     parser.add_argument("--gadget", default=None, help="ARM64 frida-gadget(.so) 路径")
+    parser.add_argument("--pubkey", default=os.path.join(REPO, "data", "crypto", "public.xml"),
+                        help="私服公钥（运行时替换客户端官方公钥用）")
     args = parser.parse_args()
 
     if args.install_gadget:
@@ -270,6 +294,7 @@ def main() -> None:
     sessions = []
 
     if not args.host_only:
+        push_pubkey(args.pubkey)
         print("[boot] 注入 ARM64 gadget（Runtime.load0 → NativeBridge → Houdini）", flush=True)
         sessions.append(attach(x64, pid, read_script(args.injector), "inject"))
         time.sleep(1.5)
@@ -284,13 +309,17 @@ def main() -> None:
     sessions.append(attach(x64, pid, read_script(args.host_script), "x64"))
     print("[boot] 宿主 agent 已挂（Java/宿主 liblog）", flush=True)
 
+    if os.path.exists(args.java_script):
+        sessions.append(attach(x64, pid, read_script(args.java_script), "java"))
+        print("[boot] Java 层重定向已挂（okhttp/HGSDK 流量）", flush=True)
+
     if not args.host_only:
         gadget = frida.get_device_manager().add_remote_device(GADGET_DEVICE)
         procs = gadget.enumerate_processes()
         target = next((p for p in procs if p.name.lower() == "gadget"), procs[0] if procs else None)
         if target is None:
             raise SystemExit("gadget 未暴露进程")
-        sessions.append(attach(gadget, target.pid, read_script(args.script), "arm64"))
+        sessions.append(attach(gadget, target.pid, read_script(args.script, args.pubkey), "arm64"))
         print("[boot] ARM64 agent 已挂（il2cpp + guest liblog）", flush=True)
 
     print("[boot] 运行 %ds（Ctrl+C 结束）" % args.duration, flush=True)

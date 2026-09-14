@@ -391,6 +391,81 @@ export function nextModBaseCid(abInfos: { cid?: number }[], packInfos: { cid?: n
 }
 
 /**
+ * 热更清单条目（官方 abInfos/packInfos 元素，字段名对齐 HotUpdateInfo.ABInfo 的 JSON 名）。
+ */
+interface HotUpdateAbInfo {
+  name: string;
+  /** bundle 身份键；匿名 bundle（meta&1）里同时是 4 位内容令牌 */
+  hash: string;
+  /** 内容指纹：匿名 bundle 为 4 位短令牌（客户端 meta&1 时跳过校验），主体 bundle 为 32 位 md5 */
+  md5: string;
+  /** 可下载产物（.dat zip）体积——客户端按此判定下载完成 */
+  totalSize: number;
+  /** 解压后 bundle 体积——客户端一致性校验 fileInfo.Length == abSize */
+  abSize: number;
+  /** 官方全局唯一序号（JSON 名 cid，与 pack 共用序号空间） */
+  cid?: number;
+  cat?: number;
+  /** 位标志：1 = ABMetaFlag.IGNORE_MD5，即跳过 md5 校验（官方匿名 bundle 均带此标志） */
+  meta?: number;
+}
+
+/** mod 元数据（mods.<平台>.json 缓存条目，由 .dat zip 条目解压后计算：md5/abSize 取自解压内容）。 */
+interface ModMeta {
+  name: string;
+  md5: string;
+  totalSize: number;
+  abSize: number;
+}
+
+/**
+ * 从 mods 元数据条目里读出可用字段（缓存是未建模 JSON，取值须显式收窄）。
+ * @param value - mods 列表中的一项
+ * @returns 收窄后的 mod 元数据；结构不符（非对象/缺 name 或 md5）返回 null 由调用方跳过
+ */
+function readModMeta(value: JsonValue): ModMeta | null {
+  if (!isJsonObject(value)) return null;
+  const { name, md5, totalSize, abSize } = value;
+  if (typeof name !== "string" || typeof md5 !== "string") return null;
+  return {
+    name,
+    md5,
+    totalSize: typeof totalSize === "number" ? totalSize : 0,
+    abSize: typeof abSize === "number" ? abSize : 0,
+  };
+}
+
+/**
+ * 把 mod 内容合并进官方同名条目：保留官方身份字段（name/hash/cid/cat/meta），覆盖内容字段。
+ *
+ * 匿名 bundle（官方 hash == md5 == 4 位令牌）保持同形——令牌随内容变化即表达"该 bundle 有新版本"，
+ * 客户端凭它触发重新下载（meta&1 → 不校验 md5）；主体 bundle 的 hash 是稳定身份键（如
+ * shaders/other.ab 的 hash=3a3fec0c… 与 md5=ef1db26a… 不同），只覆盖 32 位 md5 与两者尺寸。
+ * @param abInfo - 官方条目（身份字段来源）
+ * @param mod    - mod 元数据（内容字段来源）
+ * @returns 合并后的条目（可直接进 abInfos 下发）
+ */
+function applyModToAbInfo(abInfo: HotUpdateAbInfo, mod: ModMeta): HotUpdateAbInfo {
+  const shortToken = abInfo.md5.length > 0 && abInfo.md5.length <= 8;
+  const md5 = shortToken && mod.md5.length >= 4 ? mod.md5.slice(0, 4) : mod.md5;
+  return {
+    ...abInfo,
+    hash: shortToken ? md5 : abInfo.hash,
+    md5,
+    totalSize: mod.totalSize,
+    abSize: mod.abSize,
+  };
+}
+
+/**
+ * 注入方案版本：mod 集合与内容都没变、但**注入语义**变了时（条目合并方式、身份字段处理、
+ * 清单字段口径），必须递增——否则 resVersion 签名不变，客户端继续用本地缓存的旧清单，
+ * 新注入方式永远不被拉取（实测 2026-09-14：改为合并官方条目身份字段后若不递增签名，
+ * 客户端 persistent_res_list 里记录的仍是旧版本的 ..._540c27，不会重新评估）。
+ */
+const MOD_INJECT_FORMAT = "merge-identity-v2";
+
+/**
  * 确定性 resVersion 变更签名：mod 集合不变 → 签名不变（客户端不重复全量重下）；
  * mod 变更 → 签名变化（触发热更清单重新拉取）。无 mod 时返回 ""（保持原版行为）。
  *
@@ -409,7 +484,7 @@ export function getModVersionSuffix(platform: string): string {
     .map((m) => `${(m as { name: string }).name}|${(m as { md5: string }).md5}`)
     .sort()
     .join(",");
-  return createHash("md5").update(sig).digest("hex").slice(0, 6);
+  return createHash("md5").update(`${MOD_INJECT_FORMAT}|${sig}`).digest("hex").slice(0, 6);
 }
 
 /**
@@ -496,35 +571,67 @@ async function exportFile(
       await writeFile(filePath, JSON.stringify(hotUpdateList));
     }
 
-    const abInfoList = hotUpdateList.abInfos;
-    const newAbInfos = [];
+    const abInfoList = hotUpdateList.abInfos as HotUpdateAbInfo[];
+    const newAbInfos: HotUpdateAbInfo[] = [];
+
+    // mod 覆盖官方同名条目：**保留官方身份字段**（name/hash/cid/cat/meta），只覆盖内容字段。
+    // 实测 2026-09-14：把 mod 当新条目追加（cid=max+1、丢掉 cat/meta、hash 换成 32 位 md5）
+    // 会被客户端整体忽略——热更清单确实下发成功（versionId 已是 ..._540c27，条目 md5 已是
+    // ba45090f…），但客户端把它自己的 abSize 记成官方 1121653 且从不请求 anon/<name>.bin。
+    // 机制：客户端把 abInfos 分成两类——`meta=1`（ABMetaFlag.IGNORE_MD5）的匿名 bundle 是
+    // 独立下载项（官方 148 条 anon/*，形如 {hash:"d21c",md5:"d21c",cid:2457,cat:1,meta:1}），
+    // 其余 `meta=0` 的 15018 条由 lpack 大包按 pid 分发；mod 条目两者皆无 → 无人认领。
+    const modMetaByName = new Map<string, ModMeta>();
+    if (config.assets.enableMods) {
+      for (const mod of mods?.mods ?? []) {
+        const meta = readModMeta(mod);
+        if (meta) modMetaByName.set(meta.name, meta);
+      }
+    }
+    const mergedModNames = new Set<string>();
 
     for (const abInfo of abInfoList) {
-      if (config.assets.enableMods) {
-        hotUpdateList.versionId = assetsHash;
-        if (abInfo.hash.length === 24) {
-          abInfo.hash = assetsHash;
-        }
-        if (!mods!.name.includes(abInfo.name)) {
-          newAbInfos.push(abInfo);
-        }
-      } else {
+      if (!config.assets.enableMods) {
         newAbInfos.push(abInfo);
+        continue;
       }
+      hotUpdateList.versionId = assetsHash;
+      if (abInfo.hash.length === 24) {
+        abInfo.hash = assetsHash;
+      }
+      const mod = modMetaByName.get(abInfo.name);
+      if (!mod) {
+        newAbInfos.push(abInfo);
+        continue;
+      }
+      mergedModNames.add(abInfo.name);
+      newAbInfos.push(applyModToAbInfo(abInfo, mod));
     }
 
     if (config.assets.enableMods) {
       // 官方 cid 是 abInfos(1..N) 与 packInfos(N+1..) 共用的全局唯一序号；
-      // mod 条目必须从两者最大值之后续起——否则与 pack 撞号会让客户端
-      // 按 code 管理下载任务时出现"大小不一致"（实测：mod 分配 14982/14983
-      // 撞上 lpack_init1/2 的 14982/14983，导致整个更新中止）。
+      // 无同名官方条目的 mod（新增 bundle，无法继承身份字段）只能追加，cid 必须从两者
+      // 最大值之后续起——否则与 pack 撞号会让客户端按 code 管理下载任务时出现
+      // "大小不一致"（实测：mod 分配 14982/14983 撞上 lpack_init1/2 的 14982/14983，
+      // 导致整个更新中止）。
       const baseCid = nextModBaseCid(
         abInfoList as { cid?: number }[],
         (hotUpdateList.packInfos ?? []) as { cid?: number }[],
       );
-      for (let i = 0; i < mods!.mods.length; i++) {
-        const mod = mods!.mods[i];
-        newAbInfos.push({ ...(isJsonObject(mod) ? mod : {}), cid: baseCid + i });
+      let appended = 0;
+      for (const [name, mod] of modMetaByName) {
+        if (mergedModNames.has(name)) continue;
+        newAbInfos.push({
+          name: mod.name,
+          hash: mod.md5,
+          md5: mod.md5,
+          totalSize: mod.totalSize,
+          abSize: mod.abSize,
+          cid: baseCid + appended,
+          // 匿名 bundle 必须带 meta/cat 才会被当作独立下载项（见上）
+          ...(name.startsWith("anon/") ? { cat: 1, meta: 1 } : {}),
+        });
+        appended++;
       }
     }
 

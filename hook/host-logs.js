@@ -6,9 +6,16 @@
  * 由 x86_64 frida-server 加载（普通 JS，无需打包）。
  */
 (function () {
-  var stats = { print: 0, write: 0 };
+  var stats = { print: 0, write: 0, dropped: 0, suppressed: 0 };
   // 需要过滤时改这里，例如 /^(HG_|Unity|Torappu|xlua)/i
   var TAG_FILTER = null;
+  // 噪声标签黑名单：MuMu 的 houdini 转译层用 __android_log_print 高频打 "[%d] %s"
+  // （实测单轮 27.5 万行 / 14.9MB，占整份日志 99.96%），必须丢弃——否则日志文件与
+  // agent 消息通道被淹没（曾拖出 DSH 进程内存压力崩溃），有用信号也读不出来。
+  var TAG_DENY = /^(houdini|Houdini)$/;
+  // 单轮 agent 消息上限：兜底防某个标签刷屏把通道打爆（超限只计数，不再 send）
+  var MAX_SEND = 4000;
+  var sent = 0;
 
   function cstr(p) {
     try {
@@ -19,7 +26,20 @@
   }
 
   function wanted(tag) {
+    if (TAG_DENY.test(tag)) {
+      stats.dropped += 1;
+      return false;
+    }
     return TAG_FILTER === null || TAG_FILTER.test(tag);
+  }
+
+  function emit(payload) {
+    if (sent >= MAX_SEND) {
+      stats.suppressed += 1;
+      return;
+    }
+    sent += 1;
+    send(payload);
   }
 
   var mod = Process.findModuleByName("liblog.so");
@@ -34,7 +54,7 @@
       onEnter: function (args) {
         stats.write += 1;
         var tag = cstr(args[1]);
-        if (wanted(tag)) send({ t: "log", src: "host", fn: "log_write", tag: tag, text: cstr(args[2]) });
+        if (wanted(tag)) emit({ t: "log", src: "host", fn: "log_write", tag: tag, text: cstr(args[2]) });
       },
     });
   }
@@ -53,7 +73,7 @@
           if (fmt.indexOf("%s") >= 0) extra = cstr(args[3]);
           else if (fmt.indexOf("%d") >= 0 || fmt.indexOf("%u") >= 0) extra = String(args[3].toInt32());
         }
-        send({ t: "log", src: "host", fn: "log_print", tag: tag, text: extra === null ? fmt : fmt.replace(/%[sdu]/, extra) });
+        emit({ t: "log", src: "host", fn: "log_print", tag: tag, text: extra === null ? fmt : fmt.replace(/%[sdu]/, extra) });
       },
     });
   }

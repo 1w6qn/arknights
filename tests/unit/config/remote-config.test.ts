@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
+import { readFileSync, existsSync } from "fs";
+import { join } from "path";
 import type { Request, Response } from "express";
 
 import {
@@ -47,10 +49,37 @@ describe("buildNetworkConfigContent", () => {
   it("应替换 {server} 占位符为 Host:PORT", () => {
     const content = buildNetworkConfigContent();
     const parsed = JSON.parse(content);
-    // funcVer 动态（V058 → V070 由 syncGameVersion 自动同步）
-    const funcVer = Object.keys(parsed.configs)[0];
+    // funcVer 不再随意跟随官服：它必须等于客户端 Lua 的 CUR_FUNC_VER（见下一个用例的守卫）
+    const funcVer = parsed.funcVer;
+    expect(parsed.configs[funcVer]).toBeDefined();
     expect(parsed.configs[funcVer].network.gs).toMatch(/^http/);
     expect(parsed.configs[funcVer].network.gs).not.toContain("{server}");
+  });
+});
+
+describe("funcVer 与客户端 Lua 版本一致性（守卫）", () => {
+  /**
+   * `entry.lua` 顶层做 `CS.Torappu.VersionCompat.CUR_FUNC_VER ~= GlobalConfig.CUR_FUNC_VER` 判断，
+   * 不等则 `EntryTable.Init` 变空实现并 `return`（chunk 提前结束）——整套 Lua 初始化（含
+   * `HotfixProcesser.Do` 插件加载）失效。客户端从 `/official/network_config` 的 `funcVer` 取值，
+   * 故私服下发的 funcVer 必须与客户端 Lua 的 `CUR_FUNC_VER` 逐字符相同。
+   *
+   * 实测 2026-09-14：官服**未签名**请求返回 V070，而 2.7.71 客户端 Lua 要 V077（该请求下的旧档位）。
+   */
+  it("network_config 下发的 funcVer 必须等于客户端 GlobalConfig.CUR_FUNC_VER", () => {
+    const cfgPath = join(__dirname, "..", "..", "..", "data", "[uc]lua", "GlobalConfig.lua");
+    if (!existsSync(cfgPath)) {
+      // 明文参考目录为 gitignore（由提取/重打包流程生成），缺失时无法比对
+      console.warn(`[skip] 客户端 Lua 明文参考缺失，跳过 funcVer 守卫: ${cfgPath}`);
+      return;
+    }
+    const expected = /CUR_FUNC_VER\s*=\s*"([^"]+)"/.exec(readFileSync(cfgPath, "utf8"))?.[1];
+    expect(expected, `${cfgPath} 未解析出 CUR_FUNC_VER`).toBeTruthy();
+    if (expected === undefined) return; // 显式收窄（TS 不认 expect 的断言）
+    const parsed = JSON.parse(buildNetworkConfigContent());
+    expect(parsed.funcVer).toBe(expected);
+    // 档位键必须同步改名，否则客户端按 configs[funcVer] 取不到网络档
+    expect(parsed.configs[expected]).toBeDefined();
   });
 });
 

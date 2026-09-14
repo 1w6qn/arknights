@@ -1,7 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { join } from "path";
 import { crc32 } from "crc";
+import { writeFile } from "fs/promises";
 import type { Request, Response } from "express";
+
+/** 下发清单条目的测试视图（只声明断言用到的字段，避免 `unknown` 逃逸） */
+interface ServedAbInfo {
+  name: string;
+  hash: string;
+  md5: string;
+  totalSize: number;
+  abSize: number;
+  cid?: number;
+  cat?: number;
+  meta?: number;
+}
 
 /** excel 行夹具视图（本文件不提供的表也要显式占位，否则门面方法的 `this.XxxTable` 报 TS2339/TS7023） */
 interface ExcelRowMock { name?: string }
@@ -349,6 +362,117 @@ describe("asset mod（enableMods=true）", () => {
     expect(res.sendFile).not.toHaveBeenCalledWith(
       join(modsDir, "skinpack_char_4064_mlynar.dat"),
     );
+  });
+
+  it("清单注入：mod 覆盖官方同名条目，保留身份字段（cid/cat/meta/hash），只换内容令牌与尺寸", async () => {
+    // 官方实测形态（2026-09-14）：匿名 bundle 是独立下载项——meta=1（ABMetaFlag.IGNORE_MD5）、
+    // hash==md5==4 位内容令牌、带 cid/cat；主体 bundle 的 hash 是稳定身份键、md5 是 32 位内容 md5。
+    const official = {
+      versionId: "26-08-07-14-53-29_30b8f0",
+      manifestName: "e6d09183218d744a42403a4ed22556e2.idx",
+      manifestVersion: "V077",
+      abInfos: [
+        {
+          name: "anon/63bbacd2fab677125a1516d4396114ab.bin",
+          hash: "d21c",
+          md5: "d21c",
+          totalSize: 1112961,
+          abSize: 1121653,
+          cid: 2457,
+          cat: 1,
+          meta: 1,
+        },
+        {
+          name: "shaders/other.ab",
+          hash: "3a3fec0c5875afee8410d3dba8e002cb",
+          md5: "ef1db26aee7f598bd01773179b84e5aa",
+          totalSize: 106536,
+          abSize: 133308,
+          cid: 2,
+        },
+      ],
+      packInfos: [],
+    };
+    const dat = Buffer.alloc(10);
+    fsMock.readdir.mockImplementation(async (d: string) => {
+      if (isPlatformSubdir(String(d))) throw new Error("ENOENT");
+      return ["anon_63bbacd2fab677125a1516d4396114ab.dat"];
+    });
+    fsMock.readFile.mockImplementation(async (p: string) => {
+      const s = String(p);
+      if (s.endsWith("mods.Android.json")) {
+        return JSON.stringify({
+          file: {
+            [join(modsDir, "anon_63bbacd2fab677125a1516d4396114ab.dat")]: {
+              size: 10,
+              crc32: crc32(dat),
+            },
+          },
+          mod: {
+            mods: [
+              {
+                name: "anon/63bbacd2fab677125a1516d4396114ab.bin",
+                hash: "ba45090f85f0d3876400a82a396503f7",
+                md5: "ba45090f85f0d3876400a82a396503f7",
+                totalSize: 1175777,
+                abSize: 1213360,
+              },
+            ],
+            name: ["anon/63bbacd2fab677125a1516d4396114ab.bin"],
+            path: ["android/anon_63bbacd2fab677125a1516d4396114ab.dat"],
+            download: ["anon_63bbacd2fab677125a1516d4396114ab.dat"],
+          },
+        });
+      }
+      if (s.endsWith("anon_63bbacd2fab677125a1516d4396114ab.dat")) return dat;
+      if (s.endsWith("hot_update_list.json")) return JSON.stringify(official);
+      return undefined;
+    });
+    vi.mocked(exists).mockImplementation(async (p: string) => {
+      const s = String(p).replace(/\\/g, "/");
+      return s.endsWith("mods.Android.json") || s.endsWith("hot_update_list.json");
+    });
+    vi.mocked(size).mockResolvedValue(10);
+
+    const res = mockRes();
+    await callRouter(manifestReq(), res);
+    await new Promise((r) => setTimeout(r, 30));
+
+    // exportFile 把注入后的清单写盘（cache/hot_update_list.json）——从写盘内容断言下发形态
+    const bodies = vi
+      .mocked(writeFile)
+      .mock.calls.map((call) => String(call[1]))
+      .filter((body) => body.includes("\"abInfos\""));
+    expect(bodies).toHaveLength(1);
+    const served = JSON.parse(bodies[0]) as {
+      versionId: string;
+      abInfos: ServedAbInfo[];
+    };
+
+    // 官方条目被就地替换（不重复、不追加到末尾）
+    const merged = served.abInfos.filter(
+      (e) => e.name === "anon/63bbacd2fab677125a1516d4396114ab.bin",
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      // 内容令牌 = mod md5 前 4 位（匿名 bundle 保持 hash==md5 同形；令牌变化即"有新版本"）
+      hash: "ba45",
+      md5: "ba45",
+      totalSize: 1175777,
+      abSize: 1213360,
+      // 身份字段全部沿用官方条目——丢掉它们会让客户端把该条目当作无人认领的打包资源而忽略
+      cid: 2457,
+      cat: 1,
+      meta: 1,
+    });
+
+    // 未被 mod 覆盖的主体 bundle 原样下发（含 32 位 md5 与身份 hash）
+    expect(served.abInfos.find((e) => e.name === "shaders/other.ab")).toMatchObject({
+      hash: "3a3fec0c5875afee8410d3dba8e002cb",
+      md5: "ef1db26aee7f598bd01773179b84e5aa",
+      cid: 2,
+    });
+    expect(served.versionId).toBe("26-08-07-14-53-29_30b8f0");
   });
 
   it("refreshModsIfChanged：mod 文件指纹变化时触发重载，未变化时跳过（运行时重打包热更新）", async () => {    // loadMods 走 zip 解析（yauzl mock 失败 → 空列表）；仅验证指纹驱动的重载触发

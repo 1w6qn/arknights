@@ -22,8 +22,8 @@ export const LUACRYPT_MASK = Buffer.from("UITpAi82pHAWwnzqHRMCwPonJLIB3WCl");
 const KEY = LUACRYPT_MASK.subarray(0, 16);
 /** IV 掩码 = mask 后 16 字节 */
 const IV_MASK = LUACRYPT_MASK.subarray(16, 32);
-/** 固定头部长度（Android Lua 加密格式） */
-const HEAD_LEN = 128;
+/** 固定头部长度（Android Lua 加密格式）；重打包需保留原始头，故对外导出 */
+export const HEAD_LEN = 128;
 /** IV 区长度 */
 const IV_LEN = 16;
 

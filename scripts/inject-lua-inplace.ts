@@ -30,7 +30,7 @@ import * as fs from "fs";
 import * as path from "path";
 import JSZip from "jszip";
 import { lz4BlockDecompress, decompressLz4ak, lz4BlockCompress, compressLz4ak } from "./vendor/lz4";
-import { encryptLuaScript, decryptLuaScript } from "./vendor/lua-crypt";
+import { encryptLuaScript, decryptLuaScript, HEAD_LEN } from "./vendor/lua-crypt";
 
 /** 内置 Lua 主 bundle 名（zip 条目名 = 客户端资源名） */
 const BUILTIN_BUNDLE_NAME = "anon/6edf14bbd79243eb61e288ff28e446c3.bin";
@@ -253,18 +253,23 @@ export function locateScript(sf: Uint8Array, objAbsStart: number, objSize: numbe
 
 /**
  * 生成内置自包含插件引导（Default）。是合法 HotfixBase hotfixer。
- * 受限于目标资产明文预算（TestStubHotfixer 加密 496B → 明文 ≤351B），代码压到最简：
- * OnInit 写 plugin_boot_trace.txt（确定性执行证明）并尝试发心跳（私服 [PluginHeartbeat]）。
+ *
+ * 可观测性优先：`HotfixProcesser.Do` 发生在本 bundle 被 require 时（早于 ModelMgr/网络就绪），
+ * 此时 `UISender.me` 通常还不存在，心跳发不出去；落盘 API 也可能不适用。因此引导的**首要证据**
+ * 是走游戏自带 Lua 日志（`CS.Torappu.Lua.Util.LogHotfixError`）——frida 的 guest liblog 钩子
+ * 与 logcat 都能看到 `[DoctorateTs]`。落盘 `plugin_boot_trace.txt` 作为次证据（best-effort）。
+ * 明文预算受目标资产限制（TestStubHotfixer 密文 496B → 明文 ≤351B），故代码压到最简。
  * @returns 明文 Lua 源码
  */
-function buildDefaultBootstrap(): string {
+export function buildDefaultBootstrap(): string {
   return [
     'local T=Class("T",HotfixBase)',
     "function T:OnInit()",
     "xpcall(function()",
+    "local u=CS.Torappu.Lua.Util",
+    'u.LogHotfixError("[DoctorateTs] boot OnInit")',
     'local p=CS.UnityEngine.Application.persistentDataPath.."/plugin_boot_trace.txt"',
     'CS.Torappu.FileUtil.WriteToFile("i",p,true)',
-    'if UISender then UISender:SendGet("/plugin/heartbeat",nil,{useMask=false}) end',
     "end,function()end)",
     "end",
     "return T",
@@ -285,11 +290,11 @@ function buildDefaultBootstrap(): string {
  * 体积约 0.5KB，需在明文预算 ≥1KB 的资产（如 ArkventHotfixer）内使用。
  * @returns 明文 Lua 源码
  */
-function buildRobustBootstrap(): string {
+export function buildRobustBootstrap(): string {
   return [
     'local T=Class("T",HotfixBase)',
     "local function hb()",
-    '  if UISender and UISender.SendGet then UISender:SendGet("/plugin/heartbeat",nil,{useMask=false}) end',
+    '  if UISender and UISender.me then UISender.me:SendGet("/plugin/heartbeat",nil,{useMask=false}) end',
     "end",
     "local function inst()",
     "  xpcall(function()",
@@ -477,6 +482,9 @@ async function main(): Promise<void> {
   if (!assetWant) assetWant = bootstrapMode === "robust" ? "ArkventHotfixer" : "TestStubHotfixer";
   const scriptFile = si >= 0 ? args[si + 1] : "";
   const outMods = path.resolve(oi >= 0 ? args[oi + 1] : path.join(__dirname, "..", "mods"));
+  // 客户端资源名（zip 条目名）——须与 hot_update_list 里的 `anon/<hash>.bin` 同名，否则客户端拉不到
+  const bni = args.indexOf("--bundle-name");
+  const bundleName = bni >= 0 ? args[bni + 1] : BUILTIN_BUNDLE_NAME;
 
   console.log(`[inject] 源 bundle: ${bundleFile}`);
   const uf = await readBundleBytes(bundleFile);
@@ -510,12 +518,20 @@ async function main(): Promise<void> {
     : bootstrapMode === "robust"
       ? buildRobustBootstrap()
       : buildDefaultBootstrap();
-  const targetP = plainBudget(loc.scriptLen);
+  // 目标明文长度：**保留原资产明文长度**，不要填充到预算上限。
+  // 实测：客户端加载器对「明文长度 != 原值」的资产返回 null（官方 DefinedFix 明文 265B，
+  // 我们填充到预算 271B 后 require 解析失败 → entry.lua 的 HotfixProcesser.Do 中断，插件永不加载）。
+  // 密文长度由 cipher 决定：明文在 [L-160, L-145] 区间内都对应同一密文长度，故可与原文等长。
+  const origPlainLen = Buffer.from(decryptLuaScript(srcEnc)).length;
+  const targetP = Math.min(plainBudget(loc.scriptLen), origPlainLen);
   if (Buffer.byteLength(basePlain, "utf8") > targetP) {
     throw new Error(`注入内容 ${Buffer.byteLength(basePlain, "utf8")}B 超过该资产明文预算 ${targetP}B；换更大的目标资产或精简内容`);
   }
   const padded = padTo(basePlain, targetP);
-  const newEnc = Buffer.from(encryptLuaScript(Buffer.from(padded, "utf8")));
+  // **保留原始 128B 头**：官方头虽是随机数据、我们的解密器忽略它，但客户端加载器对「换过头」的资产
+  // 会返回 null（实测：随机头的资产 require 解析失败，同 bundle 内未改动的资产正常）。
+  const srcHead = sf.slice(loc.scriptAbs, loc.scriptAbs + HEAD_LEN);
+  const newEnc = Buffer.from(encryptLuaScript(Buffer.from(padded, "utf8"), srcHead));
   if (newEnc.length !== loc.scriptLen) {
     throw new Error(`重加密长度不符: 期望 ${loc.scriptLen}B 实际 ${newEnc.length}B`);
   }
@@ -531,10 +547,10 @@ async function main(): Promise<void> {
 
   // 打 .dat（zip 单条目）
   const zip = new JSZip();
-  zip.file(BUILTIN_BUNDLE_NAME, Buffer.from(newUf), { createFolders: false, date: LUA_ZIP_DATE });
+  zip.file(bundleName, Buffer.from(newUf), { createFolders: false, date: LUA_ZIP_DATE });
   const dat = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
   fs.mkdirSync(outMods, { recursive: true });
-  const datPath = path.join(outMods, bundleToModName(BUILTIN_BUNDLE_NAME));
+  const datPath = path.join(outMods, bundleToModName(bundleName));
   fs.writeFileSync(datPath, Buffer.from(dat));
   console.log(`[inject] 已生成 mod: ${datPath} (${dat.length}B)`);
 
@@ -558,8 +574,15 @@ async function main(): Promise<void> {
     }
   }
   const abCount = checkMeta.objects.filter((x) => x.typeId === checkMeta.classIds.indexOf(142)).length;
-  console.log(`[verify] 回读结构: TextAsset=${checkTextAssets} AssetBundle=${checkAB}/${abCount}（应为 345/1）`);
-  if (checkTextAssets !== 345 || checkAB < 1 || !targetOk) {
+  // 校验基准取**源 bundle 自身**的计数——不同客户端版本的 Lua bundle 资产数不同
+  // （官方 anon/63bbacd2….bin 是 344，历史 6edf14bb 是 345），写死数字会让正确产物被判失败
+  const srcTextAssets = meta.objects.filter((x) => x.typeId === taTypeIdx).length;
+  const srcAbTypeIdx = meta.classIds.indexOf(142);
+  const srcAbCount = srcAbTypeIdx >= 0 ? meta.objects.filter((x) => x.typeId === srcAbTypeIdx).length : 0;
+  console.log(
+    `[verify] 回读结构: TextAsset=${checkTextAssets}/${srcTextAssets} AssetBundle=${checkAB}/${srcAbCount}（应与源 bundle 一致）`,
+  );
+  if (checkTextAssets !== srcTextAssets || checkAB < srcAbCount || !targetOk) {
     throw new Error("离线回读校验失败：结构与内容未保持完整");
   }
   console.log("[inject] 校验通过。重启服务端加载该 mod，再完全退出并重启客户端即可验证 heartbeat。");

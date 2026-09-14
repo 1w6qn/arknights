@@ -28,6 +28,7 @@ import { createHash } from "crypto";
 import JSZip from "jszip";
 import { packLuaBundle, type ContainerSpec, type LuaAsset, type PackOptions } from "./pack-lua-bundle";
 import { extractBundleWithMeta, type AssetBundleMeta } from "./vendor/unityfs";
+import { unityfsToSF } from "./inject-lua-inplace";
 import { decryptLuaScript, encryptLuaScript, isLuaEncrypted } from "./vendor/lua-crypt";
 
 /** 内置 Lua 主 bundle 名（zip 条目名 = 客户端资源名）。以客户端真实引导 Lua 的 bundle 为准：
@@ -340,6 +341,8 @@ export async function repackBuiltinLua(
   if (builtin.length === 0) {
     throw new Error(`内置 bundle 未解析出任何 Lua 资产: ${builtinPath}`);
   }
+  // CAB 节点名也必须沿用源 bundle（官方是逻辑 bundle 标识 `CAB-<hash>`，不是内容哈希；自造名属无谓偏离）
+  const cabName = unityfsToSF(builtinBytes).cabNodeName;
   const pathIdByName = new Map(builtin.map((a, i) => [a.name, assetPathIds[i] ?? 0n]));
   const merged = mergeAndPatch(builtin, pluginDir, false, inlinePlugins);
   return writeModDat(merged, outModsDir, bundleName, hashName, {
@@ -349,6 +352,7 @@ export async function repackBuiltinLua(
     pathIds: merged.map((a) => pathIdByName.get(a.name) ?? 0n),
     assetBundlePathId: assetBundlePathId,
     typeTable,
+    cabName,
   });
 }
 

@@ -21,9 +21,9 @@
   },
   "NetworkConfig": {
     "configVer": "5",
-    "funcVer": "V070",
+    "funcVer": "V077",
     "configs": {
-      "V070": {
+      "V077": {
         "override": true,
         "network": {
           "gs": "{server}",

@@ -27,6 +27,13 @@ local PluginDefs = {
     desc = "现代化插件启停管理面板",
     module = "Plugin/PanelPlugin",
   },
+  {
+    -- 曾经漏登记：模块打进 bundle 也从不被 require（死代码），私服请求重定向失效
+    id = "network_redirect",
+    name = "网络重定向",
+    desc = "把官服域名请求重定向到私服地址",
+    module = "Plugin/NetworkRedirectPlugin",
+  },
 }
 
 return PluginDefs

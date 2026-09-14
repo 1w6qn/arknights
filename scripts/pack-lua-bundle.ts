@@ -133,6 +133,8 @@ export interface PackOptions {
   assetBundlePathId?: bigint;
   /** 官方类型表原始字节（含类型树）；提供时 enableTypeTree=true 并原样写入 */
   typeTable?: Uint8Array;
+  /** CAB 节点名（缺省官方值 {@link DEFAULT_LUA_CAB_NAME}；重打包应传源 bundle 的名字） */
+  cabName?: string;
 }
 
 /**
@@ -253,11 +255,13 @@ export function buildSerializedFile(assets: LuaAsset[], opts?: PackOptions): Uin
   // objectCount 后需 align_stream(4)（从 metadata 起点对齐到 4）
   const metaContentAligned = ((metaContentLen + 3) & ~3);
 
-  const metadataSize = metaContentLen;
+  // metadataSize = 真实 metadata 长度（4 字节对齐后），与官方同义（官方实测 10777B）
+  const metadataSize = metaContentAligned;
 
-  // dataOffset 需容纳全部 metadata（v22 扩展头 48B + metadata 内容），并对齐 4096 页。
-  // 硬编码 4096 在多资产（几百条 object 表）时会与 metadata 重叠，导致对象数据被覆盖。
-  const DATA_OFFSET = Math.max(4096, Math.ceil((48 + metaContentAligned) / 4096) * 4096);
+  // dataOffset = align16(48 + metadataSize)：官方实测 `10832 = align16(48 + 10777)`（填充 7B）。
+  // 曾用 4096 页对齐 → 客户端**拒绝**该 bundle（实测 C2：下载后回退为内置 bundle、无崩溃；
+  // 同一容器换成官方 SF 则被正常接受），且同内容下 SF 比官方大 1.4KB。
+  const DATA_OFFSET = (48 + metadataSize + 15) & ~15;
 
   const fileSize = DATA_OFFSET + alignedObjData;
 
@@ -329,7 +333,7 @@ export function buildSerializedFile(assets: LuaAsset[], opts?: PackOptions): Uin
     throw new Error(`metadata 长度不匹配: 实际 ${o - metaStartAbs}, 期望 ${metaContentAligned}`);
   }
 
-  // ---- 对象数据区（dataOffset 起，4096 对齐）----
+  // ---- 对象数据区（dataOffset 起，16 字节对齐）----
   let dof = DATA_OFFSET;
   for (let i = 0; i < assets.length; i++) {
     const info = infos[i];
@@ -375,13 +379,20 @@ export function buildSerializedFile(assets: LuaAsset[], opts?: PackOptions): Uin
 /**
  * 将多条明文 Lua 资产打包为 UnityFS bundle（客户端可加载）。
  * @param assets - Lua 资产列表（m_Name 为客户端资源名，如 plugin/PluginManager.lua）
- * @param opts   - 打包附加项（容器 / bundle 名 / 尾部字节）
+ * @param opts   - 打包附加项（容器 / bundle 名 / CAB 名 / 尾部字节）
  * @returns UnityFS bundle 字节
  */
 export function packLuaBundle(assets: LuaAsset[], opts?: PackOptions): Uint8Array {
   const sf = buildSerializedFile(assets, opts);
-  return buildUnityFS(sf);
+  return buildUnityFS(sf, opts?.cabName);
 }
+
+/**
+ * 官方内置 Lua bundle 的 CAB 节点名（**逻辑 bundle 标识**，不是内容哈希——两个不同版本的官方
+ * Lua bundle 实测共用此名，见 docs/lua-load-chain-reconstructed-2026-09-14.md）。
+ * 重打包时应沿用源 bundle 的 CAB 名；无法取得源时用此官方值，勿再自造名字。
+ */
+export const DEFAULT_LUA_CAB_NAME = "CAB-86d1ff11409b16a8308b9b0810871c29";
 
 /**
  * 构造 UnityFS bundle（version 8，块信息不压缩，数据块不压缩 mode=0）。
@@ -391,16 +402,17 @@ export function packLuaBundle(assets: LuaAsset[], opts?: PackOptions): Uint8Arra
  *   → 块信息 cSize/uSize/flags → (version>=7 对齐 16) → 块信息 → 数据块
  *
  * @param sf - SerializedFile（CAB 内容）
+ * @param cabName - CAB 节点名（缺省官方值；重打包应传源 bundle 的名字）
  * @returns UnityFS bundle 字节
  */
-export function buildUnityFS(sf: Uint8Array): Uint8Array {
+export function buildUnityFS(sf: Uint8Array, cabName: string = DEFAULT_LUA_CAB_NAME): Uint8Array {
   const unityVer = "5.x.x";
   const engine = UNITY_VERSION;
 
   // 块信息体（1 个数据块 + 1 个节点）
   const blockCount = 1;
   const nodeCount = 1;
-  const cabHash = "CAB-luahotupdate";
+  const cabHash = cabName;
   // 块信息：16B hash + blockCount u32 + (u u32 + c u32 + fl u16) + nodeCount u32 + (offset i64 + size i64 + flags u32 + name cstr)
   const biBodySize = 16 + 4 + (4 + 4 + 2) + 4 + (8 + 8 + 4 + (cabHash.length + 1));
   const cSize = biBodySize; // infoMode=0 不压缩
