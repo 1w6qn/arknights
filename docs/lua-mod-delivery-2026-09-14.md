@@ -162,3 +162,77 @@ E CRASH: No handler for signal 11                                            ←
   node_modules/.bin/tsx index.ts -s          # 私服（后台，输出重定向到文件）
   python3 scripts/frida-mumu-arm64.py --script hook/build/il2cpp-client-redirect.js --java-script "" --duration 170
   ```
+
+## 6. 2026-09-15 复查：oursonly + 我们的重签容器已全线打通（附带两个客户端状态坑）
+
+§4 的"加载重打包 bundle → SIGSEGV 循环"在当前产物上**不再复现**（当前 mod 只注入引导：
+`TestStubHotfixer.lua` 496B，`entry.lua` 仍是官方 2,489B 明文，仅整包换成我们的签名），
+`--pubkey-mode oursonly` 一条链路走通，验收证据：
+
+| 检查 | 结果 |
+| --- | --- |
+| mod 容器内 Lua 签名（本地逐资产验签） | `mods/android/anon_63bb….dat` **344/344 通过** `data/crypto/public.xml` |
+| 客户端实际生效的 bundle | `files/Bundles/anon/63bb….bin` md5 `3892e532…` = **我们的 mod**（非官方 `e27e60f9…`） |
+| 客户端验签 | 60 次调用 0 失败：`depth=0/keyReplaced=false` 6 次（官方 excel/DB 资产，保持官方公钥）+ `depth=1/keyReplaced=true` 54 次（Lua 上下文换成我们公钥，全 True） |
+| Lua 入口 | `lua-load entry.lua len=2489` → `GlobalConfig` / `Base/*` 顺序加载，无 abort |
+| 资产内引导（§2 路线） | `plugin_boot_trace.txt` 更新且内容 `DTS_PLUGIN_OK enemy_hp=1 … automation_bridge=1`（8 插件 ON） |
+| 私服侧 | `/plugin/lua`、`/plugin/heartbeat`×7 命中 |
+
+为把"验签失败"这类问题从"猜"变成"读日志"，hook 的 `verify-bin` 事件补了两个字段：
+`depth`（进入钩子时的 `luaLoaderDepth`）与 `keyReplaced`（本次是否真的把公钥换成了我们的）。
+判读法：**`ok:false` 且 `keyReplaced:false` = 换公钥被上下文守卫跳过（不是内容不对）**；
+`ok:false` 且 `keyReplaced:true` = 内容确实不是我们签的。
+
+### 6.1 坑一：客户端注册表与磁盘内容不一致 → 换公钥必崩
+
+现象（08:32–08:47 三次复现）：`verify-bin call 7 ok:false` → `lua-load entry.lua len=-1` →
+`require "entry.lua"` 抛 LuaException → `Il2CppExceptionWrapper` abort（tombstone_00/01 为该时段）。
+
+机制：客户端 `files/Bundles/persistent_res_list.json` 还停在 09-14 17:01（记录的是**上一版**
+mod 内容令牌），而磁盘上 `anon/63bb….bin` 已是新版；客户端把 bundle 当"脏"发起一轮**加载前校验**，
+这一步在 `_CustomLoader` 之外 → hook 按设计**保持官方公钥** → 我们签的内容必然验不过 → Lua 入口拿不到内容 → abort。
+对照：`--pubkey-mode asis`（不换公钥、官方内容）同状态能起，正因为没有"我们的签名 vs 官方公钥"这对矛盾。
+
+处置（任选，之后 `oursonly` 恢复正常）：
+1. **让客户端完成一次正常热更**：先 `--pubkey-mode asis` 起一次（客户端会重写 `hot_update_list.json`/`persistent_res_list.json`，08:45 那次即如此），再切回 `oursonly`；
+2. 或删掉客户端那两份注册表 JSON（`files/Bundles/hot_update_list.json`、`persistent_res_list.json`）后重跑，让它重新登记 mod。
+
+一键脚本已内置定向诊断：命中 `verify-bin ok:false` + `entry.lua len=-1` 时直接打印这条因果与上述处置。
+
+### 6.2 坑二：备份恢复多套了一层 → 客户端出现 `files/files/` 第二棵树
+
+设备上 `files/files/{Bundles,Cookies,HGGameUpdate,il2cpp,…}` 全量存在（mtime 全是 09-14 17:01），
+里面是**旧注册表 + 旧 mod 内容**（`anon/63bb….bin` md5 `7814b473…`，与 `files/` 下的 `3892e532…` 不同）。
+它不参与 Unity 的 `persistentDataPath`，但会让"哪份是当前状态"变得不可判读。
+已改名为 `files/files.bak-20260915`（可回滚）；一键脚本开工时会检测并提示同样处置。
+
+### 6.3 可直接复用的两个工具
+
+- 本地验签：`node_modules/.bin/tsx tmp/verify-mod-sign.ts <mod.dat|.bin|.official> [public.xml]`
+  —— 解 zip→UnityFS→SerializedFile，逐 TextAsset 校验 128B 签名并打印 `entry.lua/DefinedFix.lua/TestStubHotfixer.lua` 的明文头。
+- 一键链路：`start-mumu.cmd --duration 60`（默认 `oursonly`，即"资产内引导 + 私服 HTTP"路线）。
+
+### 6.4 加固：验签「双信任锚」（hook 侧 JS 自算 RSA/MD5）
+
+§6.1 的死因是**客户端在 Lua 上下文之外**用它自己的公钥验我们签的内容。与其依赖"客户端状态别脏"，
+不如让这一层不再取决于客户端拿的是哪把公钥：`hook/il2cpp-client-redirect.ts` 在 `VerifySignMD5RSA(byte[],byte[],string)`
+的钩子里，用**纯 JS**（QuickJS 无 `node:crypto`，故自带 MD5 + base64 + BigInt 模幂）按我们的公钥复算
+128B PKCS#1 v1.5/MD5 签名；只要内容确实是**我们**签的，就把返回值强制算成功。官方资产仍走客户端自身验签
+（我们这把公钥验不过官方签名，锚点不参与），所以 excel/DB 的官方签名路径不受影响。
+
+- 自检：启动时打 `verify-anchor-selftest`（MD5 向量 + BigInt 可用性 + 公钥解析 1024 bit）；不满足则整体禁用锚点，只影响这一层加固。
+- 判定：内容经 `readManagedBytes`（il2cpp 数组：长度 `+0x18`、数据 `+0x20`）读出，>256KB 的大 blob 不参与；参数顺序两个方向都试，载荷含 128B 头时摘要覆盖 `[128:]`。
+- 日志：`verify-anchor`（本次强制放行，含 `call/depth`）、`verify-anchor-err`（自身上限流）。
+
+**验证（制造"客户端验签必失败"的对照）**：`--pubkey-mode flip` 会把 Lua 上下文的公钥换成官方（反转写法），
+即客户端对**我们签的** Lua 必然验签失败 —— 此时锚点接管：
+
+```
+verify-anchor', 'call': 7, 'depth': 1, 'forced': True      ← 第 7 次起全部强制放行（日志上限 20 条）
+lua-load', 'path': 'entry.lua', 'len': 2489                ← Lua 入口照常加载
+[收尾] ✔ frida 管线正常结束（40 s） / ✔ 客户端仍在运行
+```
+
+对照未加固前：同一条件（客户端拿官方公钥验我们的内容）就是 §6.1 的 abort。
+另外 `--pubkey-mode asis` 现在也能正常起（60 次验签 0 失败）——因为私服下发的 `network_config`
+本身会把信任锚换成我们的公钥，锚点只是给"锚还没换过来/状态脏"的窗口兜底。

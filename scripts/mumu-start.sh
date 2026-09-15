@@ -196,6 +196,16 @@ $TLS_PORT $TLS_PORT"
   ok "reverse：80/$SERVER_PORT/$TLS_PORT → Windows 中继 → WSL 私服"
 fi
 
+# 历史坑：把备份恢复到 `files/files/`（多套了一层）会留下第二份注册表与旧 mod 内容，
+# 与 `files/` 下的新内容不一致时，客户端会把 mod bundle 当"脏"重新校验 → 换公钥必崩。
+if [ -n "$device_list" ]; then
+  nested="/storage/emulated/0/Android/data/$PKG_NAME/files/files"
+  if [ "$(adb_shell "test -d $nested && echo yes" || true)" = "yes" ]; then
+    warn "客户端里有多余的嵌套缓存树 $nested（历史备份恢复写错层）"
+    warn "  建议改名后再跑：adb shell mv $nested ${nested}.bak-$(date +%Y%m%d)"
+  fi
+fi
+
 # frida-server 常驻检查（设备内 27042 由它监听）
 if [ "$NO_ADB" = "0" ] && [ -n "$device_list" ]; then
   frida_count="$(adb_shell "ps -A | grep frida-server | grep -v grep | wc -l" | tr -dc '0-9' || true)"
@@ -321,6 +331,8 @@ info "日志同时写入 $FRIDA_LOG（Ctrl+C 结束注入）"
 GRACE="${MUMU_FRIDA_GRACE:-60}"
 HARD_TIMEOUT=$((DURATION + GRACE))
 info "最长运行 $HARD_TIMEOUT s（--duration $DURATION + 宽限 $GRACE；超时会强制结束）"
+# 本次运行的日志切片起点：frida.log 是跨次追加的，收尾诊断只能看本次新增的部分
+LOG_BYTES_BEFORE=$(stat -c %s "$FRIDA_LOG" 2>/dev/null || echo 0)
 set +e
 timeout -k 5 "$HARD_TIMEOUT" env ADB="$ADB" FRIDA_DEVICE="$FRIDA_DEVICE" GADGET_DEVICE="$GADGET_DEVICE" \
   python3 "$ROOT/scripts/frida-mumu-arm64.py" "${FRIDA_ARGS[@]}" 2>&1 | tee -a "$FRIDA_LOG"
@@ -345,6 +357,16 @@ if [ "$NO_ADB" = "0" ] && [ -n "$device_list" ]; then
     warn "客户端已退出（$PKG_NAME 不在进程表：崩溃/被杀）"
     warn "  排查：grep -n CRASH $FRIDA_LOG；设备 tombstone 在"
     warn "  /storage/emulated/0/Android/data/$PKG_NAME/files/tombstone_*"
+    # 已定位过的头号死因：换公钥模式与当前生效的 Lua 资产不匹配
+    # （客户端 `_CustomLoader` 里 entry.lua 验签失败 → 返回空 → require 抛 LuaException → abort）
+    run_log="$(tail -c +$((LOG_BYTES_BEFORE + 1)) "$FRIDA_LOG" 2>/dev/null || true)"
+    if printf '%s' "$run_log" | grep -q "verify-bin.*'ok': False" &&
+      printf '%s' "$run_log" | grep -q "lua-load', 'path': 'entry.lua', 'len': -1"; then
+      warn "  命中已知死因：入口 Lua 验签失败（verify-bin ok:False + entry.lua len=-1）"
+      warn "  含义：当前生效的 entry.lua 不是用本模式的公钥签的 —— 换公钥后官方签名的 Lua 必被拒"
+      warn "  处置一：改 --pubkey-mode asis 先让客户端起来（插件走 frida 注入 payload，实测可用）"
+      warn "  处置二：让私服下发「我们重签」的 Lua 容器（assets/<ver>/redirect/ 里别留官方回源的 lpack_v077.dat）"
+    fi
   fi
 fi
 exit "$status"

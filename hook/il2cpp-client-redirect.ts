@@ -1148,3 +1148,327 @@ Il2Cpp.perform(() => {
 setInterval(() => {
   send({ t: "stats", ...stats });
 }, 8000);
+/* ---------------------------------------------------------------------------
+ * 双信任锚：JS 侧自行按「我们的公钥」复算 128B RSA/MD5 签名
+ *
+ * 为什么需要：客户端会在 `_CustomLoader` **之外**（典型场景：mod bundle 被判"脏"后的加载前
+ * 校验）调同一个 `VerifySignMD5RSA(byte[],byte[],string)`。那种上下文里按既有设计必须保持
+ * 官方公钥（否则官方 excel/DB 资产全挂），于是我们重签的内容必然验不过 → Lua 入口拿不到内容
+ * → 未捕获 LuaException → 客户端 abort（详见 docs/lua-mod-delivery-2026-09-14.md §6.1）。
+ * 这里在 JS 里独立复算 MD5 + RSA-1024/PKCS#1 v1.5：只要内容确实是**我们**签的，就把返回值
+ * 强制算成功——客户端此刻拿的是哪把公钥都不再影响我们的资产；官方资产仍走客户端自身验签。
+ * ------------------------------------------------------------------------- */
+
+/** MD5 常量表（sin 表前 64 项）。 */
+const MD5_K = new Uint32Array([
+  0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501,
+  0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be, 0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821,
+  0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa, 0xd62f105d, 0x02441453, 0xd8a1e681, 0xe7d3fbc8,
+  0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed, 0xa9e3e905, 0xfcefa3f8, 0x676f02d9, 0x8d2a4c8a,
+  0xfffa3942, 0x8771f681, 0x6d9d6122, 0xfde5380c, 0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70,
+  0x289b7ec6, 0xeaa127fa, 0xd4ef3085, 0x04881d05, 0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665,
+  0xf4292244, 0x432aff97, 0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1,
+  0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391,
+]);
+/** MD5 每轮的循环左移位数。 */
+const MD5_S = [
+  7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+  5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+  4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+  6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+];
+/** PKCS#1 v1.5 里 MD5 的 DigestInfo 前缀（`30 20 30 0c 06 08 2a864886f70d02050500 04 10`）。 */
+const MD5_DIGEST_INFO = [0x30, 0x20, 0x30, 0x0c, 0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x05, 0x05, 0x00, 0x04, 0x10];
+/** 锚点复算的内容上限：Lua 脚本都是 KB 级，超过这个尺寸（excel/DB 大 blob）直接不参与。 */
+const ANCHOR_MAX_BYTES = 256 * 1024;
+/** 锚点日志上限（避免刷屏）。 */
+const MAX_ANCHOR_LOG = 20;
+/** 我们公钥解析出的 { n, e }（自检失败保持 null → 锚点整体禁用）。 */
+let anchorKey: { n: bigint; e: bigint } | null = null;
+/** 锚点是否可用（运行时自检：BigInt 可用 + MD5 向量正确 + 公钥可解析）。 */
+let anchorReady = false;
+/** `verify-anchor` 已强制放行的次数 */
+let anchorForced = 0;
+/** 锚点自身报错次数（限流上报） */
+let anchorErrors = 0;
+/** 每线程的锚点判定（onEnter 计算、onLeave 应用；按线程隔离避免交叉调用串味） */
+const anchorByThread = new Map<number, boolean>();
+
+/** 字节转十六进制（诊断用）。 */
+function hexBytes(bytes: Uint8Array): string {
+  let out = "";
+  for (const byte of bytes) out += (byte < 16 ? "0" : "") + byte.toString(16);
+  return out;
+}
+
+/** 字节数组比较。 */
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * 纯 JS 的 MD5（Frida 的 QuickJS 没有 node:crypto，也不保证有 TextEncoder）。
+ * @param input - 输入字节
+ * @returns 16 字节摘要
+ */
+function md5Bytes(input: Uint8Array): Uint8Array {
+  const len = input.length;
+  const padded = new Uint8Array((((len + 8) >> 6) + 1) << 6);
+  padded.set(input);
+  padded[len] = 0x80;
+  const bitLen = len * 8;
+  const view = new DataView(padded.buffer);
+  view.setUint32(padded.length - 8, bitLen >>> 0, true);
+  view.setUint32(padded.length - 4, Math.floor(bitLen / 4294967296), true);
+  let a0 = 0x67452301;
+  let b0 = 0xefcdab89;
+  let c0 = 0x98badcfe;
+  let d0 = 0x10325476;
+  const words = new Uint32Array(16);
+  for (let offset = 0; offset < padded.length; offset += 64) {
+    for (let i = 0; i < 16; i += 1) words[i] = view.getUint32(offset + i * 4, true);
+    let a = a0;
+    let b = b0;
+    let c = c0;
+    let d = d0;
+    for (let i = 0; i < 64; i += 1) {
+      let f = 0;
+      let g = 0;
+      if (i < 16) {
+        f = (b & c) | (~b & d);
+        g = i;
+      } else if (i < 32) {
+        f = (d & b) | (~d & c);
+        g = (5 * i + 1) % 16;
+      } else if (i < 48) {
+        f = b ^ c ^ d;
+        g = (3 * i + 5) % 16;
+      } else {
+        f = c ^ (b | ~d);
+        g = (7 * i) % 16;
+      }
+      const tmp = d;
+      d = c;
+      c = b;
+      const sum = (a + f + MD5_K[i] + words[g]) >>> 0;
+      b = (b + ((sum << MD5_S[i]) | (sum >>> (32 - MD5_S[i])))) >>> 0;
+      a = tmp;
+    }
+    a0 = (a0 + a) >>> 0;
+    b0 = (b0 + b) >>> 0;
+    c0 = (c0 + c) >>> 0;
+    d0 = (d0 + d) >>> 0;
+  }
+  const out = new Uint8Array(16);
+  const outView = new DataView(out.buffer);
+  outView.setUint32(0, a0, true);
+  outView.setUint32(4, b0, true);
+  outView.setUint32(8, c0, true);
+  outView.setUint32(12, d0, true);
+  return out;
+}
+
+/** base64 解码（自带实现：QuickJS 不保证有 atob）。 */
+function base64Decode(text: string): Uint8Array {
+  const out: number[] = [];
+  let buffer = 0;
+  let bits = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text.charCodeAt(i);
+    let value = -1;
+    if (ch >= 65 && ch <= 90) value = ch - 65;
+    else if (ch >= 97 && ch <= 122) value = ch - 71;
+    else if (ch >= 48 && ch <= 57) value = ch + 4;
+    else if (ch === 43) value = 62;
+    else if (ch === 47) value = 63;
+    else if (ch === 61) break;
+    if (value < 0) continue;
+    buffer = (buffer << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push((buffer >> bits) & 0xff);
+    }
+  }
+  return new Uint8Array(out);
+}
+
+/** 大端字节 → BigInt。 */
+function bytesToBigInt(bytes: Uint8Array): bigint {
+  let value = 0n;
+  for (const byte of bytes) value = (value << 8n) | BigInt(byte);
+  return value;
+}
+
+/** BigInt → 定长大端字节。 */
+function bigIntToBytes(value: bigint, size: number): Uint8Array {
+  const out = new Uint8Array(size);
+  let rest = value;
+  for (let i = size - 1; i >= 0; i -= 1) {
+    out[i] = Number(rest & 0xffn);
+    rest >>= 8n;
+  }
+  return out;
+}
+
+/** 模幂（平方-乘）。 */
+function modPow(base: bigint, exp: bigint, mod: bigint): bigint {
+  let result = 1n;
+  let b = base % mod;
+  let e = exp;
+  while (e > 0n) {
+    if ((e & 1n) === 1n) result = (result * b) % mod;
+    b = (b * b) % mod;
+    e >>= 1n;
+  }
+  return result;
+}
+
+/**
+ * 解析 .NET XML 公钥（Modulus/Exponent 的 base64 按大端直读，与 scripts/vendor/lua-crypt.ts 一致）。
+ * @param xml - 公钥 XML
+ * @returns { n, e }，解析失败返回 null
+ */
+function parsePublicKey(xml: string): { n: bigint; e: bigint } | null {
+  const modulus = /<Modulus>([^<]+)<\/Modulus>/.exec(xml);
+  const exponent = /<Exponent>([^<]+)<\/Exponent>/.exec(xml);
+  if (modulus === null || exponent === null) return null;
+  try {
+    return { n: bytesToBigInt(base64Decode(modulus[1])), e: bytesToBigInt(base64Decode(exponent[1])) };
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * PKCS#1 v1.5 + MD5 验签（signature 覆盖 payload）。
+ * @param payload - 被签内容
+ * @param signature - 128B 签名
+ * @param key - 公钥
+ * @returns 是否验签通过
+ */
+function rsaVerifyMd5(payload: Uint8Array, signature: Uint8Array, key: { n: bigint; e: bigint }): boolean {
+  if (payload.length === 0 || signature.length === 0) return false;
+  const block = bigIntToBytes(modPow(bytesToBigInt(signature), key.e, key.n), 128);
+  if (block[0] !== 0x00 || block[1] !== 0x01) return false;
+  let index = 2;
+  while (index < block.length && block[index] === 0xff) index += 1;
+  if (index >= block.length || block[index] !== 0x00) return false;
+  index += 1;
+  const tail = block.subarray(index);
+  if (tail.length !== MD5_DIGEST_INFO.length + 16) return false;
+  for (let i = 0; i < MD5_DIGEST_INFO.length; i += 1) if (tail[i] !== MD5_DIGEST_INFO[i]) return false;
+  const digest = md5Bytes(payload);
+  for (let i = 0; i < 16; i += 1) if (tail[MD5_DIGEST_INFO.length + i] !== digest[i]) return false;
+  return true;
+}
+
+/**
+ * 读一个托管 byte[] 的内容（il2cpp 数组：长度 +0x18，数据 +0x20）。
+ * 超过 {@link ANCHOR_MAX_BYTES} 直接返回 null（大 blob 不参与锚点）。
+ * @param ptr - 托管数组指针
+ * @returns 字节内容或 null
+ */
+function readManagedBytes(ptr: NativePointer | null): Uint8Array | null {
+  if (ptr === null || ptr.isNull()) return null;
+  try {
+    const length = ptr.add(0x18).readS32();
+    if (length <= 0 || length > ANCHOR_MAX_BYTES) return null;
+    const raw = ptr.add(0x20).readByteArray(length);
+    return raw === null ? null : new Uint8Array(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 判断这次验签的两个 byte[] 是否构成「我们的签名 + 我们的载荷」。
+ * 参数顺序按 `VerifySignMD5RSA(byte[] content, byte[] signature, string pubkey)`，
+ * 但客户端两种顺序都可能出现，故两个方向都试；载荷可能含 128B 头（此时摘要覆盖 [128:]）。
+ * @param first - 第一参数
+ * @param second - 第二参数
+ * @param key - 我们的公钥
+ * @returns 是否是我们签的内容
+ */
+function anchorMatches(first: Uint8Array | null, second: Uint8Array | null, key: { n: bigint; e: bigint }): boolean {
+  if (first === null || second === null) return false;
+  const pairs: [Uint8Array, Uint8Array][] = [
+    [second, first],
+    [first, second],
+  ];
+  for (const [signature, content] of pairs) {
+    if (signature.length !== 128) continue;
+    if (content.length > 128 && bytesEqual(content.subarray(0, 128), signature) && rsaVerifyMd5(content.subarray(128), signature, key)) {
+      return true;
+    }
+    if (rsaVerifyMd5(content, signature, key)) return true;
+  }
+  return false;
+}
+
+/** 锚点自检（惰性一次）：BigInt + MD5 向量 + 公钥解析；任一不满足就整体禁用并上报原因。 */
+function initAnchor(): void {
+  if (anchorKey !== null || anchorReady) return;
+  try {
+    if (typeof BigInt !== "function") {
+      send({ t: "verify-anchor-selftest", ok: false, reason: "no-bigint" });
+      return;
+    }
+    const probe = md5Bytes(new Uint8Array([0x61, 0x62, 0x63]));
+    const digest = hexBytes(probe);
+    const key = parsePublicKey(pubkey);
+    anchorKey = key;
+    anchorReady = digest === "900150983cd24fb0d6963f7d28e17f72" && key !== null;
+    send({
+      t: "verify-anchor-selftest",
+      ok: anchorReady,
+      md5: digest,
+      keyBits: key === null ? 0 : key.n.toString(16).length * 4,
+    });
+  } catch (e) {
+    send({ t: "verify-anchor-selftest", ok: false, reason: String(e) });
+  }
+}
+
+      // 诊断用：该次调用进钩子时的 Lua 加载深度，以及是否真的把公钥换成了我们的
+      // （`luaLoaderDepth <= 0` 会静默保持官方公钥 → 我们重签的 Lua 必然验签失败）
+      let callDepth = 0;
+      let callKeyReplaced = false;
+          callDepth = luaLoaderDepth;
+          callKeyReplaced = false;
+          // 双信任锚：先记下「这次的内容是不是我们签的」（客户端用哪把公钥都不影响判定）
+          if (!anchorReady) initAnchor();
+          if (anchorReady && anchorKey !== null) {
+            try {
+              const first = readManagedBytes(args[0]);
+              const second = readManagedBytes(args[1]);
+              anchorByThread.set(Process.getCurrentThreadId(), anchorMatches(first, second, anchorKey));
+            } catch (e) {
+              anchorByThread.delete(Process.getCurrentThreadId());
+            }
+          }
+            callKeyReplaced = true;
+          const threadId = Process.getCurrentThreadId();
+          const anchored = anchorByThread.get(threadId) === true;
+          anchorByThread.delete(threadId);
+          if (anchored && retval.toInt32() === 0) {
+            // 内容确实是我们签的，但客户端此刻用的是官方公钥（例如 mod bundle 被判脏后的
+            // 加载前校验）——直接算成功，避免 Lua 入口拿不到内容而 abort。
+            try {
+              retval.replace(1);
+              anchorForced += 1;
+              if (anchorForced <= MAX_ANCHOR_LOG) {
+                send({ t: "verify-anchor", call: binVerifyCalls, depth: callDepth, forced: true });
+              }
+            } catch (e) {
+              if (anchorErrors < 3) {
+                anchorErrors += 1;
+                send({ t: "verify-anchor-err", err: String(e) });
+              }
+            }
+          }
+            depth: callDepth,
+            keyReplaced: callKeyReplaced,
+initAnchor();
