@@ -16,18 +16,26 @@ export interface PluginCatalogEntry {
   id: string;
   name: string;
   desc: string;
-  /** 客户端 require 路径（如 Plugin/EnemyHpPlugin） */
+  /** 客户端 require 路径（如 Plugin/plugins/EnemyHpPlugin） */
   module: string;
+  /**
+   * 是否为「游戏内 UI 入口」插件（PluginDefs 的 `ui_entry = true`）。
+   *
+   * 语义：这些插件提供**游戏内**的面板/浮动按钮，是玩家在游戏里启停插件的唯一途径。
+   * 因此至少要保留一个启用（全关 = 游戏内再无入口，只能改配置文件或走服务端恢复），
+   * 服务端与客户端两侧都有对应守卫。
+   */
+  uiEntry?: boolean;
 }
 
 /** 内置回退目录（解析失败时使用，保持与 lua/plugin/PluginDefs.lua 一致） */
 export const FALLBACK_CATALOG: readonly PluginCatalogEntry[] = Object.freeze([
-  { id: "enemy_hp", name: "敌人血量显示", desc: "在敌人血条旁显示具体血量数值", module: "Plugin/EnemyHpPlugin" },
-  { id: "enemy_info", name: "敌人属性面板", desc: "战斗中长按并点击敌人查看属性与路线", module: "Plugin/EnemyInfoPlugin" },
-  { id: "battle_assist", name: "战斗辅助", desc: "战斗时间轴 / 倍速 / TAS 暂停帧", module: "Plugin/BattleAssistPlugin" },
-  { id: "plugin_panel", name: "插件管理面板", desc: "现代化插件启停管理面板", module: "Plugin/PanelPlugin" },
-  { id: "options_panel", name: "插件选项面板", desc: "游戏内调节各插件参数（开关/数值/枚举）并同步服务端", module: "Plugin/OptionsPanelPlugin" },
-  { id: "network_redirect", name: "网络重定向", desc: "把官服域名请求重定向到私服地址", module: "Plugin/NetworkRedirectPlugin" },
+  { id: "enemy_hp", name: "敌人血量显示", desc: "在敌人血条旁显示具体血量数值", module: "Plugin/plugins/EnemyHpPlugin" },
+  { id: "enemy_info", name: "敌人属性面板", desc: "战斗中长按并点击敌人查看属性与路线", module: "Plugin/plugins/EnemyInfoPlugin" },
+  { id: "battle_assist", name: "战斗辅助", desc: "战斗时间轴 / 倍速 / TAS 暂停帧", module: "Plugin/plugins/BattleAssistPlugin" },
+  { id: "plugin_panel", name: "插件管理面板", desc: "现代化插件启停管理面板", module: "Plugin/plugins/PanelPlugin", uiEntry: true },
+  { id: "options_panel", name: "插件选项面板", desc: "游戏内调节各插件参数（开关/数值/枚举）并同步服务端", module: "Plugin/plugins/OptionsPanelPlugin", uiEntry: true },
+  { id: "network_redirect", name: "网络重定向", desc: "把官服域名请求重定向到私服地址", module: "Plugin/plugins/NetworkRedirectPlugin" },
 ]);
 
 /**
@@ -48,6 +56,9 @@ const BLOCK_RE = /\{\s*((?:[^{}])*?)\s*\}/g;
 /** 条目内字段：key = "value" 或 key = 'value'（顺序无关） */
 const FIELD_RE = /([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(["'])(.*?)\2/g;
 
+/** 条目内布尔字段：key = true / false（如 `ui_entry = true`） */
+const BOOL_FIELD_RE = /([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(true|false)\b/g;
+
 /**
  * 从 PluginDefs.lua 文本解析插件目录（字段顺序无关；id/module 缺失的条目跳过）。
  * @param content - PluginDefs.lua 源码文本
@@ -67,10 +78,23 @@ export function parsePluginDefs(content: string): PluginCatalogEntry[] {
       // fm[1]=key, fm[2]=引号, fm[3]=值
       fields[fm[1]] = fm[3];
     }
+    // 布尔字段单独扫：`ui_entry = true` 的右侧没有引号，上面那条正则抓不到
+    let uiEntry: boolean | undefined;
+    BOOL_FIELD_RE.lastIndex = 0;
+    let boolMatch: RegExpExecArray | null;
+    while ((boolMatch = BOOL_FIELD_RE.exec(block)) !== null) {
+      if (boolMatch[1] === "ui_entry") {
+        uiEntry = boolMatch[2] === "true";
+      }
+    }
     const id = fields.id;
     const module = fields.module;
     if (!id || !module) continue;
-    out.push({ id, name: fields.name || id, desc: fields.desc || "", module });
+    const entry: PluginCatalogEntry = { id, name: fields.name || id, desc: fields.desc || "", module };
+    if (uiEntry === true) {
+      entry.uiEntry = true;
+    }
+    out.push(entry);
   }
   return out;
 }

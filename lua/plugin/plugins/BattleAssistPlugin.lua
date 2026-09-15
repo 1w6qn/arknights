@@ -5,9 +5,9 @@
   （游戏内「选项」面板可调），按键选项只开放一批常用键位，避免任意键位误触。
   高风险项（高倍速）默认关闭。API 随版本可能漂移，已做 pcall 兜底。
 --]]
-local BattleAssistPlugin = Class("BattleAssistPlugin", require("Plugin/BasePlugin"))
+local BattleAssistPlugin = Class("BattleAssistPlugin", require("Plugin/core/BasePlugin"))
 local eutil = CS.Torappu.Lua.Util
-local PluginOptions = require("Plugin/PluginOptions")
+local PluginOptions = require("Plugin/core/PluginOptions")
 
 -- 选项所属插件 id
 local _ID = "battle_assist"

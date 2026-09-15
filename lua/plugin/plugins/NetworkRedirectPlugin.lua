@@ -15,9 +15,9 @@
       因此 getter 首次被读取时即命中私服地址。
     - 私服地址改 SERVER_URL 即可；默认与 hook/main.ts（Frida 版）保持一致。
 
-  依赖：Base/BaseModule（Class）、Plugin/BasePlugin、Plugin/PluginHotfix。
+  依赖：Base/BaseModule（Class）、Plugin/core/BasePlugin、Plugin/core/PluginHotfix。
 --]]
-local NetworkRedirectPlugin = Class("NetworkRedirectPlugin", require("Plugin/BasePlugin"))
+local NetworkRedirectPlugin = Class("NetworkRedirectPlugin", require("Plugin/core/BasePlugin"))
 local eutil = CS.Torappu.Lua.Util
 
 -- 类级元数据（管理器/面板/管理端目录以此为准；与 PluginDefs.lua 保持一致）

@@ -5,7 +5,7 @@
  * 由 PluginHeartbeat 向此端点发送生效确认，
  * 服务端记录日志并在响应中回传插件目录、启用状态与选项取值——用于真机验证
  * 「插件是否真正加载」，并让客户端 best-effort 应用服务端状态
- * （见 lua/plugin/PluginHeartbeat.lua）。
+ * （见 lua/plugin/core/PluginHeartbeat.lua）。
  *
  * GET /plugin/heartbeat
  *  - 成功：200 { status: 0, pluginCount, enabled, catalog, options }
@@ -18,7 +18,7 @@
  * GET /plugin/option/:id/:key/:value
  *  - 客户端选项取值同步（路径编码：b1/b0 布尔、n<数字>、s<URL 编码字符串>），
  *    持久化到同一配置文件的 options 字段；服务端只校验标量合法性，
- *    选项定义域见 lua/plugin/PluginOptions.lua。
+ *    选项定义域见 lua/plugin/core/PluginOptions.lua。
  */
 import { Router } from "express";
 import { logger } from "@utils/logger";
@@ -104,7 +104,18 @@ router.get("/config/:id/:value", async (req, res) => {
     res.json({ status: 1, msg: "value 必须为 0 或 1" });
     return;
   }
-  await pluginConfigService.setEnabled(id, value === "1");
+  try {
+    await pluginConfigService.setEnabled(id, value === "1");
+  } catch (error) {
+    // 典型场景：客户端试图关掉最后一个 UI 入口面板（被入口守卫拒绝）。
+    // 返回业务失败而不是让它冒成 500：这是**预期内**的拒绝，客户端据此保持启用态。
+    logger.warn(
+      "PluginHeartbeat",
+      `客户端插件状态同步被拒: ${id}=${value} → ${error instanceof Error ? error.message : String(error)}`,
+    );
+    res.json({ status: 1, result: -1, msg: error instanceof Error ? error.message : String(error) });
+    return;
+  }
   logger.info("PluginHeartbeat", `客户端插件状态同步: ${id}=${value === "1" ? "ON" : "OFF"}`);
   res.json({ status: 0, result: 0 });
 });

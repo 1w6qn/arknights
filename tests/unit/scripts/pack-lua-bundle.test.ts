@@ -151,9 +151,10 @@ describe("pack-lua-bundle 重打包器", () => {
     const pluginDir = join(__dirname, "..", "..", "..", "lua", "plugin");
     const prelude = buildInlinePluginPrelude(pluginDir);
     // 关键模块按 require 路径注册（引擎 HotfixProcesser 用 Lua require 加载）
-    expect(prelude).toContain('package.preload["Plugin/PluginBootHotfixer"]');
-    expect(prelude).toContain('package.preload["Plugin/NetworkRedirectPlugin"]');
-    expect(prelude).toContain('package.preload["Plugin/BasePlugin"]');
+    expect(prelude).toContain('package.preload["Plugin/core/PluginBootHotfixer"]');
+    expect(prelude).toContain('package.preload["Plugin/plugins/NetworkRedirectPlugin"]');
+    expect(prelude).toContain('package.preload["Plugin/core/BasePlugin"]');
+    expect(prelude).toContain('package.preload["Plugin/PluginDefs"]');
     // 埋点与引导包装
     expect(prelude).toContain("plugin_boot_trace.txt");
     expect(prelude).toContain("PluginBootHotfixer required");

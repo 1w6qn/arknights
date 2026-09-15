@@ -1,27 +1,31 @@
 --[[
   OptionsPanelPlugin.lua —— 插件选项面板插件
 
-  游戏内动态构建「插件选项」面板：右下角浮动按钮开合，左侧插件页签，右侧按
+  游戏内动态构建「插件选项」面板：浮动按钮开合，左侧插件页签，右侧按
   PluginOptions 的选项定义渲染控件（开关 / 数值加减 / 枚举左右切换），底部一键重置。
   改动即时写 plugin_config.json 并经 PluginHeartbeat.PushOption 同步服务端，
   插件侧通过 PluginOptions.Subscribe 实时重应用，无需重启游戏。
 
-  时序：插件系统在 DefinedFix 引导阶段初始化（早于 Canvas 创建），故与 PanelPlugin 相同：
+  时序：插件系统在官方 entry.lua 的 HotfixProcesser.Do 阶段初始化，早于 ModelMgr.Init
+  与 Canvas 创建，故与 PanelPlugin 相同：
     - 立即尝试一次；
-    - TimerModel 可用时按间隔重试（上限 _MAX_RETRY 次）；
+    - 交给 PluginUI 自愈链（TimerModel 未就绪时待补排，驱动接通后按间隔重试/巡检）；
     - 兜底 hook UIController.Awake（必然晚于主界面）时再尝试。
 --]]
-local OptionsPanelPlugin = Class("OptionsPanelPlugin", require("Plugin/BasePlugin"))
+local OptionsPanelPlugin = Class("OptionsPanelPlugin", require("Plugin/core/BasePlugin"))
 local eutil = CS.Torappu.Lua.Util
-local PluginUI = require("Plugin/PluginUI")
-local PluginOptions = require("Plugin/PluginOptions")
+local PluginUI = require("Plugin/ui/PluginUI")
+local PluginOptions = require("Plugin/core/PluginOptions")
 local PluginDefs = require("Plugin/PluginDefs")
-local PluginHeartbeat = require("Plugin/PluginHeartbeat")
+local PluginHeartbeat = require("Plugin/core/PluginHeartbeat")
 
 local UnityEngine = CS.UnityEngine
 
--- 重试上限与间隔（TimerModel 可用时）
-local _MAX_RETRY = 20
+-- 插件标识（与 PluginDefs.lua 一致）；本面板自身也是一个 UI 入口，用于自排除
+local _ID = "options_panel"
+
+-- 建成前的重试上限与间隔（TimerModel 驱动接通后自愈链按此节奏跑；建成后转低频巡检不计次）
+local _MAX_RETRY = 100
 local _RETRY_DELAY_SEC = 3
 
 -- 面板位置/尺寸：贴屏幕右侧，与 PanelPlugin（左侧）错开
@@ -116,20 +120,22 @@ local function _EnumLabel(def, value)
 end
 
 --[[
-  插件启用：建面板 + 兜底重试。
+  插件启用：建面板 + 自愈链（Canvas 未就绪 / 场景切换销毁都能自动重建）。
 --]]
 function OptionsPanelPlugin:OnLoad()
   self._open = false
   self._root = nil
   self._floatBtn = nil
   self._canvas = nil
-  self._retryCount = 0
+  self._retryActive = false
   self._selected = nil
   self._tabRoot = nil
   self._optRoot = nil
   self._footer = nil
 
   self:_EnsureCanvasAndBuild()
+  -- 自愈链：TimerModel 就绪前登记待补排，就绪后按间隔重试/巡检
+  PluginUI.RetryEnsure(self, _MAX_RETRY, _RETRY_DELAY_SEC)
 
   -- 兜底：进入战斗 UI（必然晚于登录与主界面）时再次尝试构建
   self:Hotfix(CS.Torappu.Battle.UI.UIController, "Awake", function(selfCtrl, orig)
@@ -140,16 +146,30 @@ function OptionsPanelPlugin:OnLoad()
 end
 
 --[[
-  确保面板已构建：查找 Canvas，缺失则调度重试；已构建则无操作。
-  根节点/按钮被销毁（场景切换）时自动重建。
+  确保面板已构建：先按存活状态清理被场景切换销毁的引用，再查找 Canvas 重建；
+  Canvas 缺失时由 PluginUI 的自愈链继续重试。
 --]]
 function OptionsPanelPlugin:_EnsureCanvasAndBuild()
-  if self._root ~= nil and self._floatBtn ~= nil then return end
-  self._canvas = PluginUI.FindCanvas()
+  if not PluginUI.IsAlive(self._root) then
+    self._root = nil
+    self._tabRoot = nil
+    self._optRoot = nil
+    self._footer = nil
+  end
+  if not PluginUI.IsAlive(self._floatBtn) then
+    self._floatBtn = nil
+  end
+  if not PluginUI.IsAlive(self._canvas) then
+    self._canvas = nil
+  end
+  if self._canvas == nil then
+    self._canvas = PluginUI.FindCanvas()
+  end
   if self._canvas == nil then
     PluginUI.RetryEnsure(self, _MAX_RETRY, _RETRY_DELAY_SEC)
     return
   end
+  if self._root ~= nil and self._floatBtn ~= nil then return end
   if self._floatBtn == nil then
     self._floatBtn = PluginUI.CreateFloatingButton(self._canvas, "选项", _FLOAT_BTN_POS, function()
       self:TogglePanel()
@@ -223,9 +243,12 @@ function OptionsPanelPlugin:_RefreshOptions()
   for _, def in ipairs(entry.options) do
     local label = PluginUI.CreateText(self._optRoot, "Label_" .. def.key, UnityEngine.Vector3(-120, y + 8, 0), UnityEngine.Vector2(200, 22), 18, _COLOR_LABEL)
     label.text = def.label
+    -- 选项名/说明长度不可控（各插件自己写）：统一收进 200px 文本框内，避免压出边框
+    PluginUI.FitText(label, 190)
     if def.desc ~= nil then
       local desc = PluginUI.CreateText(self._optRoot, "Desc_" .. def.key, UnityEngine.Vector3(-120, y - 12, 0), UnityEngine.Vector2(200, 18), 12, _COLOR_DESC)
       desc.text = def.desc
+      PluginUI.FitText(desc, 190)
     end
     if def.type == "switch" then
       self:_BuildSwitchRow(entry.id, def, y)
@@ -267,6 +290,7 @@ function OptionsPanelPlugin:_BuildNumberRow(id, def, y)
   local text = PluginUI.CreateText(self._optRoot, "Value_" .. def.key, UnityEngine.Vector3(150, y, 0), UnityEngine.Vector2(72, 30), 18, _COLOR_LABEL)
   text.alignment = UnityEngine.TextAnchor.MiddleCenter
   text.text = _FormatNumber(def, value)
+  PluginUI.FitText(text, 68)
   PluginUI.CreateButton(self._optRoot, "Plus_" .. def.key, UnityEngine.Vector3(204, y, 0), UnityEngine.Vector2(34, 34), _COLOR_STEP, "+", 20, function()
     self:_Commit(id, def.key, value + step)
   end)
@@ -286,22 +310,58 @@ function OptionsPanelPlugin:_BuildEnumRow(id, def, y)
   local text = PluginUI.CreateText(self._optRoot, "Value_" .. def.key, UnityEngine.Vector3(155, y, 0), UnityEngine.Vector2(100, 30), 16, _COLOR_LABEL)
   text.alignment = UnityEngine.TextAnchor.MiddleCenter
   text.text = _EnumLabel(def, value)
+  PluginUI.FitText(text, 96)
   PluginUI.CreateButton(self._optRoot, "Next_" .. def.key, UnityEngine.Vector3(222, y, 0), UnityEngine.Vector2(34, 34), _COLOR_STEP, ">", 20, function()
     self:_Commit(id, def.key, _CycleEnum(def, value, 1))
   end)
 end
 
 --[[
-  重建底部栏：重置按钮 + 提示。
+  找一个「被关闭的其它 UI 入口插件」（通常是插件管理面板）。
+  用于在底部栏放一个一键恢复按钮——否则玩家关掉管理面板后，选项面板里再无任何
+  途径把它调回来（两边的浮动按钮随插件停用一起销毁）。
+  @return id, 显示名；都启用时返回 nil
+--]]
+function OptionsPanelPlugin:_ClosedEntry()
+  if PluginManager == nil or PluginManager.me == nil then return nil end
+  local mgr = PluginManager.me
+  if mgr.UiEntryIds == nil then return nil end
+  for _, id in ipairs(mgr:UiEntryIds()) do
+    if id ~= _ID then
+      local plugin = mgr:GetPlugin(id)
+      if plugin ~= nil and not plugin.enabled then
+        return id, (plugin.name ~= nil and plugin.name or id)
+      end
+    end
+  end
+  return nil
+end
+
+--[[
+  重建底部栏：重置按钮 + （必要时）恢复被关闭入口的按钮 + 提示。
 --]]
 function OptionsPanelPlugin:_RefreshFooter()
   PluginUI.ClearChildren(self._footer)
-  PluginUI.CreateButton(self._footer, "Reset", UnityEngine.Vector3(-120, 0, 0), UnityEngine.Vector2(120, 34), _COLOR_RESET, "重置本插件", 15, function()
+  local closedId, closedName = self:_ClosedEntry()
+  if closedId == nil then
+    PluginUI.CreateButton(self._footer, "Reset", UnityEngine.Vector3(-120, 0, 0), UnityEngine.Vector2(120, 34), _COLOR_RESET, "重置本插件", 15, function()
+      self:_ResetSelected()
+    end)
+    local hint = PluginUI.CreateText(self._footer, "Hint", UnityEngine.Vector3(95, 0, 0), UnityEngine.Vector2(300, 30), 13, _COLOR_HINT)
+    hint.alignment = UnityEngine.TextAnchor.MiddleLeft
+    hint.text = "改动即时生效并同步服务端"
+    return
+  end
+  -- 有入口被关闭：让出中间位置给恢复按钮（文案自解释，不再挤提示）
+  PluginUI.CreateButton(self._footer, "Reset", UnityEngine.Vector3(-175, 0, 0), UnityEngine.Vector2(120, 34), _COLOR_RESET, "重置本插件", 15, function()
     self:_ResetSelected()
   end)
-  local hint = PluginUI.CreateText(self._footer, "Hint", UnityEngine.Vector3(95, 0, 0), UnityEngine.Vector2(300, 30), 13, _COLOR_HINT)
-  hint.alignment = UnityEngine.TextAnchor.MiddleLeft
-  hint.text = "改动即时生效并同步服务端"
+  PluginUI.CreateButton(self._footer, "RestoreEntry", UnityEngine.Vector3(35, 0, 0), UnityEngine.Vector2(210, 34), _COLOR_TAB_ON, "恢复「" .. tostring(closedName) .. "」", 15, function()
+    if PluginManager ~= nil and PluginManager.me ~= nil then
+      PluginManager.me:SetEnabled(closedId, true)
+    end
+    self:Refresh()
+  end)
 end
 
 --[[
@@ -346,6 +406,8 @@ function OptionsPanelPlugin:TogglePanel()
   self._open = not self._open
   self._root:SetActive(self._open)
   if self._open then
+    -- 面板/其它面板可能盖住按钮，展开时提到最上层，保证还能点回去
+    PluginUI.BringToFront(self._floatBtn)
     PluginOptions:Reload()
     self:Refresh()
     PluginHeartbeat.Send()
@@ -369,6 +431,7 @@ function OptionsPanelPlugin:OnUnload()
   self._optRoot = nil
   self._footer = nil
   self._open = false
+  self._retryActive = false
   eutil.Log("[OptionsPanelPlugin] 插件选项面板已停用")
 end
 

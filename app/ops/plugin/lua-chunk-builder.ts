@@ -1,5 +1,5 @@
 /**
- * Lua 插件源码打包器：把 `lua/plugin/*.lua` 打成一个**自包含 Lua chunk**。
+ * Lua 插件源码打包器：把 `lua/plugin/ 下的全部 .lua` 打成一个**自包含 Lua chunk**。
  *
  * 为什么需要它：内置 Lua bundle 里最大的 TextAsset 明文只有约 33KB，而插件源码合计约 60KB
  * ——一个资产装不下。于是改成「引导很小、源码走网络」：
@@ -24,17 +24,30 @@ function pluginDir(): string {
 
 /**
  * 读插件模块源码表。
+ *
+ * 递归遍历 `lua/plugin/`（core/ + ui/ + plugins/ + 根 PluginDefs.lua），
+ * 模块名 = `Plugin/<相对 POSIX 路径去 .lua>`，与 Lua 侧 require 路径逐字一致。
  * @returns 顺序稳定的 `require 路径 → 源码` 映射
  */
 function readModules(): { name: string; source: string }[] {
   const dir = pluginDir();
-  const files = fs
-    .readdirSync(dir)
-    .filter((f) => f.endsWith(".lua"))
-    .sort();
-  return files.map((f) => ({
-    name: `Plugin/${f.slice(0, -".lua".length)}`,
-    source: fs.readFileSync(path.join(dir, f), "utf-8"),
+  const files: string[] = [];
+  const walk = (cur: string, rel: string): void => {
+    for (const entry of fs.readdirSync(cur, { withFileTypes: true })) {
+      const full = path.join(cur, entry.name);
+      const nextRel = rel === "" ? entry.name : `${rel}/${entry.name}`;
+      if (entry.isDirectory()) {
+        walk(full, nextRel);
+      } else if (entry.name.endsWith(".lua")) {
+        files.push(nextRel);
+      }
+    }
+  };
+  walk(dir, "");
+  files.sort();
+  return files.map((rel) => ({
+    name: `Plugin/${rel.slice(0, -".lua".length)}`,
+    source: fs.readFileSync(path.join(dir, ...rel.split("/")), "utf-8"),
   }));
 }
 
@@ -91,9 +104,9 @@ export function buildPluginLuaChunk(): PluginLuaChunk {
     "table.insert(searchers, 1, dts_searcher)",
     "local ok, err = xpcall(function()",
     '  _G.PluginDefs = require "Plugin/PluginDefs"',
-    '  _G.PluginManager = require "Plugin/PluginManager"',
-    '  _G.PluginEntry = require "Plugin/PluginEntry"',
-    '  _G.PluginHeartbeat = require "Plugin/PluginHeartbeat"',
+    '  _G.PluginManager = require "Plugin/core/PluginManager"',
+    '  _G.PluginEntry = require "Plugin/core/PluginEntry"',
+    '  _G.PluginHeartbeat = require "Plugin/core/PluginHeartbeat"',
     "  PluginEntry.init()",
     "  PluginHeartbeat.ScheduleAuto()",
     "end, debug.traceback)",

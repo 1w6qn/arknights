@@ -6,8 +6,13 @@ description: 明日方舟客户端 Lua 侧的硬契约与 UI 实现规范（回�
 # 游戏 Lua 插件：契约与 UI 规范
 
 ## 何时用
-写或改 `lua/plugin/*.lua`（游戏内插件），或遇到：插件加载后客户端 abort、按钮点不到、
-控件 activeInHierarchy=true 却看不见、拖动不支持。
+写或改 `lua/plugin/**/*.lua`（游戏内插件：业务插件在 `plugins/`、基础设施在 `core/`、UI 在 `ui/`），
+或遇到：插件加载后客户端 abort、按钮点不到、控件 activeInHierarchy=true 却看不见、拖动不支持。
+
+## 目录与寻址约定（2026-09-14 模块化）
+- `lua/plugin/PluginDefs.lua` 是唯一注册表；`module` = require 路径 = `Plugin/<相对路径去 .lua>`（如 `Plugin/plugins/EnemyHpPlugin`）。
+- 客户端按 require 路径推导容器 key（`dyn/gamedata/[uc]lua/<小写相对路径>.bytes`）；`repack-lua-bundle` 同时登记 **require 路径 key + basename 别名 key**，兼容 basename 归一化口径 ⇒ **basename 全局唯一**。
+- 新增/移动文件后同步 `tests/unit/plugin/plugin-module-layout.test.ts` 守卫与 `app/ops/plugin/plugin-catalog.ts` 的 `FALLBACK_CATALOG`（后者由守卫比对，防双份硬编码漂移）。
 
 ## 契约 1：回调必须是「对象」，不能是裸函数
 游戏侧凡是 `x:Call(...)` 的地方，传进去的必须是带 `Call` 方法的对象 —— 官方 Lua 一律用
@@ -38,7 +43,7 @@ end
 ## 契约 3：交互用自绘输入，不要 UGUI Button
 自建 Overlay 画布上 UGUI 命中不稳定 ⇒ **点击穿透**（"点不到，只能点到后面的"），且 `Button` 不能拖。
 
-实现（`lua/plugin/PluginUI.lua` 的 `EnableDrag/EnableClick`）：
+实现（`lua/plugin/ui/PluginUI.lua` 的 `EnableDrag/EnableClick`）：
 - 逐帧驱动挂 **`CS.Torappu.GlobalInitializerAndUpdater.Update`**（`xlua.hotfix`，只装一次）；
 - 每帧读 `Input.GetMouseButton(0)` + `Input.mousePosition`；
 - 按下时 `RectTransformUtility.RectangleContainsScreenPoint(rect, Vector2(mp.x,mp.y), nil)`
@@ -64,11 +69,13 @@ end
 
 ## 自检
 ```bash
-node tmp/check-lua-syntax.mjs        # 12 个插件文件语法
+node tmp/check-lua-syntax.mjs        # 全部插件文件（16 个，递归 core/ ui/ plugins/）语法
 grep "plugin-ui" tmp/<run>.log       # 探针：activeInHierarchy / rows / 屏幕坐标
 adb shell cat /sdcard/Android/data/com.hypergryph.arknights/files/plugin_config.json
 ```
 
 ## 相关文档
+`docs/lua-plugin-dev-reference.md`（**插件开发参考**：目录/注册、生命周期、补丁与选项 API、PluginUI 工厂、心跳协议、陷阱清单、最小模板）、
+`docs/lua-plugins-guide.md`（打包下发与真机验收）、
 `docs/plugin-ui-verify-2026-09-14.md`（浮窗验证全过程与真实 input 验收数据）、
 `docs/lua-plugin-frida-injection-2026-09-14.md`（插件系统如何被注入/交付）。

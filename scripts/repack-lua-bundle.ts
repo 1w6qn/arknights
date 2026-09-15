@@ -2,8 +2,9 @@
  * 内置 Lua bundle 重打包器（方案 A）
  *
  * 目标：把客户端内置 Lua 主 bundle（anon/7d91430e114d86fef7d3b3511151e12d.bin）重打包，
- * 将 lua/plugin/ 插件脚本 merge 进去，并在 DefinedFix.lua 中逐条注入各插件 hotfixer 条目
- * （Plugin/<X>，经游戏原生 HotfixProcesser.Do 管线 new() + Init() 驱动加载），
+ * 将 lua/plugin/ 下的全部 .lua 插件脚本 merge 进去，并在 DefinedFix.lua 中注入**单一引导条目**
+ * （Plugin/core/PluginBootHotfixer，经游戏原生 HotfixProcesser.Do 管线驱动；其 OnInit 再加载
+ * PluginDefs 登记的 Plugin/plugins/* 各插件），
  * 最后覆盖下发为 mods/anon_7d91430e114d86fef7d3b3511151e12d.dat，客户端热更即加载插件。
  *
  * 输入：内置 bundle（.bin UnityFS 或 .dat zip 单条目）。
@@ -99,9 +100,9 @@ export function detectAssetStyle(builtin: LuaAsset[]): "prefixed" | "bare" {
 }
 
 /**
- * 递归收集 lua/plugin/ 下所有 .lua 为插件资产。
+ * 递归收集 lua/plugin/ 下所有 .lua 为插件资产（core/ + ui/ + plugins/ + 根 PluginDefs.lua）。
  * 命名风格与内置资产一致：prefixed → gamedata/[uc]lua/Plugin/<rel>（Windows）；
- * bare → 裸文件名（Android，客户端 require 归一化为 basename 匹配）。
+ * bare → <rel>（Android，客户端 require 归一化为 basename 匹配，子目录仅用于保持资产名唯一）。
  * @param dir   - 插件源码目录
  * @param style - 命名风格
  * @returns 插件 Lua 资产列表（按名排序）
@@ -121,7 +122,7 @@ export function collectPluginAssets(dir: string, style: "prefixed" | "bare"): Lu
         });
       }
     }
-  }; // 此处为 walk 定义的闭合（真实实现见下方完整函数）
+  };
   walk(dir);
   out.sort((a, b) => (a.name < b.name ? -1 : 1));
   return out;
@@ -169,7 +170,7 @@ export function collectReferenceLua(refDir: string): LuaAsset[] {
  * 其 OnInit 建立全局依赖并初始化整个插件系统（PluginManager.Init），不再 per-plugin 逐个登记。
  * per-plugin 各自 new()+Init() 的写法在真机 2.7.61（引导 6edf14bb delta bundle）上会崩，故退回单入口。
  */
-const PLUGIN_HOTFIXER_ENTRIES: string[] = ["Plugin/PluginBootHotfixer"];
+const PLUGIN_HOTFIXER_ENTRIES: string[] = ["Plugin/core/PluginBootHotfixer"];
 
 /**
  * 在 DefinedFix.lua 清单中注入各插件 hotfixer 条目（对齐官服：每个插件独立登记一条）。
@@ -201,21 +202,31 @@ export function patchDefinedFix(script: string, entries: string[] = PLUGIN_HOTFI
 }
 
 /**
- * 生成插件内联 prelude：把 lua/plugin/*.lua 注册进 `package.preload["Plugin/<X>"]`。
+ * 生成插件内联 prelude：把 lua/plugin/**.lua 注册进 `package.preload["Plugin/<相对路径>"]`。
  *
  * 为什么内联：引擎热修管线 `HotfixProcesser.Do(fixes)` 用 **Lua require** 加载 DefinedFix 清单里的
- * `Plugin/PluginBootHotfixer`；而 Lua 的 require 会**先查 package.preload**，再走 XLua 的
+ * `Plugin/core/PluginBootHotfixer`；而 Lua 的 require 会**先查 package.preload**，再走 XLua 的
  * CustomLoader（资产查找）。客户端清单里没有新增插件资产的条目（资产按清单 pathId 寻址），
  * 因此把插件源码内联进 `entry.lua`（清单已知资产）可完全绕开资产查找。
  *
- * @param pluginDir - 插件源码目录（lua/plugin）
+ * @param pluginDir - 插件源码目录（lua/plugin，递归 core/ + ui/ + plugins/）
  * @returns 追加到 entry.lua 末尾的 Lua 代码
  */
 export function buildInlinePluginPrelude(pluginDir: string, trace: boolean = true): string {
-  const files = fs
-    .readdirSync(pluginDir)
-    .filter((f) => f.endsWith(".lua"))
-    .sort();
+  const files: { mod: string; full: string }[] = [];
+  const walk = (cur: string, rel: string): void => {
+    for (const entry of fs.readdirSync(cur, { withFileTypes: true })) {
+      const full = path.join(cur, entry.name);
+      const nextRel = rel === "" ? entry.name : `${rel}/${entry.name}`;
+      if (entry.isDirectory()) {
+        walk(full, nextRel);
+      } else if (entry.name.endsWith(".lua")) {
+        files.push({ mod: "Plugin/" + nextRel.replace(/\.lua$/i, ""), full });
+      }
+    }
+  };
+  walk(pluginDir, "");
+  files.sort((a, b) => (a.mod < b.mod ? -1 : 1));
   const parts: string[] = ["--[[ DoctorateTs: inline plugin preload（绕过资产查找，require 直接命中） ]]"];
   if (trace) {
     // 落盘埋点：证明 entry.lua 执行到本 prelude、以及热修管线确实 require 了插件引导
@@ -234,17 +245,16 @@ export function buildInlinePluginPrelude(pluginDir: string, trace: boolean = tru
     );
   }
   for (const f of files) {
-    const mod = "Plugin/" + f.replace(/\.lua$/i, "");
-    const body = fs.readFileSync(path.join(pluginDir, f), "utf-8");
-    parts.push(`package.preload[${JSON.stringify(mod)}] = function(...)\n${body}\nend`);
+    const body = fs.readFileSync(f.full, "utf-8");
+    parts.push(`package.preload[${JSON.stringify(f.mod)}] = function(...)\n${body}\nend`);
   }
   if (trace) {
     // 包装插件引导模块：被 require 时再补一条埋点
     parts.push(
       [
-        'local _dtBoot = package.preload["Plugin/PluginBootHotfixer"]',
+        'local _dtBoot = package.preload["Plugin/core/PluginBootHotfixer"]',
         'if _dtBoot ~= nil then',
-        '  package.preload["Plugin/PluginBootHotfixer"] = function(...)',
+        '  package.preload["Plugin/core/PluginBootHotfixer"] = function(...)',
         "    _dtTrace(\"PluginBootHotfixer required\")",
         "    local a, b = pcall(_dtBoot, ...)",
         '    _dtTrace("PluginBootHotfixer returned ok=" .. tostring(a))',
@@ -431,8 +441,9 @@ function containerKeyToBasename(key: string): string {
  * 构建重打包用的 AssetBundle 容器（客户端按容器 key 取 Lua 资产，缺容器即加载失败）。
  *
  * 官方资产的 key **不携带目录信息于 m_Name 中**（m_Name 为 basename，key 含相对目录 + 全小写 +
- * `.bytes`），只能从官方 bundle 原样继承；新增插件资产按同一命名法派生
- * （`Plugin/<X>` → `dyn/gamedata/[uc]lua/plugin/<x>.lua.bytes`）。
+ * `.bytes`），只能从官方 bundle 原样继承；新增插件资产按同一命名法从 **require 路径** 派生
+ * （`Plugin/core/X` → `dyn/gamedata/[uc]lua/plugin/core/x.lua.bytes`）。
+ * 另补一条 basename 别名 key，兼容「require 归一化为 basename」的解析口径（两种都能命中）。
  *
  * @param merged - 合并后的资产列表（顺序即 pathId 顺序，下标 i ↔ pathId i+1）
  * @param meta   - 官方 bundle 的 AssetBundle 元数据（无官方 bundle 时传 null）
@@ -450,11 +461,20 @@ export function buildContainer(merged: LuaAsset[], meta: AssetBundleMeta | null)
     container.push({ key: entry.key, assetIndex: idx });
     used.add(idx);
   }
-  // 新增资产（插件）：客户端 require("Plugin/X") → 资源路径 gamedata/[uc]lua/Plugin/X.lua
+  // 新增资产（插件）：客户端 require("Plugin/core/X") → 容器 key 按相对路径还原
+  //   prefixed：资产名 = gamedata/[uc]lua/Plugin/core/X.lua ⇒ rel = Plugin/core/X.lua
+  //   bare    ：资产名 = core/X.lua（require 前缀固定 Plugin/）⇒ rel = plugin/core/X.lua
   merged.forEach((a, i) => {
     if (used.has(i)) return;
+    const rel = /^gamedata\/\[uc\]lua\//i.test(a.name)
+      ? a.name.replace(/^gamedata\/\[uc\]lua\//i, "")
+      : `plugin/${a.name}`;
+    const key = `dyn/gamedata/[uc]lua/${rel.toLowerCase()}.bytes`;
+    container.push({ key, assetIndex: i });
+    // basename 别名：兼容按 basename 归一化的解析口径（与 require 路径口径二者取其一命中）
     const base = (a.name.split("/").pop() ?? a.name).toLowerCase();
-    container.push({ key: `dyn/gamedata/[uc]lua/plugin/${base}.bytes`, assetIndex: i });
+    const alias = `dyn/gamedata/[uc]lua/plugin/${base}.bytes`;
+    if (alias !== key) container.push({ key: alias, assetIndex: i });
   });
   return container;
 }

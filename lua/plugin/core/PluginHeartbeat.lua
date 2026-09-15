@@ -18,8 +18,8 @@
 --]]
 local PluginHeartbeat = {}
 local eutil = CS.Torappu.Lua.Util
-local PluginHotfix = require("Plugin/PluginHotfix")
-local PluginOptions = require("Plugin/PluginOptions")
+local PluginHotfix = require("Plugin/core/PluginHotfix")
+local PluginOptions = require("Plugin/core/PluginOptions")
 
 local _MAX_RETRY = 6
 local _RETRY_DELAY_SEC = 5
@@ -269,7 +269,7 @@ end
 --[[
   客户端选项取值推送：选项面板改动（或重置）后调用，best-effort 同步到服务端
   data/plugin/config.json 的 options 字段。服务端在下次心跳响应里回传，管理端与
-  游戏内面板最终收敛到同一取值（见 Plugin/PluginOptions）。
+  游戏内面板最终收敛到同一取值（见 Plugin/core/PluginOptions）。
   @param id    插件标识
   @param key   选项键
   @param value 选项取值（boolean / number / string）

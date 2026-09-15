@@ -4,8 +4,8 @@ import { join } from "path";
 import os from "os";
 import yauzl from "yauzl";
 import { packLuaBundle } from "../../../scripts/pack-lua-bundle";
-import { extractTextAssets } from "../../../scripts/vendor/unityfs";
-import { patchDefinedFix, repackBuiltinLua } from "../../../scripts/repack-lua-bundle";
+import { extractTextAssets, type AssetBundleMeta } from "../../../scripts/vendor/unityfs";
+import { buildContainer, patchDefinedFix, repackBuiltinLua } from "../../../scripts/repack-lua-bundle";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -66,11 +66,11 @@ describe("repack-lua-bundle 内置 bundle 重打包（DefinedFix 引导）", () 
     const patched = patchDefinedFix(fakeDefinedFix());
     // 工作化设计：只注入单一 PluginBootHotfixer（经游戏原生 HotfixProcesser.Do 驱动
     // PluginManager 初始化整个插件系统）；per-plugin 逐条 new+Init 在真机 2.7.61 会崩
-    expect(patched).toContain('  "Plugin/PluginBootHotfixer",');
+    expect(patched).toContain('  "Plugin/core/PluginBootHotfixer",');
     expect(patched).toContain('"HotFixes/TestStubHotfixer",');
     expect(patched).toContain('"HotFixes/PCInputFontRegistryHotfixer"');
     // 引导类插件条目须在清单最前
-    expect(patched.indexOf("Plugin/PluginBootHotfixer")).toBeLessThan(
+    expect(patched.indexOf("Plugin/core/PluginBootHotfixer")).toBeLessThan(
       patched.indexOf("HotFixes/TestStubHotfixer"),
     );
   });
@@ -87,8 +87,8 @@ describe("repack-lua-bundle 内置 bundle 重打包（DefinedFix 引导）", () 
       "",
     ].join("\n");
     const patched = patchDefinedFix(lower);
-    expect(patched).toContain('  "Plugin/PluginBootHotfixer",');
-    expect(patched.indexOf("Plugin/PluginBootHotfixer")).toBeLessThan(
+    expect(patched).toContain('  "Plugin/core/PluginBootHotfixer",');
+    expect(patched.indexOf("Plugin/core/PluginBootHotfixer")).toBeLessThan(
       patched.indexOf("Hotfixes/TestStubHotfixer"),
     );
   });
@@ -96,10 +96,56 @@ describe("repack-lua-bundle 内置 bundle 重打包（DefinedFix 引导）", () 
   it("patchDefinedFix 幂等：已注入的 bundle 不重复追加插件条目", () => {
     const once = patchDefinedFix(fakeDefinedFix());
     const twice = patchDefinedFix(once);
-    expect(twice).toContain('  "Plugin/PluginBootHotfixer",');
-    const bootCount = twice.split(/\r?\n/).filter((l) => l.trim() === '"Plugin/PluginBootHotfixer",').length;
+    expect(twice).toContain('  "Plugin/core/PluginBootHotfixer",');
+    const bootCount = twice.split(/\r?\n/).filter((l) => l.trim() === '"Plugin/core/PluginBootHotfixer",').length;
     expect(bootCount).toBe(1);
     expect(twice).toContain('"HotFixes/TestStubHotfixer",');
+  });
+
+  it("buildContainer 按 require 路径派生分层插件资产 key，并补 basename 别名", () => {
+    const merged = [
+      { name: "gamedata/[uc]lua/Plugin/core/PluginManager.lua", script: enc.encode("-- m\n") },
+      { name: "gamedata/[uc]lua/Plugin/PluginDefs.lua", script: enc.encode("-- d\n") },
+    ];
+    const meta: AssetBundleMeta = {
+      name: "init/gamedata/[uc]lua.ab",
+      container: [],
+      tail: new Uint8Array(),
+    };
+    const container = buildContainer(merged, meta);
+    // require "Plugin/core/PluginManager" → 带子目录的容器 key
+    expect(container).toContainEqual({
+      key: "dyn/gamedata/[uc]lua/plugin/core/pluginmanager.lua.bytes",
+      assetIndex: 0,
+    });
+    // basename 别名（兼容 basename 归一化口径）
+    expect(container).toContainEqual({
+      key: "dyn/gamedata/[uc]lua/plugin/pluginmanager.lua.bytes",
+      assetIndex: 0,
+    });
+    // 根清单 require "Plugin/PluginDefs"：主 key 与别名相同，只登记一次
+    expect(container).toContainEqual({
+      key: "dyn/gamedata/[uc]lua/plugin/plugindefs.lua.bytes",
+      assetIndex: 1,
+    });
+    expect(
+      container.filter((c) => c.assetIndex === 1).length,
+      "主 key 与 basename 别名重合时不应重复登记",
+    ).toBe(1);
+  });
+
+  it("buildContainer 对 Android 裸名插件资产补回 plugin/ 前缀", () => {
+    const merged = [{ name: "core/PluginManager.lua", script: enc.encode("-- m\n") }];
+    const meta: AssetBundleMeta = {
+      name: "init/gamedata/[uc]lua.ab",
+      container: [],
+      tail: new Uint8Array(),
+    };
+    const container = buildContainer(merged, meta);
+    expect(container).toContainEqual({
+      key: "dyn/gamedata/[uc]lua/plugin/core/pluginmanager.lua.bytes",
+      assetIndex: 0,
+    });
   });
 
   it("端到端：重打包 → 覆盖 mod 含插件(Plugin 前缀) + 补丁后的 DefinedFix", async () => {
@@ -136,7 +182,7 @@ describe("repack-lua-bundle 内置 bundle 重打包（DefinedFix 引导）", () 
     // DefinedFix 注入单一 PluginBootHotfixer（引导整插件系统），不含逐条 per-plugin 条目
     const df = list.find((a) => a.name.toLowerCase().endsWith("definedfix.lua"))!;
     const dfText = dec.decode(df.script);
-    expect(dfText).toContain('"Plugin/PluginBootHotfixer",');
+    expect(dfText).toContain('"Plugin/core/PluginBootHotfixer",');
     expect(dfText).toContain('"HotFixes/TestStubHotfixer",');
     expect(dfText).not.toContain('"Plugin/NetworkRedirectPlugin",');
     expect(dfText).not.toContain('"Plugin/EnemyHpPlugin",');

@@ -3,7 +3,7 @@
   封装插件生命周期（Load/Unload）与统一打补丁入口，子类实现 OnLoad/OnUnload
   完成具体功能。所有异常用 xpcall 兜底并记日志。
 
-  补丁机制（经 PluginHotfix 共享注册表，见 Plugin/PluginHotfix）：
+  补丁机制（经 PluginHotfix 共享注册表，见 Plugin/core/PluginHotfix）：
     - 多插件 hook 同一 C# 方法时共享一个 xlua.hotfix 包装器，卸载互不干扰；
     - Fix_ex(cls, method, fixFunc)：完整替换，fixFunc(self, ...) 取代原方法；
     - Hotfix(cls, method, fixFunc)：包装模式，fixFunc(self, orig, ...)，
@@ -14,7 +14,7 @@
 --]]
 local BasePlugin = Class("BasePlugin")
 local eutil = CS.Torappu.Lua.Util
-local PluginHotfix = require("Plugin/PluginHotfix")
+local PluginHotfix = require("Plugin/core/PluginHotfix")
 
 --[[
   构造插件实例。

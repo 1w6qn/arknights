@@ -45,8 +45,8 @@ const INSTALL_HINT = [
  * 而注入 payload 必须自带源码（客户端拒绝任何被重新加密的资产，bundle 路线走不通）。
  * 生成成 ES 模块由 esbuild 直接 bundle 进 hook，插件改了 `.lua` 只需重新 build。
  *
- * 键名 = Lua 的 require 路径（`Plugin/<文件名去扩展名>`），与 lua/plugin/PluginDefs.lua
- * 里登记的 module 字段一致。
+ * 键名 = Lua 的 require 路径（`Plugin/<相对 POSIX 路径去扩展名>`），与 lua/plugin/PluginDefs.lua
+ * 里登记的 module 字段一致；目录分层 core/ + ui/ + plugins/，故递归遍历。
  */
 function generatePluginLua() {
   const srcDir = path.join(ROOT, "lua", "plugin");
@@ -56,13 +56,22 @@ function generatePluginLua() {
     process.exit(1);
   }
   const modules = {};
-  for (const file of readdirSync(srcDir).sort()) {
-    if (!file.endsWith(".lua")) continue;
-    const name = file.slice(0, -".lua".length);
-    modules[`Plugin/${name}`] = readFileSync(path.join(srcDir, file), "utf-8");
+  const files = [];
+  const walk = (cur, rel) => {
+    for (const entry of readdirSync(cur, { withFileTypes: true })) {
+      const full = path.join(cur, entry.name);
+      const nextRel = rel === "" ? entry.name : `${rel}/${entry.name}`;
+      if (entry.isDirectory()) walk(full, nextRel);
+      else if (entry.name.endsWith(".lua")) files.push(nextRel);
+    }
+  };
+  walk(srcDir, "");
+  for (const rel of files.sort()) {
+    const name = rel.slice(0, -".lua".length);
+    modules[`Plugin/${name}`] = readFileSync(path.join(srcDir, ...rel.split("/")), "utf-8");
   }
   const body = [
-    "// 由 scripts/build-frida-hook.mjs 生成，勿手改（源：lua/plugin/*.lua）",
+    "// 由 scripts/build-frida-hook.mjs 生成，勿手改（源：lua/plugin/**/*.lua）",
     `export const PLUGIN_LUA = ${JSON.stringify(modules)};`,
     "",
   ].join("\n");

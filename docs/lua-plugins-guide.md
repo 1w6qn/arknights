@@ -1,27 +1,40 @@
 # 游戏内 Lua 插件系统 — 使用与真机验证指南
 
 > 在明日方舟客户端内，用游戏原生 XLua 热更 + 纯 Lua hotfix + 游戏内 Lua UI，实现敌人血量显示、敌人属性面板、战斗辅助，并提供现代化插件管理面板与插件选项面板（开关/数值/枚举实时调节 + 服务端同步）。
+> **写/改插件的 API 与契约参考**见 `docs/lua-plugin-dev-reference.md`（目录/注册、生命周期、补丁与选项 API、UI 工厂、心跳协议、陷阱清单、最小模板）；本文侧重**打包下发与真机验收**。
 > 设计见 `.trae/specs/lua-plugins/spec.md`；实施任务见 `tasks.md` / `checklist.md`。
 
 ## 1. 源码结构
 
 ```
-lua/plugin/                    ← 插件明文源码
-├── BasePlugin.lua             ← 插件基类（继承官方 HotfixBase，OnLoad/OnUnload + Hotfix/Fix_ex）
-├── PluginHotfix.lua           ← 共享 hotfix 注册表（多插件 hook 同方法互不覆盖）
-├── PluginDefs.lua             ← 插件清单（id/name/desc/module）
-├── PluginManager.lua          ← 注册表：加载/启停/配置持久化（自举全局）
-├── PluginConfigFile.lua       ← 配置文件（plugin_config.json）共享读写：enabled 与 options 互不覆盖
-├── PluginOptions.lua          ← 插件选项定义 + 取值存储 + 变更订阅（单一数据源）
-├── PluginUI.lua               ← UnityEngine.UI 控件工厂（图片/文本/按钮/容器 + 浮动按钮 + Canvas 重试）
-├── PluginHeartbeat.lua        ← 生效确认心跳 + 服务端启停/选项双向同步
-├── NetworkRedirectPlugin.lua  ← 私服引导（DefinedFix 首个 hotfixer，早于网络初始化）
-├── EnemyHpPlugin.lua          ← 敌人血量显示（UIUnitHUD.Attach，字号/颜色/偏移走选项）
-├── EnemyInfoPlugin.lua        ← 敌人属性面板（动态 UnityEngine.UI，触摸 + 鼠标；透明度/停靠侧/拾取半径走选项）
-├── BattleAssistPlugin.lua     ← 战斗辅助（时间轴/倍速/TAS 单帧步进；时间轴开关/字号/按键走选项）
-├── PanelPlugin.lua            ← 插件管理面板（浮动按钮 + 列表开关，延迟挂载）
-└── OptionsPanelPlugin.lua     ← 插件选项面板（页签 + 开关/数值/枚举控件 + 一键重置）
+lua/plugin/                       ← 插件明文源码（规范化模块化：core / ui / plugins 三层）
+├── PluginDefs.lua                ← 插件清单（id/name/desc/module；保留在根，服务端按固定路径解析）
+├── core/                         ← 插件系统基础设施
+│   ├── BasePlugin.lua            ← 插件基类（继承官方 HotfixBase，OnLoad/OnUnload + Hotfix/Fix_ex）
+│   ├── PluginHotfix.lua          ← 共享 hotfix 注册表（多插件 hook 同方法互不覆盖）
+│   ├── PluginManager.lua         ← 注册表：加载/启停/配置持久化（自举全局）
+│   ├── PluginConfigFile.lua      ← 配置文件（plugin_config.json）共享读写：enabled 与 options 互不覆盖
+│   ├── PluginOptions.lua         ← 插件选项定义 + 取值存储 + 变更订阅（单一数据源）
+│   ├── PluginHeartbeat.lua       ← 生效确认心跳 + 服务端启停/选项双向同步
+│   ├── PluginEntry.lua           ← 入口：init()/dispose() + LuaEnv 释放前卸载防护
+│   └── PluginBootHotfixer.lua    ← DefinedFix 引导 hotfixer（单入口，经游戏原生管线）
+├── ui/
+│   └── PluginUI.lua              ← UnityEngine.UI 控件工厂（图片/文本/按钮/容器 + 浮动按钮 + Canvas 重试）
+└── plugins/                      ← 业务插件（每个插件一个自包含 hotfixer）
+    ├── NetworkRedirectPlugin.lua ← 服务器切换（官服/私服预设 + 游戏内「服务器」浮窗，见 §2.0.1）
+    ├── EventLogBlockPlugin.lua   ← 上报截断（EventLogSDK/GameBI 埋点源头 + event 类上报请求）
+    ├── EnemyHpPlugin.lua         ← 敌人血量显示（UIUnitHUD.Attach，字号/颜色/偏移走选项）
+    ├── EnemyInfoPlugin.lua       ← 敌人属性面板（动态 UnityEngine.UI，触摸 + 鼠标；透明度/停靠侧/拾取半径走选项）
+    ├── BattleAssistPlugin.lua    ← 战斗辅助（时间轴/倍速/TAS 单帧步进；时间轴开关/字号/按键走选项）
+    ├── PanelPlugin.lua           ← 插件管理面板（浮动按钮 + 列表开关，延迟挂载）
+    └── OptionsPanelPlugin.lua    ← 插件选项面板（页签 + 开关/数值/枚举控件 + 一键重置）
 ```
+
+> **目录约定**：`module` = Lua 的 require 路径 = `Plugin/<相对 lua/plugin 去 .lua>`（如 `Plugin/plugins/EnemyHpPlugin`）。
+> 客户端按 require 路径推导容器 key（`dyn/gamedata/[uc]lua/<小写相对路径>.bytes`，如
+> `dyn/gamedata/[uc]lua/plugin/plugins/enemyhpplugin.lua.bytes`）；`repack-lua-bundle` 会**同时**为每个插件资产
+> 登记「require 路径 key + basename 别名 key」两种，兼容 basename 归一化口径。无论哪种口径，**basename 必须全局唯一**。
+> 改目录/改登记须同步守卫 `tests/unit/plugin/plugin-module-layout.test.ts`（目录规范 / 路径可解析 / FALLBACK_CATALOG 不漂移）。
 
 > 每个插件 = 一个继承 `BasePlugin`（→ 官方 `HotfixBase`）的自包含 hotfixer，逐条登记在
 > `DefinedFix.lua` 清单（`Plugin/<X>`）。客户端经游戏原生 `HotfixProcesser.Do` 管线对清单每个
@@ -54,22 +67,44 @@ pnpm run apk:lua -- --no-extract                   # 跳过明文提取（仅注
 - **产出**：注入 mod → `mods/anon_<hash>.dat`（bundle 名随版本变化时自动对应）；自动启用 `data/config.json` 的 `assets.enableMods`。
 - 版本漂移（DefinedFix 锚点不匹配）时脚本会报错，按 §5 校准锚点后重跑即可。
 
-### 2.0.1 私服引导插件（NetworkRedirectPlugin）
+### 2.0.1 服务器切换插件（NetworkRedirectPlugin）
 
-`lua/plugin/NetworkRedirectPlugin.lua` 提供**纯 Lua 私服引导**（无需 Frida）：客户端经内置 Lua 管线启动时
-hotfix 两个 C# 方法：
+`lua/plugin/plugins/NetworkRedirectPlugin.lua` 提供**纯 Lua 服务器切换**（无需 Frida）：客户端经内置 Lua 管线启动时
+hotfix `Torappu.Network.Networker.get_overrideRouterUrl`，返回所选服务器的
+`<base>/config/prod/official/network_config`，引导客户端从该服务器拉取网络路由配置
+（`Networker` 实现 `IHotfixable`，该属性 getter 有 XLua hotfix 委托字段，官方预留热更入口）。
 
-1. `Torappu.Network.Networker.get_overrideRouterUrl` → 返回 `${SERVER_URL}/config/prod/official/network_config`，
-   引导客户端从私服拉取网络路由配置（`Networker` 实现 `IHotfixable`，该属性 getter 有 XLua hotfix 委托字段，官方预留热更入口）；
-2. `Torappu.CryptUtils.VerifySignMD5RSA` → 恒返回 `true`，绕过官服 RSA-MD5 响应签名校验
-   （校验点：`NetworkRouter.cs:409` network_config、`BsonNetConverter_WithSign.cs:56` BSON 响应、
-   `CrypticConverter_WithSign.cs:109` 加密响应——私服无官方私钥，必须绕过）。
-
-- 插件默认启用（PluginDefs 首条，ID `network_redirect`）；**关闭即连不回私服**。
-- 私服地址改插件顶部 `SERVER_URL` 常量（默认 `http://192.168.0.100:8443`，与 `hook/main.ts` 一致）。
+- **预设**（`SERVER_PRESETS`，与选项枚举 `network_redirect.server` 逐项一致，由守卫固化）：
+  本地私服 `127.0.0.1:8443` / 国服官服 / 台服官服 / 日服官服 / 韩服官服 / 国际服官服 / 自定义
+  （自定义基址改文件顶部 `CUSTOM_SERVER_BASE`）。默认 `local`，与历史行为一致。
+- **切换入口**：游戏内右下角「服务器」浮窗（点击行即切换），或「选项」面板的 `server` 枚举；
+  取值持久化在 `plugin_config.json` 的 `options.network_redirect.server` 并同步服务端。
+  `get_overrideRouterUrl` 只在启动取路由配置时读一次 ⇒ **切换后需重启客户端**。
+- **关闭即连不回私服**（选择 `local` 时）。
+- **验签放行**：`Torappu.CryptUtils.VerifySignMD5RSA` 没有 xLua hotfix 桥（无 `__Hotfix0_` 委托字段），
+  故改挂它的**唯一调用方** `Torappu.Network.NetworkRouter._DeserializeRouterContent`（有桥，私有静态）：
+  原实现成功则直通；私服预设下失败则临时把信任锚 `GlobalOptions.cryptoPubKey` 换成插件内置公钥重放，
+  仍失败则按未验签内容接管（`JsonConvert` 兜底）。换锚只在这**一次解析窗口**内生效并立即还原，
+  避免影响官服签名的 excel/DB 资产；选官服预设时完全不介入。细节见 `docs/lua-server-switch-2026-09-14.md` §4。
+- **资产公钥替换仍需要**：内置 Lua bundle（`entry.lua`）自身的 128B 头在插件运行前就被校验，
+  Lua 侧无从干预 ⇒ 首次可加载依赖 `pnpm run sign:key -- --patch-apk`（或 Frida 注入路线）；
+  已替换公钥的客户端**无法连接官服**（官服响应验签走同样无 hotfix 桥的 `Torappu.DB.*Converter_WithSign`）。
 - Java/native 层（Hypergryph SDK URL、ACE/MTP 反作弊）Lua 覆盖不了，仍走 Frida（`hook/main.ts`）。
 
-### 2.0.2 APK 校验 / 反作弊 / 暗桩审查（apk:audit）
+### 2.0.2 上报截断插件（EventLogBlockPlugin）
+
+`lua/plugin/plugins/EventLogBlockPlugin.lua` 截断官方日志/埋点上报，三条互补拦截线
+（选项 `event_log_block.block_sdk / block_http / pause_beat`，默认全开）：
+
+| 拦截线 | hotfix 目标 | 作用 |
+| --- | --- | --- |
+| 埋点源头 | `Torappu.EventTrack.EventLogTrace._LogToSDK`、`Torappu.SDK.SDKGameBI._IsSysEnabled` / `_SetData` | 游戏侧 C# 埋点出口与 U8 GameBI 整体短路 |
+| 上报请求 | `Torappu.Network.Networker.SendGet` / `SendPost` | 命中上报路径（`/event`、`/batch_event`、`/beat`、`/deviceprofile/v4`…**精确路径**匹配）直接返回已取消的空结果，不出网 |
+| SDK 心跳 | `CS.Hypergryph.SDK.HGEventLogSDKAppInstance.PauseBeat()` + `EnableRealTimeSend(false)` | 停止埋点 SDK 定时批量/实时上报（best-effort，异常仅记日志） |
+
+细节与端点清单见 `docs/lua-server-switch-2026-09-14.md`。
+
+### 2.0.3 APK 校验 / 反作弊 / 暗桩审查（apk:audit）
 
 `pnpm run apk:audit` 对客户端反编译源码做静态安全审查，输出 `docs/apk-security-audit.md`：
 
@@ -86,7 +121,7 @@ pnpm run apk:audit -- --json                           # 同时输出 JSON 原�
 - **C 暗桩/埋点**：EventLogSDK 事件上报、CrashSight 崩溃上报、OneChannel/Webview、硬编码外联域名
   （结论：官服域名不硬编码，全部配置驱动——正是 `overrideRouterUrl` 引导可行性的基础）。
 
-### 2.0.3 APK 本体改造：注入版 bundle 回灌 + 重签名（apk:mod / apk:patch / apk:sign）
+### 2.0.4 APK 本体改造：注入版 bundle 回灌 + 重签名（apk:mod / apk:patch / apk:sign）
 
 **为什么需要**：`apk:lua` 产出的注入版 bundle 平时靠私服热更下发，但客户端**首次启动**时还没连上私服、
 拿不到热更清单，插件自然加载不了（鸡生蛋）。把注入版 bundle 直接回灌进 APK 本体的内置 bundle 槽位，
@@ -157,7 +192,7 @@ pnpm run repack:lua -- --bundle <内置bundle.dat|.bin> --platform android
 > 或放置一个现有 mod 作为自举源（二者皆无时启动会 warn 跳过）。
 
 > 说明：
-> - `scripts/repack-lua-bundle.ts` 会 **merge** 内置 Lua 资产与 `lua/plugin/*.lua`，并向 `DefinedFix.lua` 清单逐条注入各插件 hotfixer 条目（`Plugin/NetworkRedirectPlugin`、`Plugin/EnemyHpPlugin` …），经游戏原生 `HotfixProcesser.Do` 管线逐条目 `new()` + `Init()` 驱动加载。
+> - `scripts/repack-lua-bundle.ts` 会 **merge** 内置 Lua 资产与 `lua/plugin/**/*.lua`，并向 `DefinedFix.lua` 清单注入**单一引导条目** `Plugin/core/PluginBootHotfixer`（其 `OnInit` 再驱动 `PluginManager` 加载 `PluginDefs` 里登记的 `Plugin/plugins/*` 各插件），经游戏原生 `HotfixProcesser.Do` 管线驱动加载。
 > - 插件资产统一用 `gamedata/[uc]lua/Plugin/` 前缀（大写 P），与 require 路径 `Plugin/…` 大小写一致，避免 loader 找不到资源。
 > - 单独的 `pnpm run pack:lua-plugins`（产出 `mods/plugin_lua.dat`）仅用于**独立开发/调试**，不能单独替代内置 bundle（否则客户端会丢失全部内置 Lua）。
 > - 若 `DefinedFix.lua` 锚点不匹配（版本漂移），脚本会报「未找到 … 锚点」，需人工校准锚点后重跑。
@@ -167,7 +202,7 @@ pnpm run repack:lua -- --bundle <内置bundle.dat|.bin> --platform android
 改一个插件 Lua 无需手动重打包。运行：
 
 ```powershell
-pnpm run watch:lua            # 监听 lua/plugin/*.lua 变更 → 自动重打包 → 使 mods.json 缓存失效
+pnpm run watch:lua            # 监听 lua/plugin/**/*.lua 变更 → 自动重打包 → 使 mods.json 缓存失效
 pnpm run watch:lua -- --once  # 只重打包一次后退出（CI / 手动触发用）
 ```
 
@@ -191,7 +226,7 @@ pnpm run watch:lua -- --once  # 只重打包一次后退出（CI / 手动触发�
 
 ### 2.3 插件选项系统（PluginOptions + 选项面板）
 
-插件的可调参数（开关 / 数值 / 枚举）集中在 `lua/plugin/PluginOptions.lua` 声明，**单一数据源**：
+插件的可调参数（开关 / 数值 / 枚举）集中在 `lua/plugin/core/PluginOptions.lua` 声明，**单一数据源**：
 选项定义（类型、默认值、取值域、显示名）只在这里写一份，面板渲染、插件读取、服务端同步都以它为准。
 
 - **声明**：`PluginOptions.Defs` = 每插件一条 `{ id, options = { { key, label, type, default, desc, ... } } }`。
@@ -205,7 +240,7 @@ pnpm run watch:lua -- --once  # 只重打包一次后退出（CI / 手动触发�
   `{ enabled = {...}, options = { <插件id> = { <选项键> = 值 } } }`；经 `Plugin/PluginConfigFile` 的
   `Read`/`Update` 做「读 → 改 → 写」，`enabled`（PluginManager）与 `options`（PluginOptions）互不覆盖
   （两块各自整文件覆盖会互相清空，是真机复现过的缺陷）。
-- **游戏内调节**：`Plugin/OptionsPanelPlugin`（插件 id `options_panel`）提供右下角「选项」浮动按钮：
+- **游戏内调节**：`Plugin/OptionsPanelPlugin`（插件 id `options_panel`）提供浮动「选项」按钮：
   左侧插件页签，右侧按选项定义渲染控件（开关 / − 数值 + / < 枚举 >），底部「重置本插件」；
   改动即时生效并 `PluginHeartbeat.PushOption` 同步服务端，面板重建时标题与容器保留。
 - **服务端同步**：心跳响应回传 `options`（`{ <插件id> = { <选项键> = 值 } }`），客户端 best-effort 应用；
@@ -213,13 +248,39 @@ pnpm run watch:lua -- --once  # 只重打包一次后退出（CI / 手动触发�
 - **选项编码（路径式）**：`boolean → b0/b1`、`number → n<数字>`、`string → s<URL 编码字符串>`，
   与 `PluginHeartbeat._EncodeOption` / `plugin.routes.ts#decodeOptionValue` 一一对应。
 
+### 2.4 面板 UI 的挂载时序与可见性（真机缺陷修复）
+
+插件系统在官方 `entry.lua` 的 `HotfixProcesser.Do` 阶段初始化，**早于 `ModelMgr.Init()`**，
+因此引导阶段 `TimerModel.me == nil`、主 UI Canvas 通常也还没建。旧实现有多处会让面板「建不出来 / 看不见」：
+
+- **重试链排不上**：旧 `PluginUI.RetryEnsure` 先消耗重试预算、再检查 `TimerModel.me`，未就绪就直接
+  `return` ——引导阶段这一次尝试就把预算用掉，之后只剩 `Battle.UI.UIController.Awake`（战斗）兜底，
+  主界面自然没有「插件 / 选项」浮动按钮。
+  现在：未就绪时**不消耗预算**并登记待补排，装一次 `TimerModel.BindSwitcher` 包装，在计时器驱动
+  接通（`LuaEntry.driveUpdate = true` 的前提）后补排延迟链；建成后转低频巡检，场景切换销毁面板时自动重建。
+- **挂错 Canvas / 被相机剔除**：旧 `FindCanvas` 兜底用 `FindObjectOfType` 取「任意一个 Canvas」，
+  可能落在被其它 UI 盖住的子 Canvas；且运行时 `new GameObject` 默认 layer 0，Screen Space - Camera
+  的画布会按相机 `cullingMask` 把控件整体剔除。
+  现在：优先官方 `UI/Main/LuaUIRoot`，否则取 active Canvas 中 `sortingOrder` 最高者；新建控件的
+  `layer` 一律继承父节点。
+- **文字不渲染**：运行时 `AddComponent<Text>()` 的 `font` 为空，Unity 不会自动补字体，标签一个字都画不出。
+  现在：优先复用场景内既有 `UGUI.Text` / `UIMultiRegionTextGraphic` 的字体（含 CJK 字形），
+  再回退 Unity 内置字体，解析成功即缓存。
+- **销毁残留**：xLua 里被销毁的 Unity 对象引用不是 Lua `nil`，旧守卫 `self._root ~= nil` 永远为真，
+  切场景后面板消失且不再重建；现在统一经 `PluginUI.IsAlive`（`obj:Equals(nil)`）判定并重建。
+- **开得开、关不掉**：浮动按钮先于面板创建，面板展开后按 Unity UI 兄弟顺序绘制在其上；
+  面板背景 `raycastTarget` 会拦截点击，按钮点不到。现在展开时 `PluginUI.BringToFront` 把按钮提到最上层。
+
+验证：`tmp/lua-ui-timing-smoke.js`（fengari + 桩，14 断言）按官方启动顺序驱动
+「未 Init → BindSwitcher → Canvas 出现 → 场景销毁重建」，另 `tmp/lua-ui-smoke.js`（29 断言）覆盖控件逻辑。
+
 ## 3. 启用流程（服务端）
 
 - admin 端点（需 `adminAuth` 令牌，默认 `doctorate-admin`）：
   - `GET /admin/api/plugin`            → 插件列表（含启用状态与选项取值 `options`）
   - `POST /admin/api/plugin/<id>/enable`  → 启用
   - `POST /admin/api/plugin/<id>/disable` → 停用
-- 客户端端点（Lua 侧经 `UISender.me:SendGet` 调用，见 `lua/plugin/PluginHeartbeat.lua`）：
+- 客户端端点（Lua 侧经 `UISender.me:SendGet` 调用，见 `lua/plugin/core/PluginHeartbeat.lua`）：
   - `GET /plugin/heartbeat`                 → 生效确认；响应含 `catalog`（启停态）与 `options`（选项取值）
   - `GET /plugin/config/<id>/<0|1>`         → 客户端启停状态推送
   - `GET /plugin/option/<id>/<key>/<编码值>` → 客户端选项取值推送（`b0`/`b1`/`n24`/`sorange`）
@@ -246,11 +307,12 @@ pnpm run watch:lua -- --once  # 只重打包一次后退出（CI / 手动触发�
 - 战斗中按 `X` 暂停/继续；`Alpha1` 单帧；`Alpha3` 三倍速。
 
 ### 4.4 插件管理面板
-- 登录后主界面出现右下角「插件」浮动按钮（面板在引导阶段延迟挂载：Canvas 就绪或首次进入战斗后出现），点击开合管理面板。
+- 登录后主界面出现浮动「插件」按钮（引导阶段 Canvas 尚未就绪，由自愈链在 Canvas 出现后补建；
+  场景切换销毁后也会自动重建），点击开合管理面板。
 - 面板列出各插件，点「切换」实时启停，并持久化到客户端 `persistentDataPath/plugin_config.json`，同时推送服务端 `data/plugin/config.json`。
 
 ### 4.5 插件选项面板
-- 右下角「选项」浮动按钮（在「插件」按钮上方），点击开合选项面板；面板贴屏幕右侧，与左侧的插件面板错开。
+- 浮动「选项」按钮（在「插件」按钮上方），点击开合选项面板；面板贴屏幕右侧，与左侧的插件面板错开。
 - 左侧三个页签（敌人血量显示 / 敌人属性面板 / 战斗辅助）切换，右侧渲染该插件的选项控件：
   开关（已开启/已关闭）、数值（− / 值 / +，按 step 步进）、枚举（< / 当前项 / >）；
   底部「重置本插件」一键恢复默认。
@@ -266,7 +328,7 @@ pnpm run watch:lua -- --once  # 只重打包一次后退出（CI / 手动触发�
 
 1. 用 Frida dump 客户端 il2cpp：`Il2Cpp.dump("d.cs")`（见 `hook/main.ts`）。
 2. 搜索目标类（如 `Torappu.Battle.UI.UIUnitHUD`），核对字段/方法名（`_hpSlider`、`Attach`、`get_groupStatic` 等）。
-3. 修正 `lua/plugin/*.lua` 中的类名/方法名后重新 `pnpm run repack:lua`（或 `watch:lua`）下发。
+3. 修正 `lua/plugin/**/*.lua` 中的类名/方法名后重新 `pnpm run repack:lua`（或 `watch:lua`）下发。
 
 所有 hotfix 均经 `xpcall` 兜底，单点失败不会崩溃，仅记 `LogHotfixError`。
 
@@ -283,5 +345,6 @@ pnpm run watch:lua -- --once  # 只重打包一次后退出（CI / 手动触发�
 | `/plugin/heartbeat`、`/plugin/config/:id/:value`、`/plugin/option/:id/:key/:value` 路由 | vitest |
 | Lua 侧选项归一化/持久化往返/订阅/Reset（`PluginOptions` + `PluginConfigFile` + `PluginManager`） | fengari 冒烟（一次性脚本 `tmp/lua-smoke.js`，40 断言；非 CI） |
 | 选项面板/插件面板控件逻辑（页签、加值、枚举循环、开关落盘、重置、开合、停用清理、标题保留） | fengari + UnityEngine.UI 桩冒烟（`tmp/lua-ui-smoke.js`，29 断言；非 CI） |
+| 面板挂载时序与可见性（TimerModel 未就绪待补排 / BindSwitcher 补排 / Canvas 选择 / layer 继承 / 字体 / 销毁重建） | fengari + UnityEngine.UI 桩冒烟（`tmp/lua-ui-timing-smoke.js`，14 断言；非 CI） |
 | Lua 插件语法 | `luaparse` 逐文件解析（一次性；非 CI） |
 | Lua 插件实际加载/UI 显示/热更 | 真机手动（见 §4） |

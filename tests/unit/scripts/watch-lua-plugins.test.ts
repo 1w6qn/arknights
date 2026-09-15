@@ -92,6 +92,6 @@ describe("watch-lua-plugins 插件热重载", () => {
     // DefinedFix 已注入该插件 hotfixer 条目
     const df = assets.find((a) => a.name.toLowerCase().endsWith("definedfix.lua"))!;
     const txt = new TextDecoder().decode(df.script);
-    expect(txt).toContain('"Plugin/PluginBootHotfixer",');
+    expect(txt).toContain('"Plugin/core/PluginBootHotfixer",');
   });
 });

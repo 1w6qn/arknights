@@ -17,7 +17,7 @@
 --]]
 local PluginOptions = {}
 
-local PluginConfigFile = require("Plugin/PluginConfigFile")
+local PluginConfigFile = require("Plugin/core/PluginConfigFile")
 
 --[[
   选项定义清单（顺序即面板页签顺序）。每项：

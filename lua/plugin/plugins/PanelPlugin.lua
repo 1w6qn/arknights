@@ -2,7 +2,7 @@
   PanelPlugin.lua —— 插件管理面板插件
   动态构建一个现代化管理面板：浮动开关按钮 + 插件列表（名称/描述/启停开关），
   通过 PluginManager:SetEnabled 实时启停插件。面板用 UnityEngine.UI 动态构建。
-  各插件的可调参数在「选项」面板（Plugin/OptionsPanelPlugin，浮动「选项」按钮）里调节。
+  各插件的可调参数在「选项」面板（Plugin/plugins/OptionsPanelPlugin，浮动「选项」按钮）里调节。
 
   时序说明：插件系统在官方 entry.lua 的 HotfixProcesser.Do 阶段初始化，早于 ModelMgr.Init
   与主 UI 创建——此时 TimerModel.me 尚未就绪、Canvas 通常也不存在。因此 OnLoad 不直接依赖
@@ -12,10 +12,13 @@
       按间隔重试，建成后转低频巡检（场景切换销毁面板/Canvas 时自动重建）；
     - 兜底 hook UIController.Awake（进入战斗 UI，必然晚于主界面）时再尝试。
 --]]
-local PanelPlugin = Class("PanelPlugin", require("Plugin/BasePlugin"))
+local PanelPlugin = Class("PanelPlugin", require("Plugin/core/BasePlugin"))
 local eutil = CS.Torappu.Lua.Util
-local PluginUI = require("Plugin/PluginUI")
-local PluginHeartbeat = require("Plugin/PluginHeartbeat")
+local PluginUI = require("Plugin/ui/PluginUI")
+local PluginHeartbeat = require("Plugin/core/PluginHeartbeat")
+
+-- 插件标识（与 PluginDefs.lua 一致；本面板自身就是一个 UI 入口，用于自排除）
+local _ID = "plugin_panel"
 
 local UnityEngine = CS.UnityEngine
 local UGUI = CS.UnityEngine.UI
@@ -38,6 +41,7 @@ function PanelPlugin:OnLoad()
   self._floatBtn = nil
   self._canvas = nil
   self._listRoot = nil
+  self._hint = nil
   self._retryActive = false
 
   self:_EnsureCanvasAndBuild()
@@ -60,6 +64,7 @@ function PanelPlugin:_EnsureCanvasAndBuild()
   if not PluginUI.IsAlive(self._root) then
     self._root = nil
     self._listRoot = nil
+    self._hint = nil
   end
   if not PluginUI.IsAlive(self._floatBtn) then
     self._floatBtn = nil
@@ -102,7 +107,7 @@ function PanelPlugin:_BuildPanel()
   self._listRoot = PluginUI.CreateContainer(root.transform, "List", UnityEngine.Vector3.zero, UnityEngine.Vector2(420, 400))
   local hint = PluginUI.CreateText(root.transform, "Hint", UnityEngine.Vector3(0, -(_PANEL_SIZE.y / 2 - 22), 0), UnityEngine.Vector2(420, 30), 13, UnityEngine.Color(0.6, 0.6, 0.7, 1))
   hint.alignment = UnityEngine.TextAnchor.MiddleCenter
-  hint.text = "各插件参数在右下角「选项」面板中调节"
+  self._hint = hint
   self._root = root
   self._root:SetActive(false)
   self:Refresh()
@@ -110,6 +115,10 @@ end
 
 --[[
   重建插件列表（每次开合/启停后调用，保证状态实时）。
+
+  ★ 入口守卫的**用户可见面**：只剩一个 UI 入口时，它的开关渲染成不可点的「常驻」
+  （PluginManager:CanDisable 为假）。否则玩家一点就把自己关在门外——
+  实测故障：`plugin_panel` 与 `options_panel` 同时被关掉后，游戏内再无任何入口。
 --]]
 function PanelPlugin:Refresh()
   if self._root == nil or self._listRoot == nil then return end
@@ -121,11 +130,20 @@ function PanelPlugin:Refresh()
   for _, def in ipairs(PluginDefs) do
     local plugin = mgr:GetPlugin(def.id)
     local err = mgr:GetError(def.id)
+    -- 入口插件且它是当前唯一启用中的入口 ⇒ 不可停用（常驻）
+    local locked = plugin ~= nil and plugin.enabled and not mgr:CanDisable(def.id)
     local rowBg, _ = PluginUI.CreateImage(trans, "Row", UnityEngine.Vector3(0, y, 0), UnityEngine.Vector2(420, 56), UnityEngine.Color(0.2, 0.2, 0.25, 0.6))
-    local nameText = PluginUI.CreateText(rowBg.transform, "Name", UnityEngine.Vector3(-150, 14, 0), UnityEngine.Vector2(260, 24), 20, UnityEngine.Color(1, 1, 1, 1))
+    -- 文本区几何（2026-09-15 修「文字超出边框」）：
+    -- 行宽 420 ⇒ x ∈ [-210, 210]；右侧 State/Toggle 从 115 起。文本框居中于 -45、宽 310
+    -- ⇒ 实际落在 [-200, 110]，**完全在行内**且不压右侧控件。
+    -- 历史缺陷：文本框居中于 -150、宽 260 ⇒ 落在 [-280, -20]，左侧整整探出行外 70px；
+    -- 且 260px 装不下最长 447px 的描述，Warp+Truncate 下被切一半。
+    local nameText = PluginUI.CreateText(rowBg.transform, "Name", UnityEngine.Vector3(-45, 14, 0), UnityEngine.Vector2(310, 24), 20, UnityEngine.Color(1, 1, 1, 1))
     nameText.text = def.name
-    local descText = PluginUI.CreateText(rowBg.transform, "Desc", UnityEngine.Vector3(-150, -12, 0), UnityEngine.Vector2(260, 20), 13, UnityEngine.Color(0.7, 0.7, 0.7, 1))
+    PluginUI.FitText(nameText, 300)
+    local descText = PluginUI.CreateText(rowBg.transform, "Desc", UnityEngine.Vector3(-45, -12, 0), UnityEngine.Vector2(310, 20), 13, UnityEngine.Color(0.7, 0.7, 0.7, 1))
     descText.text = err ~= nil and err or def.desc
+    PluginUI.FitText(descText, 300)
     descText.color = err ~= nil and UnityEngine.Color(1, 0.5, 0.5, 1) or UnityEngine.Color(0.7, 0.7, 0.7, 1)
     -- 状态/错误标记
     local state = PluginUI.CreateText(rowBg.transform, "State", UnityEngine.Vector3(150, 14, 0), UnityEngine.Vector2(70, 24), 16, UnityEngine.Color(0.4, 1, 0.4, 1))
@@ -133,16 +151,24 @@ function PanelPlugin:Refresh()
     if plugin == nil then
       state.text = "ERR"
       state.color = UnityEngine.Color(1, 0.3, 0.3, 1)
+    elseif locked then
+      -- 常驻：停用它会让游戏内失去最后一个插件入口
+      state.text = "常驻"
+      state.color = UnityEngine.Color(1, 0.85, 0.3, 1)
     else
       state.text = plugin.enabled and "ON" or "OFF"
       state.color = plugin.enabled and UnityEngine.Color(0.4, 1, 0.4, 1) or UnityEngine.Color(1, 0.4, 0.4, 1)
     end
-    -- 开关按钮（加载失败的插件无可启停对象，禁用）
-    local btnObj, _ = PluginUI.CreateImage(rowBg.transform, "Toggle", UnityEngine.Vector3(150, -12, 0), UnityEngine.Vector2(64, 28), plugin == nil and UnityEngine.Color(0.4, 0.4, 0.4, 1) or UnityEngine.Color(0.3, 0.6, 1, 1))
+    -- 开关按钮（加载失败的插件无可启停对象；常驻的入口面板只显示锁定标记）
+    local btnColor = UnityEngine.Color(0.4, 0.4, 0.4, 1)
+    if plugin ~= nil then
+      btnColor = locked and UnityEngine.Color(0.35, 0.3, 0.2, 1) or UnityEngine.Color(0.3, 0.6, 1, 1)
+    end
+    local btnObj, _ = PluginUI.CreateImage(rowBg.transform, "Toggle", UnityEngine.Vector3(150, -12, 0), UnityEngine.Vector2(64, 28), btnColor)
     local btnText = PluginUI.CreateText(btnObj.transform, "Text", UnityEngine.Vector3.zero, UnityEngine.Vector2(64, 28), 14, UnityEngine.Color(1, 1, 1, 1))
     btnText.alignment = UnityEngine.TextAnchor.MiddleCenter
-    btnText.text = "切换"
-    if plugin ~= nil then
+    btnText.text = locked and "锁定" or "切换"
+    if plugin ~= nil and not locked then
       -- 不用 UGUI.Button（自建 Overlay 画布上会点击穿透）；统一走自绘点击
       local pluginId = def.id
       local selfRef = self
@@ -153,6 +179,37 @@ function PanelPlugin:Refresh()
     end
     y = y - _ROW_STEP
   end
+  self:_RefreshHint()
+end
+
+--[[
+  刷新底部提示：说明「为什么某个入口是常驻的」，以及被关掉的入口该怎么恢复。
+
+  两种状态分别给不同的话术——把「去哪儿点」直接写出来，比让玩家自己猜要省事得多。
+--]]
+function PanelPlugin:_RefreshHint()
+  if self._hint == nil then
+    return
+  end
+  local mgr = PluginManager.me
+  local closedName = nil
+  if mgr ~= nil and mgr.UiEntryIds ~= nil then
+    for _, id in ipairs(mgr:UiEntryIds()) do
+      if id ~= _ID then
+        local other = mgr:GetPlugin(id)
+        if other ~= nil and not other.enabled then
+          closedName = other.name or id
+        end
+      end
+    end
+  end
+  if closedName ~= nil then
+    self._hint.text = "「" .. tostring(closedName) .. "」已关闭：在上方列表打开它即可恢复其浮窗按钮"
+  else
+    self._hint.text = "「常驻」是最后的插件入口，不可关闭（否则游戏内将没有入口）"
+  end
+  -- 提示语里嵌了插件名，长度不可控：同样收进框内（Hint 框宽 420，留 10px 边距）
+  PluginUI.FitText(self._hint, 400)
 end
 
 --[[
@@ -191,6 +248,7 @@ function PanelPlugin:OnUnload()
   self._floatBtn = nil
   self._canvas = nil
   self._listRoot = nil
+  self._hint = nil
   self._open = false
   self._retryActive = false
   eutil.Log("[PanelPlugin] 插件管理面板已停用")

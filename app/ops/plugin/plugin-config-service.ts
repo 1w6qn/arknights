@@ -4,7 +4,7 @@
  * 该配置面向游戏内 Lua 插件系统（见 lua/plugin/），供 admin 端点与 Dashboard 使用。
  * 插件清单与 lua/plugin/PluginDefs.lua 保持一致（id/name/desc）；
  * 选项取值由客户端「选项面板」经 /plugin/option/... 推送，服务端只做标量合法性校验
- * （选项定义域在 lua/plugin/PluginOptions.lua，服务端不重复维护）。
+ * （选项定义域在 lua/plugin/core/PluginOptions.lua，服务端不重复维护）。
  */
 import { join } from "path";
 import { mkdir } from "fs/promises";
@@ -20,7 +20,7 @@ const PLUGIN_CONFIG_PATH = join(PLUGIN_DIR, "config.json");
 /** 插件定义（与 lua/plugin/PluginDefs.lua 保持一致，由单一数据源解析） */
 export type PluginDefinition = PluginCatalogEntry;
 
-/** 插件选项取值（标量；与 lua/plugin/PluginOptions.lua 的取值域一致） */
+/** 插件选项取值（标量；与 lua/plugin/core/PluginOptions.lua 的取值域一致） */
 export type PluginOptionValue = boolean | number | string;
 
 /** 持久化配置结构 */
@@ -190,6 +190,34 @@ export class PluginConfigService {
   }
 
   /**
+   * 目录里的「游戏内 UI 入口」插件（PluginDefs 的 `ui_entry = true`）。
+   * 空目录（解析失败且回退目录也异常）时返回空数组，此时不做入口守卫。
+   * @returns 入口插件 id 列表
+   */
+  uiEntryIds(): string[] {
+    return this.getCatalog()
+      .filter((def) => def.uiEntry === true)
+      .map((def) => def.id);
+  }
+
+  /**
+   * 判断能否把某插件停用（**UI 入口守卫**）。
+   *
+   * 背景（2026-09-15 修复的真实故障）：`plugin_panel` 与 `options_panel` 都提供
+   * 游戏内面板，也是玩家在游戏里启停插件的唯一途径。两者被配置成 `false` 之后，
+   * 游戏内再无任何入口能重新打开它们——只能改配置文件或走服务端。
+   * 因此约定：**任何时刻至少保留一个入口插件启用**。
+   * @param id - 待停用的插件标识
+   * @returns 允许停用返回 true
+   */
+  async canDisable(id: string): Promise<boolean> {
+    const entries = this.uiEntryIds();
+    if (!entries.includes(id)) return true;
+    const config = await this.load();
+    return entries.some((entryId) => entryId !== id && config.enabled[entryId] === true);
+  }
+
+  /**
    * 查询插件是否启用；未配置（含目录外的未知 id）返回 false。
    * @param id - 插件标识
    * @returns 是否启用
@@ -210,14 +238,21 @@ export class PluginConfigService {
 
   /**
    * 设置插件启用状态并持久化（幂等）。
+   *
+   * 停用受**入口守卫**约束：不能把最后一个 `ui_entry` 插件关掉（关掉后游戏内再无入口，
+   * 见 {@link canDisable}）；此时抛错而不是静默忽略，让调用方（客户端推送 / 管理端 / GM）
+   * 能明确知道「这次停用被拒」，从而不去改本地状态。
    * @param id    - 插件标识
    * @param value - true 启用 / false 停用
    * @returns 更新后的启用状态
-   * @throws 插件 id 不存在时抛错
+   * @throws 插件 id 不存在，或会关掉最后一个 UI 入口时抛错
    */
   async setEnabled(id: string, value: boolean): Promise<boolean> {
     if (!this.has(id)) {
       throw new Error(`未知插件: ${id}`);
+    }
+    if (!value && !(await this.canDisable(id))) {
+      throw new Error(`不能停用最后一个插件入口: ${id}（游戏内将再无面板可用）`);
     }
     const config = await this.load();
     config.enabled[id] = value;

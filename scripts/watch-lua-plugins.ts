@@ -1,7 +1,7 @@
 /**
  * Lua 插件热重载脚本
  *
- * 监听 lua/plugin/*.lua 变更 → 自动重打包内置 Lua bundle mod → 使平台 mods 指纹缓存失效，
+ * 监听 lua/plugin/ 下的全部 .lua 变更 → 自动重打包内置 Lua bundle mod → 使平台 mods 指纹缓存失效，
  * 客户端下次拉取 hot_update_list.json 时 app/ops/assets/asset.ts 会重扫 mods/ 拿到新指纹并重新下载覆盖。
  * 目标：改一个插件 Lua 免手动重打包，提升插件开发迭代体验。
  *
@@ -119,10 +119,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.log(`[watch:lua] 监听 ${PLUGIN_DIR}/*.lua 变更（防抖 ${debounce}ms），Ctrl+C 退出…`);
+  console.log(`[watch:lua] 监听 ${PLUGIN_DIR}/**/*.lua 变更（防抖 ${debounce}ms），Ctrl+C 退出…`);
 
   let timer: NodeJS.Timeout | null = null;
-  fs.watch(PLUGIN_DIR, { persistent: true }, (_eventType, filename) => {
+  // recursive：插件目录分层（core/ ui/ plugins/），非递归 watch 收不到子目录变更
+  fs.watch(PLUGIN_DIR, { persistent: true, recursive: true }, (_eventType, filename) => {
     if (!filename || !filename.endsWith(".lua")) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {

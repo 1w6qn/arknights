@@ -140,6 +140,9 @@ describe("lua-mod-builder 启动自动构建", () => {
     expect(r2.reason).toBe("up-to-date");
 
     // 参考目录更新（重新 extract 新客户端 bundle 的模拟）→ 再次 from-ref 构建
+    // 先拨旧 dat 时间戳：本机 /tmp 上同毫秒内写入的 mtime 可能完全相同（实测 delta=0ms），
+    // 否则「参考目录更新」会被过期检测误判为未变更（与本文件其它用例同款做法）
+    await utimes(r1.dat!, new Date("2020-01-01T00:00:00Z"), new Date("2020-01-01T00:00:00Z"));
     await writeFile(join(ref, "new.lua"), enc.encode("-- new\n"));
     const r3 = await ensureLuaModBuilt({ modsDir: mods, pluginDir: plugin, refDir: ref });
     expect(r3.built).toBe(true);

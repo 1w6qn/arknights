@@ -4,9 +4,9 @@
   显示名字/ID/描述与黑板信息（攻击/防御/法抗/移速/攻速/重量/目标点等）。
   面板用 UnityEngine.UI 动态构建，挂在关卡 UI 静态层下。API 随版本可能漂移，已做 pcall 兜底。
 --]]
-local EnemyInfoPlugin = Class("EnemyInfoPlugin", require("Plugin/BasePlugin"))
+local EnemyInfoPlugin = Class("EnemyInfoPlugin", require("Plugin/core/BasePlugin"))
 local eutil = CS.Torappu.Lua.Util
-local PluginOptions = require("Plugin/PluginOptions")
+local PluginOptions = require("Plugin/core/PluginOptions")
 
 -- 选项所属插件 id
 local _ID = "enemy_info"

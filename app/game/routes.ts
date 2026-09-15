@@ -122,7 +122,7 @@ export const routes: RouteRegistration[] = [
   { prefix: "/interlock", module: "./modules/interlock/routes" },
   { prefix: "/autochess", module: "./modules/autochess/routes" },
   { prefix: "/pay", module: "./modules/pay/routes" },
-  // 客户端 Lua 插件系统生效确认（PluginHeartbeat 心跳，见 lua/plugin/PluginHeartbeat.lua）
+  // 客户端 Lua 插件系统生效确认（PluginHeartbeat 心跳，见 lua/plugin/core/PluginHeartbeat.lua）
   { prefix: "/plugin", module: "./modules/system/plugin.routes" },
   // —— 根级挂载：home 兜底 + 从 home 拆出的 URL 域独立模块 + user/activity rootRouter + 模块自带前缀对齐 ——
   { prefix: "/", module: "./modules/home/routes" },

@@ -2,7 +2,7 @@
   PluginBootHotfixer.lua —— 插件系统引导 hotfixer
   经游戏原生 DefinedFix 管线引导：HotfixProcesser.Do 阶段 new() + Init() → OnInit()。
   OnInit 里先建立全局依赖绑定（Class/HotfixBase 由游戏提供，插件自身模块用 local 定义，
-  需显式挂 _G 供跨模块引用），再 require "Plugin/PluginEntry" 并初始化插件系统。
+  需显式挂 _G 供跨模块引用），再 require "Plugin/core/PluginEntry" 并初始化插件系统。
   将其加入内置 bundle 的 DefinedFix 清单（见 scripts/repack-lua-bundle.ts 的 patchDefinedFix）。
 
   【真机诊断】OnInit 各步骤向 persistentDataPath/plugin_boot_trace.txt 追加标记，
@@ -31,11 +31,11 @@ end
 local function _BootstrapGlobals()
   _G.PluginDefs = require "Plugin/PluginDefs"
   _Trace("PluginDefs loaded")
-  _G.PluginManager = require "Plugin/PluginManager"
+  _G.PluginManager = require "Plugin/core/PluginManager"
   _Trace("PluginManager loaded")
-  _G.PluginEntry = require "Plugin/PluginEntry"
+  _G.PluginEntry = require "Plugin/core/PluginEntry"
   _Trace("PluginEntry loaded")
-  _G.PluginHeartbeat = require "Plugin/PluginHeartbeat"
+  _G.PluginHeartbeat = require "Plugin/core/PluginHeartbeat"
   _Trace("PluginHeartbeat loaded")
 end
 

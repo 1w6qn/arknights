@@ -6,9 +6,9 @@
   取值变更时即时重应用到已创建的血量文本。
   注：方法/字段名以真机 dump 校准为准（客户端版本可能漂移），此处已做 pcall 兜底。
 --]]
-local EnemyHpPlugin = Class("EnemyHpPlugin", require("Plugin/BasePlugin"))
+local EnemyHpPlugin = Class("EnemyHpPlugin", require("Plugin/core/BasePlugin"))
 local eutil = CS.Torappu.Lua.Util
-local PluginOptions = require("Plugin/PluginOptions")
+local PluginOptions = require("Plugin/core/PluginOptions")
 
 -- 选项所属插件 id
 local _ID = "enemy_hp"

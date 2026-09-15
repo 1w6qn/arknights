@@ -47,7 +47,7 @@ export interface Violation { rule: string; file: string; spec: string }
  *
  * 现存豁免仅为**不属 kernel 提取范畴**的残余项：4 条 R3（battle→act44side、
  * charm→home、user/routes→account 协议 ×2，处置为门面/事件/落位修正）+
- * 1 条 modules→ops（system/plugin.routes，需插件宿主端口）。
+ * 2 条 modules→ops（system/plugin.routes，需插件宿主端口）。
  * R1（core→game/ops）与 R2（kernel→modules）已全部清零，并由下方用例固化——
  * 新增越界引用必须走此表并说明理由。
  */
@@ -55,6 +55,7 @@ const EXEMPTIONS: { file: string; spec: string; reason: string }[] = [
   { file: "app/game/modules/battle/battle.ts", spec: "../activities/act44side/informant", reason: "battle 引用活动族 informant 状态机" },
   { file: "app/game/modules/charm/routes.ts", spec: "../home/home", reason: "charm 读取 home 主界面数据" },
   { file: "app/game/modules/system/plugin.routes.ts", spec: "@plugin/index", reason: "system 插件心跳是插件宿主入口，需直连 ops 插件注册表（端口化待做）" },
+  { file: "app/game/modules/system/plugin.routes.ts", spec: "@plugin/lua-chunk-builder", reason: "同上：GET /plugin/lua 直接复用 ops 的插件 chunk 打包器（端口化待做）" },
   { file: "app/game/modules/user/routes.ts", spec: "../account/user", reason: "user 路由引用 account 协议/校验（路由层耦合，需下沉）" },
   { file: "app/game/modules/user/routes.ts", spec: "../account/user.schema", reason: "user 路由引用 account 协议/校验（路由层耦合，需下沉）" },
 ];

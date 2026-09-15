@@ -67,9 +67,9 @@ describe("pack-lua-min 最小 Lua 更新包", () => {
     expect(names.some((n) => n.endsWith("networkredirectplugin.lua"))).toBe(true);
     expect(names.some((n) => n.includes("basemodule.lua"))).toBe(false);
 
-    // DefinedFix 已注入插件引导 hotfixer 条目（PluginBootHotfixer；插件资产已并入 bundle）
+    // DefinedFix 已注入插件引导 hotfixer 条目（Plugin/core/PluginBootHotfixer；插件资产已并入 bundle）
     const df = assets.find((a) => /definedfix\.lua$/i.test(a.name))!;
-    expect(df.script.toLowerCase()).toContain("plugin/pluginboothotfixer");
+    expect(df.script.toLowerCase()).toContain("plugin/core/pluginboothotfixer");
   });
 
   it("参考目录缺失 DefinedFix 时报错", async () => {

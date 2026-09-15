@@ -60,6 +60,29 @@ describe("plugin-catalog 插件目录单一数据源", () => {
     ]);
   });
 
+  it("parsePluginDefs 捕获 ui_entry 布尔标记（UI 入口守卫的数据来源）", () => {
+    const content = [
+      "local PluginDefs = {",
+      '  { id = "plugin_panel", name = "面板", desc = "", ui_entry = true, module = "Plugin/plugins/PanelPlugin" },',
+      '  { id = "enemy_hp", name = "血量", desc = "", module = "Plugin/plugins/EnemyHpPlugin" },',
+      "}",
+      "",
+    ].join("\n");
+    const parsed = parsePluginDefs(content);
+    expect(parsed[0].uiEntry).toBe(true);
+    // 未标注的插件不得凭空获得该标记（否则守卫范围会被放大）
+    expect(parsed[1].uiEntry).toBeUndefined();
+  });
+
+  it("真实 PluginDefs 至少标记一个 ui_entry，且与回退目录一致", () => {
+    const catalog = loadPluginCatalog();
+    const marked = catalog.filter((c) => c.uiEntry === true).map((c) => c.id).sort();
+    expect(marked, "没有任何 UI 入口标记 ⇒ 游戏内隐藏面板后将无法调出").not.toHaveLength(0);
+    // 回退目录是解析失败时的兜底，两边标记必须一致（否则守卫范围会漂移）
+    const fallbackMarked = FALLBACK_CATALOG.filter((c) => c.uiEntry === true).map((c) => c.id).sort();
+    expect(marked).toEqual(fallbackMarked);
+  });
+
   it("loadPluginCatalog 从真实 PluginDefs.lua 加载（含全部 6 个插件）", () => {
     const catalog = loadPluginCatalog();
     expect(catalog.length).toBeGreaterThanOrEqual(4);

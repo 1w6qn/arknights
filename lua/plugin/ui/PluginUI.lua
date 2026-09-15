@@ -169,6 +169,67 @@ function PluginUI.CreateText(parent, name, pos, size, fontSize, color)
 end
 
 --[[
+  把文本裁到能放进 `maxWidth`（超出部分以 … 结尾）。
+
+  为什么需要：UGUI Text 在「框比文字窄」时（`horizontalOverflow=Wrap` +
+  `verticalOverflow=Truncate`）会先换行再纵向截断——视觉上就是"文字压出边框/被切一半"。
+  插件面板实测：`Desc` 框宽 260px，而 `采集 Unity/游戏日志并批量回传` 需要 447px。
+  这里按 `preferredWidth` 实测收紧，任何长度的文案（包括任意长的插件报错）都不会再出框。
+
+  ⚠️ 按**字符**而不是字节截断：直接 `string.sub` 会切在多字节 UTF-8 序列中间产生乱码。
+  @param text     UGUI Text 组件
+  @param maxWidth 可用宽度（像素）
+  @return 实际写入的字符串
+--]]
+function PluginUI.FitText(text, maxWidth)
+  if text == nil then
+    return ""
+  end
+  local raw = text.text or ""
+  if maxWidth == nil or maxWidth <= 8 or raw == "" then
+    return raw
+  end
+  text.text = raw
+  local okPref, pref = pcall(function()
+    return text.preferredWidth
+  end)
+  if not okPref or pref == nil or pref <= maxWidth then
+    return raw
+  end
+
+  -- 取前 chars 个字符（UTF-8 安全）
+  local function head(chars)
+    local okOff, stop = pcall(function()
+      return utf8.offset(raw, chars + 1)
+    end)
+    if not okOff or stop == nil then
+      return raw
+    end
+    return string.sub(raw, 1, stop - 1)
+  end
+
+  local total = #raw
+  local okLen, n = pcall(function()
+    return utf8.len(raw)
+  end)
+  if okLen and n ~= nil then
+    total = n
+  end
+  for chars = total - 1, 1, -1 do
+    local cand = head(chars) .. "…"
+    text.text = cand
+    local ok2, p2 = pcall(function()
+      return text.preferredWidth
+    end)
+    if ok2 and p2 ~= nil and p2 <= maxWidth then
+      return cand
+    end
+  end
+  text.text = "…"
+  return "…"
+end
+
+--[[
   创建纯布局容器（全透明 Image + 关闭射线，保证 RectTransform 存在但不挡点击）。
   面板重建列表时只清容器的子节点，标题等外层节点得以保留。
   @param parent 父 Transform

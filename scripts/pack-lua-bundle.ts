@@ -378,7 +378,7 @@ export function buildSerializedFile(assets: LuaAsset[], opts?: PackOptions): Uin
 
 /**
  * 将多条明文 Lua 资产打包为 UnityFS bundle（客户端可加载）。
- * @param assets - Lua 资产列表（m_Name 为客户端资源名，如 plugin/PluginManager.lua）
+ * @param assets - Lua 资产列表（m_Name 为客户端资源名，如 plugin/core/PluginManager.lua）
  * @param opts   - 打包附加项（容器 / bundle 名 / CAB 名 / 尾部字节）
  * @returns UnityFS bundle 字节
  */
