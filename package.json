@@ -9,6 +9,7 @@
     "node": ">=24"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "axios": "^1.7.2",
     "body-parser": "1.20.3",
     "compression": "^1.8.1",
@@ -74,6 +75,7 @@
     "apk:mod": "tsx scripts/apk-mod.ts",
     "apk:rename": "tsx scripts/apk-rename.ts",
     "apk:url-redirect": "tsx scripts/apk-url-redirect.ts",
+    "apk:dex-mtp": "tsx scripts/apk-dex-mtp.ts",
     "sign:key": "tsx scripts/sign-key.ts",
     "apk:slim": "tsx scripts/apk-slim.ts",
     "apk:assets": "tsx scripts/apk-assets-report.ts",
@@ -86,7 +88,9 @@
     "watch:lua": "tsx scripts/watch-lua-plugins.ts",
     "watch": "node scripts/watchdog.mjs",
     "type:debt": "tsx scripts/type-debt.ts",
-    "items:direct": "tsx scripts/items-pipeline.ts"
+    "items:direct": "tsx scripts/items-pipeline.ts",
+    "mcp:automation": "tsx scripts/mcp-automation-server.ts",
+    "automation:sim": "tsx scripts/automation-sim-client.ts"
   },
   "optionalDependencies": {
     "mysql2": "^3.11.3",

@@ -62,6 +62,12 @@ local PluginDefs = {
     module = "Plugin/plugins/EventLogBlockPlugin",
   },
   {
+    id = "automation_bridge",
+    name = "自动化桥",
+    desc = "向私服轮询自动化命令并执行（MCP 工具的游戏侧执行器，用于 e2e 验证）",
+    module = "Plugin/plugins/AutomationPlugin",
+  },
+  {
     id = "unity_log",
     name = "日志回传",
     desc = "采集 Unity/游戏日志并批量回传私服（落盘 data/plugin/logs，供离线分析）",

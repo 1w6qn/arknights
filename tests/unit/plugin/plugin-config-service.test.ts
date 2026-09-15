@@ -68,7 +68,7 @@ describe("PluginConfigService", () => {
     const svc = new PluginConfigService(path);
     await svc.setEnabled("enemy_hp", false);
     const list = await svc.getAll();
-    // 顺序与 PluginDefs.lua 单一数据源一致（面板管理的 6 个插件，含选项面板与网络重定向）
+    // 顺序与 PluginDefs.lua 单一数据源一致（面板管理的 9 个插件，含选项面板、服务器切换、上报截断、自动化桥与日志回传）
     expect(list.map((p) => p.id)).toEqual([
       "enemy_hp",
       "enemy_info",
@@ -76,9 +76,39 @@ describe("PluginConfigService", () => {
       "plugin_panel",
       "options_panel",
       "network_redirect",
+      "event_log_block",
+      "automation_bridge",
+      "unity_log",
     ]);
     expect(list.find((p) => p.id === "enemy_hp")?.enabled).toBe(false);
     expect(list.find((p) => p.id === "plugin_panel")?.enabled).toBe(true);
+  });
+
+  it("入口守卫：不能停用最后一个 UI 入口面板（隐藏后无法再从游戏内调出）", async () => {
+    const path = await makeConfigPath();
+    const svc = new PluginConfigService(path);
+    // 两个入口都开着 → 允许先关掉一个
+    await expect(svc.setEnabled("plugin_panel", false)).resolves.toBe(false);
+    expect(await svc.isEnabled("plugin_panel")).toBe(false);
+    expect(await svc.canDisable("options_panel")).toBe(false);
+    // 再关另一个 → 拒绝（否则游戏内再无入口）
+    await expect(svc.setEnabled("options_panel", false)).rejects.toThrow(/最后一个插件入口/);
+    expect(await svc.isEnabled("options_panel")).toBe(true);
+    // 可以重新打开被关掉的那个
+    await expect(svc.setEnabled("plugin_panel", true)).resolves.toBe(true);
+    expect(await svc.canDisable("plugin_panel")).toBe(true);
+    // 非入口插件不受守卫影响
+    await expect(svc.setEnabled("enemy_hp", false)).resolves.toBe(false);
+    expect(await svc.canDisable("enemy_hp")).toBe(true);
+  });
+
+  it("目录暴露 uiEntry 标记（客户端入口守卫的数据来源）", async () => {
+    const path = await makeConfigPath();
+    const svc = new PluginConfigService(path);
+    expect(svc.uiEntryIds().sort()).toEqual(["options_panel", "plugin_panel"]);
+    const list = await svc.getAll();
+    expect(list.find((p) => p.id === "plugin_panel")?.uiEntry).toBe(true);
+    expect(list.find((p) => p.id === "enemy_hp")?.uiEntry).toBeUndefined();
   });
 
   it("setOption 持久化标量取值（可重新加载）", async () => {

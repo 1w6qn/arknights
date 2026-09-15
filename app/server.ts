@@ -317,8 +317,11 @@ export async function main(): Promise<void> {
   // GM 面板：/gm 静态面板 + 引导端点，/admin/<snake_op> 兼容操作端点（归档服务端 GM 契约）
   app.use("/admin", (await import("@ops/admin/gm/gm-ops-router")).default);
   app.use("/gm", (await import("@ops/admin/gm/gm-router")).default);
+  // 自动化桥：MCP 工具的游戏侧执行器 + 命令中转（属控制平面，与 /admin 同类，
+  // 故在组合根挂载而非走 game 业务路由表——见 app/ops/automation/automation.routes.ts）
+  app.use("/plugin/automation", (await import("@ops/automation/automation.routes")).default);
   // Unity 日志回传：游戏内 Lua 插件把运行期日志分片回传，落盘 data/plugin/logs 供离线分析
-  // （属调试设施，与 /plugin/automation 一起在组合根挂载，见 plugin-log.routes.ts）
+  // （同属调试设施，故与 /plugin/automation 一起在组合根挂载，见 plugin-log.routes.ts）
   app.use("/plugin/log", (await import("@ops/plugin/plugin-log.routes")).default);
   const server = app.listen(config.PORT, () => {
     logger.info("index", `--------------DoctorateTs--------------`);

@@ -342,7 +342,7 @@ export function buildRobustBootstrap(): string {
  * 生成「网络拉取插件源码」引导（对应服务端 `GET /plugin/lua`）。
  *
  * 为什么不把插件源码直接内联进资产：Lua bundle 里最大的 TextAsset 明文只有约 33KB，
- * 而 `lua/plugin/*.lua` 合计约 60KB，一个资产装不下。于是资产里只放这段几百字节的引导：
+ * 而 `lua/plugin/ 下的全部 .lua` 合计约 60KB，一个资产装不下。于是资产里只放这段几百字节的引导：
  *   1) 立即尝试 `UISender.me:SendGet("/plugin/lua")`（此时 UISender 可能还没建）；
  *   2) `TimerModel` 就绪后每 3s 重试，至多 10 次；
  *   3) `Battle.UI.UIController.Awake` 兜底再试一次（必然晚于登录/网络就绪）。
@@ -420,14 +420,21 @@ export function buildFetchBootstrap(): string {
     '  trace("init")',
     "  fetch()",
     "  pcall(function()",
-    "    local G=CS.Torappu.GlobalInitializerAndUpdater",
-    "    local orig=G.Update",
+    "    -- ★ 挂点必须是「可读且非私有」的方法：早先挂 `GlobalInitializerAndUpdater.Update`，",
+    "    -- 而它是私有实例方法，xLua 对未生成类型不暴露实例方法 ⇒ `G.Update` 恒为 nil ⇒",
+    "    -- 包装里的 `if orig~=nil then orig(...) end` 从不调用原实现，等于**把客户端整个",
+    "    -- 全局每帧循环（`LuaManager.Update` / `TimeManager.Tick`）静默吞掉**：Lua 定时器",
+    "    -- 永不 tick、插件排期失效（真机现象：自动化桥只轮询一次就静默，见",
+    "    -- docs/mcp-login-flow-2026-09-15.md）。`LuaManager.Update` 是 public static 且可读，",
+    "    -- 链式调用安全，且它在 `GlobalInitializerAndUpdater.Update` 里每帧被调用。",
+    "    local L=CS.Torappu.Lua.LuaManager",
+    "    local orig=L.Update",
     "    local n=0",
-    '    xlua.hotfix(G,"Update",function(...)',
+    '    xlua.hotfix(L,"Update",function(...)',
     "      if orig~=nil then orig(...) end",
     "      n=n+1",
     "      if DONE then",
-    '        xpcall(function() xlua.hotfix(G,"Update",orig) end,function()end)',
+    '        xpcall(function() xlua.hotfix(L,"Update",orig) end,function()end)',
     "        return",
     "      end",
     "      if n%30==0 then fetch() end",
