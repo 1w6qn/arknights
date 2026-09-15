@@ -36,6 +36,8 @@ export const FALLBACK_CATALOG: readonly PluginCatalogEntry[] = Object.freeze([
   { id: "plugin_panel", name: "插件管理面板", desc: "现代化插件启停管理面板", module: "Plugin/plugins/PanelPlugin", uiEntry: true },
   { id: "options_panel", name: "插件选项面板", desc: "游戏内调节各插件参数（开关/数值/枚举）并同步服务端", module: "Plugin/plugins/OptionsPanelPlugin", uiEntry: true },
   { id: "network_redirect", name: "服务器切换", desc: "在官服/私服预设之间切换网络路由（切换后重启客户端生效）", module: "Plugin/plugins/NetworkRedirectPlugin" },
+  { id: "event_log_block", name: "上报截断", desc: "截断官方日志/埋点上报（EventLogSDK + GameBI + event 类 HTTP 请求）", module: "Plugin/plugins/EventLogBlockPlugin" },
+  { id: "unity_log", name: "日志回传", desc: "采集 Unity/游戏日志并批量回传私服（落盘 data/plugin/logs，供离线分析）", module: "Plugin/plugins/UnityLogPlugin" },
 ]);
 
 /**

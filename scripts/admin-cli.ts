@@ -53,6 +53,12 @@
  *   capture show <记录id|rid> [--json]                         查看单条记录（请求/响应）
  *   capture stats [--json] / capture export <会话id> / capture clear --yes
  *
+ * Lua 插件（客户端日志回传）:
+ *   plugin logs sessions|stats [--json]                        客户端日志会话/统计
+ *   plugin logs show <会话id> [--last N] [--level D|I|W|E]     查看某会话日志记录
+ *   plugin logs export <会话id> [--out 文件]                   导出 NDJSON 供外部分析
+ *   plugin logs clear [<会话id>] --yes                         清空客户端日志（危险操作）
+ *
  * 卡池管理:
  *   gacha pools [--json]                               列出全部卡池
  *   gacha pool <poolId> [--json]                       卡池详情（UP/可用干员+概率）
@@ -71,7 +77,8 @@
  * 说明：CLI 直接操作本地数据，无需启动服务器，完全离线可用。
  */
 import * as readline from "readline";
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
+import { join } from "path";
 import excel from "@excel/excel";
 import { isJsonObject } from "@excel/json-value";
 import type { JsonObject, JsonValue } from "@excel/json-value";
@@ -81,6 +88,7 @@ import { accountManager } from "@game/modules/account/account-manager";
 import { adminService } from "@ops/admin/admin-service";
 import config from "@core/config/index";
 import { captureManager } from "@capture/capture-manager";
+import { PluginLogStore } from "@ops/plugin";
 import { logService } from "@logs/log-service";
 import { writeJson, readJsonSync } from "@utils/file";
 
@@ -234,6 +242,13 @@ export function printHelp(): void {
   capture stats [--json]                                     抓包统计
   capture export <会话id>                                    导出会话 zip
   capture clear --yes                                        清空全部抓包（危险操作）
+
+Lua 插件（客户端日志回传）:
+  plugin logs sessions [--json]                              客户端日志会话列表（Unity 日志回传）
+  plugin logs show <会话id> [--last N] [--level D|I|W|E] [--json]   查看某会话的日志记录
+  plugin logs stats [--json]                                 回传统计（会话/条数/错警/字节）
+  plugin logs export <会话id> [--out 文件] [--last N]        导出 NDJSON 供外部分析
+  plugin logs clear [<会话id>] --yes                         清空客户端日志（危险操作）
 
 卡池管理:
   gacha pools [--json]                              列出全部卡池
@@ -1301,6 +1316,124 @@ async function runCapture(args: string[], flags: { [key: string]: string }): Pro
   process.exitCode = 1;
 }
 
+/** 客户端日志级别码 → 可读名（与 lua/plugin/plugins/UnityLogPlugin.lua 的 _LEVEL_CODE 对应） */
+const UNITY_LOG_LEVEL_NAME: { [key: string]: string } = { D: "DEBUG", I: "INFO", W: "WARN", E: "ERROR" };
+
+/**
+ * plugin 子命令（Lua 插件设施的分析入口）
+ *
+ * 「日志回传」插件（`unity_log`）把客户端运行期 Unity/游戏日志回传到
+ * `data/plugin/logs/<sid>.ndjson`（协议与存储见 app/ops/plugin/plugin-log-store.ts）。
+ * 这里做离线分析：会话列表 / 查看记录 / 统计 / 导出 NDJSON / 清理。
+ * 完全离线（只读文件），无需启动服务器。
+ *
+ * @param args  - 子命令（logs sessions|show|stats|export|clear）
+ * @param flags - CLI 标志（--json / --last / --level / --out / --yes）
+ */
+function runPlugin(args: string[], flags: { [key: string]: string }): void {
+  const store = new PluginLogStore();
+  if (args[0] !== "logs") {
+    console.error(
+      "用法: plugin logs sessions [--json] | show <会话id> [--last N] [--level D|I|W|E] [--json] | stats [--json] | export <会话id> [--out 文件] | clear [<会话id>] --yes",
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const action = args[1] ?? "sessions";
+  if (action === "sessions") {
+    const sessions = store.listSessions();
+    if (flags.json) {
+      output(sessions, flags);
+      return;
+    }
+    if (!sessions.length) {
+      console.log(`暂无客户端日志会话（目录 ${store.directory}）`);
+      console.log("提示：在游戏内「插件管理面板」启用「日志回传」，客户端下个回传周期（默认 5s）即可看到");
+      return;
+    }
+    console.table(
+      sessions.map((s) => ({
+        会话: s.sid,
+        记录: s.records,
+        错误: s.errors,
+        警告: s.warnings,
+        丢弃: s.dropped,
+        批次: s.batches,
+        字节: s.bytes,
+        平台: s.device.platform ?? "-",
+        设备: s.device.model ?? "-",
+        最近: s.lastAt ? new Date(s.lastAt).toLocaleString() : "-",
+      })),
+    );
+    return;
+  }
+  if (action === "stats") {
+    output(store.stats(), flags);
+    return;
+  }
+  if (action === "show") {
+    const sid = args[2];
+    if (!sid) {
+      console.error("用法: plugin logs show <会话id> [--last N] [--level D|I|W|E] [--json]");
+      process.exitCode = 1;
+      return;
+    }
+    const lastRaw = Number(flags.last ?? 200);
+    const limit = Number.isFinite(lastRaw) && lastRaw > 0 ? lastRaw : 200;
+    const level = flags.level ?? "";
+    const records = store.readRecords(sid, { limit, level });
+    if (flags.json) {
+      output(records, flags);
+      return;
+    }
+    if (!records.length) {
+      console.log(`会话 ${sid} 无记录（或级别过滤后为空）`);
+      return;
+    }
+    console.log(`会话 ${sid}：${records.length} 条（--last ${limit}${level ? ` --level ${level}` : ""}）`);
+    for (const r of records) {
+      const ts = r.receivedAt ? new Date(r.receivedAt).toLocaleString() : "-";
+      const dur = r.t !== undefined ? ` t=${r.t}ms` : "";
+      const rep = r.c !== undefined && r.c > 1 ? ` ×${r.c}` : "";
+      console.log(`[${ts}] ${UNITY_LOG_LEVEL_NAME[r.l] ?? r.l}${dur}${rep} ${r.m}`);
+      if (r.s) {
+        for (const line of r.s.split("\n").slice(0, 6)) {
+          console.log(`    ${line}`);
+        }
+      }
+    }
+    return;
+  }
+  if (action === "export") {
+    const sid = args[2];
+    if (!sid) {
+      console.error("用法: plugin logs export <会话id> [--out 文件] [--last N] [--level D|I|W|E]");
+      process.exitCode = 1;
+      return;
+    }
+    const lastRaw = Number(flags.last ?? 100000);
+    const limit = Number.isFinite(lastRaw) && lastRaw > 0 ? lastRaw : 100000;
+    const records = store.readRecords(sid, { limit, level: flags.level ?? "" });
+    const out = flags.out ?? join(store.directory, `${sid}.export.ndjson`);
+    writeFileSync(out, records.map((r) => JSON.stringify(r)).join("\n") + (records.length > 0 ? "\n" : ""), "utf8");
+    console.log(`已导出 ${records.length} 条客户端日志 → ${out}`);
+    return;
+  }
+  if (action === "clear") {
+    if (flags.yes !== "true") {
+      console.error("危险操作：清空客户端日志请加 --yes");
+      process.exitCode = 1;
+      return;
+    }
+    const sid = args[2];
+    const removed = store.clear(sid);
+    console.log(sid ? `已清空会话 ${sid}（删除 ${removed} 个文件）` : `已清空全部客户端日志（删除 ${removed} 个文件）`);
+    return;
+  }
+  console.error(`未知子命令: plugin logs ${action}（可用：sessions / show / stats / export / clear）`);
+  process.exitCode = 1;
+}
+
 /** gacha 子命令（卡池管理） */
 async function runGacha(args: string[], flags: { [key: string]: string }): Promise<void> {
   const sub = args[0];
@@ -1899,6 +2032,9 @@ export async function dispatch(
     case "capture":
       await runCapture(args, flags);
       break;
+    case "plugin":
+      runPlugin(args, flags);
+      break;
     case "gacha":
       await runGacha(args, flags);
       break;
@@ -1937,7 +2073,7 @@ export async function dispatch(
 /** 交互模式：逐行执行命令，help/exit 退出（Tab 补全命令名） */
 function runRepl(): void {
   console.log("DoctorateTs 管理交互模式（输入 help 查看命令，exit 退出；Tab 补全）");
-  const COMMANDS = ["users", "mail", "server", "config", "gacha", "pay", "official", "logs", "capture", "activities", "tools", "help", "exit", "quit"];
+  const COMMANDS = ["users", "mail", "server", "config", "gacha", "pay", "official", "logs", "capture", "plugin", "activities", "tools", "help", "exit", "quit"];
   const completer = (line: string): [string[], string] => {
     const hits = COMMANDS.filter((c) => c.startsWith(line));
     return [hits.length ? hits : COMMANDS, line];

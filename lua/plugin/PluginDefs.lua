@@ -55,6 +55,18 @@ local PluginDefs = {
     desc = "在官服/私服预设之间切换网络路由（切换后重启客户端生效）",
     module = "Plugin/plugins/NetworkRedirectPlugin",
   },
+  {
+    id = "event_log_block",
+    name = "上报截断",
+    desc = "截断官方日志/埋点上报（EventLogSDK + GameBI + event 类 HTTP 请求）",
+    module = "Plugin/plugins/EventLogBlockPlugin",
+  },
+  {
+    id = "unity_log",
+    name = "日志回传",
+    desc = "采集 Unity/游戏日志并批量回传私服（落盘 data/plugin/logs，供离线分析）",
+    module = "Plugin/plugins/UnityLogPlugin",
+  },
 }
 
 return PluginDefs

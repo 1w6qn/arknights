@@ -27,7 +27,7 @@ export const ADMIN_ENDPOINTS: AdminEndpointSpec[] = [
   { method: "GET", path: "/api/asset/events", summary: "审计事件流（?action=acquire|transform|modify|deliver）" },
   { method: "GET", path: "/api/asset/events/stream", summary: "审计事件实时流（SSE 尾随）" },
   { method: "GET", path: "/api/plugin", summary: "Lua 插件列表（含启用状态与选项取值）" },
-  { method: "POST", path: "/api/plugin/:id/enable", summary: "启用 Lua 插件", params: [{ name: "id", type: "string", required: true, desc: "插件 ID（enemy_hp / enemy_info / battle_assist / plugin_panel / options_panel / network_redirect）" }] },
+  { method: "POST", path: "/api/plugin/:id/enable", summary: "启用 Lua 插件", params: [{ name: "id", type: "string", required: true, desc: "插件 ID（enemy_hp / enemy_info / battle_assist / plugin_panel / options_panel / network_redirect / event_log_block）" }] },
   { method: "POST", path: "/api/plugin/:id/disable", summary: "停用 Lua 插件", params: [{ name: "id", type: "string", required: true, desc: "插件 ID" }] },
   { method: "GET", path: "/api/status", summary: "服务器状态（端口/离线模式/版本/用户数/数据文件）" },
   { method: "GET", path: "/api/users", summary: "用户列表（?filter= 按 uid/昵称/手机号过滤）", params: [{ name: "filter", type: "string", desc: "过滤关键字（匹配 uid/昵称/手机号）" }] },
