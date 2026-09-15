@@ -184,9 +184,9 @@ function hookUrlEntries(klass: Il2Cpp.Class): string[] {
  *     避免在 `require` 的 searcher 回调里重入 Lua VM。
  *  3) 插件源码不能靠 `require` 从资产里拿，payload 自带源码表：注入时先装一个只认
  *     `Plugin/*` 的 searcher，再按插件自己的引导顺序 require（`_G.PluginDefs` → `PluginManager`
- *     → …，与 lua/plugin/PluginBootHotfixer.lua 的 `_BootstrapGlobals` 一致）。
+ *     → …，与 lua/plugin/core/PluginBootHotfixer.lua 的 `_BootstrapGlobals` 一致）。
  */
-/** 插件模块名 → 源码（构建期由 scripts/build-frida-hook.mjs 从 lua/plugin/*.lua 生成）。 */
+/** 插件模块名 → 源码（构建期由 scripts/build-frida-hook.mjs 从 lua/plugin/ 下的全部 .lua 生成）。 */
 const LUA_MODULES: { [name: string]: string } = PLUGIN_LUA;
 /** LuaManager 实例（`_CustomLoader` 的 this），作为取 m_env 的入口 */
 let luaManagerPtr: NativePointer | null = null;
@@ -235,11 +235,11 @@ function buildLuaPayload(): string {
     "local ok, err = xpcall(function()",
     '  _G.PluginDefs = require "Plugin/PluginDefs"',
     '  dts_trace("PluginDefs ok")',
-    '  _G.PluginManager = require "Plugin/PluginManager"',
+    '  _G.PluginManager = require "Plugin/core/PluginManager"',
     '  dts_trace("PluginManager ok")',
-    '  _G.PluginEntry = require "Plugin/PluginEntry"',
+    '  _G.PluginEntry = require "Plugin/core/PluginEntry"',
     '  dts_trace("PluginEntry ok")',
-    '  _G.PluginHeartbeat = require "Plugin/PluginHeartbeat"',
+    '  _G.PluginHeartbeat = require "Plugin/core/PluginHeartbeat"',
     '  dts_trace("PluginHeartbeat ok")',
     "  PluginEntry.init()",
     '  dts_trace("PluginEntry.init ok")',
@@ -862,292 +862,6 @@ function hookLuaUpdate(klass: Il2Cpp.Class): string[] {
   }
   return installed;
 }
-/** 挂验签入口，把官方公钥换成我们自己的。 */
-function hookVerifySign(klass: Il2Cpp.Class): string[] {
-  const installed: string[] = [];
-  for (const method of klass.methods) {
-    if (method.name !== "VerifySignMD5RSA") continue;
-    let params = "";
-    try {
-      params = method.parameters.map((p) => p.type.name).join(",");
-    } catch (e) {
-      params = "?";
-    }
-    // (String,String,String)：网络响应（内容、签名 base64、公钥）→ 换成我们的公钥
-    if (params === "System.String,System.String,System.String") {
-      try {
-        Interceptor.attach(method.virtualAddress, {
-          onEnter(args) {
-            stats.verifyCalls += 1;
-            const content = readString(args[0]);
-            const given = readString(args[2]);
-            if (verbose && stats.verifyCalls <= MAX_LOG) {
-              send({
-                t: "verify",
-                contentLen: content === null ? -1 : content.length,
-                contentHead: content === null ? null : content.slice(0, 80),
-                pubkeyLen: given === null ? -1 : given.length,
-                pubkeyOurs: given !== null && pubkey.length > 0 && given === pubkey,
-              });
-            }
-            if (pubkey.length === 0) return;
-            if (given !== null && given === pubkey) return;
-            try {
-              args[2] = Il2Cpp.string(pubkey).handle;
-              stats.keysReplaced += 1;
-            } catch (e) {
-              send({ t: "verify-key-fail", err: String(e) });
-            }
-          },
-        });
-        installed.push("VerifySignMD5RSA(String,String,String)");
-      } catch (e) {
-        installed.push("VerifySignMD5RSA(String..)(fail:" + e + ")");
-      }
-      continue;
-    }
-    // (Byte[],Byte[],String)：这个重载**两边都在用** —— Lua 资产（`_CustomLoader` 内）与
-    // excel/DB 的 `CrypticConverter_WithSign` 资产。换公钥必须**只在 Lua 加载上下文里**做，
-    // 否则②的官方签名验不过（实测会让客户端卡在 DB 阶段，Lua 一个都不加载）。
-    if (params !== "System.Byte[],System.Byte[],System.String") continue;
-    try {
-      Interceptor.attach(method.virtualAddress, {
-        onEnter(args) {
-          stats.verifyCalls += 1;
-          binVerifyCalls += 1;
-          if (PUBKEY_MODE === "asis") return;
-          if (luaLoaderDepth <= 0) return; // 非 Lua 上下文：保持官方公钥
-          const given = readString(args[2]);
-          let next = "";
-          if (PUBKEY_MODE === "ours" || PUBKEY_MODE === "oursonly") {
-            next = pubkey;
-          } else if (PUBKEY_MODE === "flip") {
-            next = OFFICIAL_PUBKEY_LE;
-          } else if (given !== null && given.indexOf("RSAKeyValue") >= 0) {
-            // ab：奇数轮原样（大端），偶数轮反转（小端）
-            next = binVerifyCalls % 2 === 1 ? OFFICIAL_PUBKEY_BE : OFFICIAL_PUBKEY_LE;
-          }
-          if (next.length === 0) return;
-          try {
-            args[2] = Il2Cpp.string(next).handle;
-            stats.keysReplaced += 1;
-          } catch (e) {
-            /* 写不进去就保持原样 */
-          }
-        },
-        onLeave(retval) {
-          if (binLogs >= MAX_BIN_LOG) return;
-          binLogs += 1;
-          send({
-            t: "verify-bin",
-            call: binVerifyCalls,
-            ok: retval.toInt32() !== 0,
-            mode: PUBKEY_MODE,
-            form: PUBKEY_MODE === "ab" ? (binVerifyCalls % 2 === 1 ? "BE(as-is)" : "LE(flipped)") : PUBKEY_MODE,
-          });
-        },
-      });
-      installed.push("VerifySignMD5RSA(Byte[],Byte[],String)");
-    } catch (e) {
-      installed.push("VerifySignMD5RSA(Byte..)(fail:" + e + ")");
-    }
-  }
-  return installed;
-}
-
-/**
- * 最小托管日志钩子（只挂 2 个入口，且钩子内不做任何托管调用）。
- *
- * 为什么不复用 il2cpp-unity-logs.ts 的全量钩子：Hook 数量越多、越热的方法，
- * 在 Houdini 翻译层下踩到翻译缓存/蹦床的风险越高（实测同一进程反复装卸钩子后
- * 出现过 pc=0 的 SIGSEGV）。这里只保留最能代表「Unity 日志」的两个入口，
- * 且只读字符串、绝不从钩子里回调托管代码。
- */
-function hookManagedLogsMinimal(find: (fullName: string) => Il2Cpp.Class | null): string[] {
-  const installed: string[] = [];
-  const hooks: { klass: string; method: string; params: string }[] = [
-    { klass: "UnityEngine.Debug", method: "Log", params: "System.Object" },
-    { klass: "UnityEngine.Logger", method: "Log", params: "UnityEngine.LogType,System.Object" },
-  ];
-  for (const spec of hooks) {
-    const klass = find(spec.klass);
-    if (klass === null) {
-      installed.push(spec.klass + ".<未找到>");
-      continue;
-    }
-    for (const method of klass.methods) {
-      if (method.name !== spec.method) continue;
-      let params = "";
-      try {
-        params = method.parameters.map((p) => p.type.name).join(",");
-      } catch (e) {
-        continue;
-      }
-      if (params !== spec.params) continue;
-      const skip = method.isStatic ? 0 : 1;
-      const argIndex = skip + method.parameters.length - 1;
-      try {
-        Interceptor.attach(method.virtualAddress, {
-          onEnter(args) {
-            const text = readString(args[argIndex]);
-            stats.logsSeen += 1;
-            if (text === null) {
-              if (stats.logsSeen <= MAX_LOG) send({ t: "log", src: spec.klass, text: "<非字符串>" });
-              return;
-            }
-            if (text.length === 0) return;
-            if (verbose && stats.logsSeen <= MAX_LOG) send({ t: "log", src: spec.klass, text: text });
-          },
-        });
-        installed.push(spec.klass + "." + spec.method + "(" + params + ")");
-      } catch (e) {
-        installed.push(spec.klass + "." + spec.method + "(fail:" + e + ")");
-      }
-    }
-  }
-  return installed;
-}
-
-/**
- * 诊断：记录 Lua 脚本加载器 `Torappu.Lua.LuaManager._CustomLoader(string) → byte[]` 的调用。
- *
- * 用途：确认客户端是否真的从（被我们替换的）Lua bundle 里取脚本——客户端对每个 Lua 模块
- * 会先探测 StreamingAssets 散装文件（`jar:file://…apk!/assets/<模块路径>.lua`），失败才回退 bundle，
- * 而 bundle 路径走 `AssetBundle.LoadAsset`（不产生 URL，看不见）。这里直接看加载器的入参与返回：
- *   返回数组长度 0 / 指针为空 ⇒ 该模块没被解析到。
- * @param klass - LuaManager 类
- * @returns 已挂钩子的方法名列表
- */
-function hookLuaLoader(klass: Il2Cpp.Class): string[] {
-  const installed: string[] = [];
-  for (const method of klass.methods) {
-    if (method.name !== "_CustomLoader") continue;
-    let argIndex = -1;
-    let byRef = false;
-    let sig = "?";
-    try {
-      const ps = method.parameters;
-      sig = (method.isStatic ? "" : "this,") + ps.map((p) => p.type.name).join(",");
-      const skip = method.isStatic ? 0 : 1;
-      for (let i = 0; i < ps.length; i += 1) {
-        const tn = ps[i].type.name;
-        if (tn.indexOf("System.String") === 0) {
-          argIndex = i + skip;
-          byRef = tn.charAt(tn.length - 1) === "&"; // 形如 System.String& ⇒ 需解一层引用
-          break;
-        }
-      }
-    } catch (e) {
-      sig = "?" + e;
-    }
-    if (argIndex < 0) {
-      installed.push("_CustomLoader(无字符串参数: " + sig + ")");
-      continue;
-    }
-    const pathArg = argIndex;
-    const pathByRef = byRef;
-    try {
-      Interceptor.attach(method.virtualAddress, {
-        onEnter(args) {
-          luaManagerPtr = args[0]; // this（LuaManager 实例）——供后续经 m_env.DoString 注入插件
-          luaLoaderDepth += 1; // 标记「当前在 Lua 资产加载上下文」（验签换公钥要用它区分）
-          // 注意：这里**不**注入。`_CustomLoader` 是 xLua searcher 的回调，
-          // 此刻 Lua 调用栈是活的（正在 require），重入 Lua VM 会破坏状态；
-          // 注入统一放在 `_DoUpdate` 的 onEnter（见 hookLuaUpdate）。
-          try {
-            const slot = args[pathArg];
-            if (slot.isNull()) {
-              lastLuaPath = null;
-            } else {
-              lastLuaPath = readString(pathByRef ? slot.readPointer() : slot);
-            }
-          } catch (e) {
-            lastLuaPath = "<读路径失败:" + e + ">";
-          }
-        },
-        onLeave(retval) {
-          luaLoaderDepth = luaLoaderDepth > 0 ? luaLoaderDepth - 1 : 0;
-          stats.luaLoads += 1;
-          if (stats.luaLoads > MAX_LUA_LOG) return;
-          // 返回值是解密后的明文 byte[]：长度在 +0x18，数据在 +0x20
-          let len = -1;
-          let head = "";
-          try {
-            if (!retval.isNull()) {
-              len = retval.add(0x18).readS32();
-              if (len > 0) head = retval.add(0x20).readUtf8String(Math.min(len, 44)) ?? "";
-            }
-          } catch (e) {
-            head = "<读头部失败:" + e + ">";
-          }
-          send({ t: "lua-load", path: lastLuaPath, len: len, head: head });
-        },
-      });
-      installed.push("_CustomLoader(" + sig + ")");
-    } catch (e) {
-      installed.push("_CustomLoader(fail:" + e + ")");
-    }
-  }
-  return installed;
-}
-
-/** 按全名找类（跨 assembly）。 */
-function findClass(fullName: string): Il2Cpp.Class | null {
-  for (const asm of Il2Cpp.domain.assemblies) {
-    let found: Il2Cpp.Class | null = null;
-    try {
-      found = asm.image.tryClass(fullName);
-    } catch (e) {
-      found = null;
-    }
-    if (found !== null) return found;
-  }
-  return null;
-}
-
-pubkey = loadPubkey();
-send({
-  t: "pubkey",
-  loaded: stats.pubkeyLoaded,
-  length: pubkey.length,
-  path: PUBKEY_PATH,
-  mode: PUBKEY_MODE,
-  officialInjected: OFFICIAL_PUBKEY_BE.length > 100 && OFFICIAL_PUBKEY_LE.length > 100,
-});
-
-Il2Cpp.perform(() => {
-  const webCls = findClass("UnityEngine.Networking.UnityWebRequest");
-  const cryptCls = findClass("Torappu.CryptUtils");
-  const luaMgrCls = findClass("Torappu.Lua.LuaManager");
-  send({
-    t: "hooks",
-    url: webCls === null ? [] : hookUrlEntries(webCls),
-    verify: cryptCls === null ? [] : hookVerifySign(cryptCls),
-    logs: hookManagedLogsMinimal(findClass),
-    luaLoader: luaMgrCls === null ? [] : hookLuaLoader(luaMgrCls),
-    luaEntryScript: luaMgrCls === null ? [] : hookEntryScriptDone(luaMgrCls),
-    luaUpdate: luaMgrCls === null ? [] : hookLuaUpdate(luaMgrCls),
-    globalUpdate: (() => {
-      const giCls = findClass("Torappu.GlobalInitializerAndUpdater");
-      return giCls === null ? [] : hookGlobalInitUpdate(giCls);
-    })(),
-    luaDispose: luaMgrCls === null ? [] : hookLuaDispose(luaMgrCls),
-    luaEnvDispose: (() => {
-      const envCls = findClass("XLua.LuaEnv");
-      return envCls === null ? [] : hookLuaEnvDispose(envCls);
-    })(),
-    exceptionDiag: (() => {
-      const envCls = findClass("XLua.LuaEnv");
-      if (envCls === null) return [];
-      return hookExceptionDiagnostics(envCls, findClass("UnityEngine.Debug"));
-    })(),
-    pluginModules: Object.keys(LUA_MODULES).length,
-  });
-}).catch((e: Error) => send({ t: "il2cpp-fail", err: String(e), stack: e.stack }));
-
-setInterval(() => {
-  send({ t: "stats", ...stats });
-}, 8000);
 /* ---------------------------------------------------------------------------
  * 双信任锚：JS 侧自行按「我们的公钥」复算 128B RSA/MD5 签名
  *
@@ -1432,10 +1146,63 @@ function initAnchor(): void {
   }
 }
 
+/** 挂验签入口，把官方公钥换成我们自己的。 */
+function hookVerifySign(klass: Il2Cpp.Class): string[] {
+  const installed: string[] = [];
+  for (const method of klass.methods) {
+    if (method.name !== "VerifySignMD5RSA") continue;
+    let params = "";
+    try {
+      params = method.parameters.map((p) => p.type.name).join(",");
+    } catch (e) {
+      params = "?";
+    }
+    // (String,String,String)：网络响应（内容、签名 base64、公钥）→ 换成我们的公钥
+    if (params === "System.String,System.String,System.String") {
+      try {
+        Interceptor.attach(method.virtualAddress, {
+          onEnter(args) {
+            stats.verifyCalls += 1;
+            const content = readString(args[0]);
+            const given = readString(args[2]);
+            if (verbose && stats.verifyCalls <= MAX_LOG) {
+              send({
+                t: "verify",
+                contentLen: content === null ? -1 : content.length,
+                contentHead: content === null ? null : content.slice(0, 80),
+                pubkeyLen: given === null ? -1 : given.length,
+                pubkeyOurs: given !== null && pubkey.length > 0 && given === pubkey,
+              });
+            }
+            if (pubkey.length === 0) return;
+            if (given !== null && given === pubkey) return;
+            try {
+              args[2] = Il2Cpp.string(pubkey).handle;
+              stats.keysReplaced += 1;
+            } catch (e) {
+              send({ t: "verify-key-fail", err: String(e) });
+            }
+          },
+        });
+        installed.push("VerifySignMD5RSA(String,String,String)");
+      } catch (e) {
+        installed.push("VerifySignMD5RSA(String..)(fail:" + e + ")");
+      }
+      continue;
+    }
+    // (Byte[],Byte[],String)：这个重载**两边都在用** —— Lua 资产（`_CustomLoader` 内）与
+    // excel/DB 的 `CrypticConverter_WithSign` 资产。换公钥必须**只在 Lua 加载上下文里**做，
+    // 否则②的官方签名验不过（实测会让客户端卡在 DB 阶段，Lua 一个都不加载）。
+    if (params !== "System.Byte[],System.Byte[],System.String") continue;
+    try {
       // 诊断用：该次调用进钩子时的 Lua 加载深度，以及是否真的把公钥换成了我们的
       // （`luaLoaderDepth <= 0` 会静默保持官方公钥 → 我们重签的 Lua 必然验签失败）
       let callDepth = 0;
       let callKeyReplaced = false;
+      Interceptor.attach(method.virtualAddress, {
+        onEnter(args) {
+          stats.verifyCalls += 1;
+          binVerifyCalls += 1;
           callDepth = luaLoaderDepth;
           callKeyReplaced = false;
           // 双信任锚：先记下「这次的内容是不是我们签的」（客户端用哪把公钥都不影响判定）
@@ -1449,7 +1216,28 @@ function initAnchor(): void {
               anchorByThread.delete(Process.getCurrentThreadId());
             }
           }
+          if (PUBKEY_MODE === "asis") return;
+          if (luaLoaderDepth <= 0) return; // 非 Lua 上下文：保持官方公钥
+          const given = readString(args[2]);
+          let next = "";
+          if (PUBKEY_MODE === "ours" || PUBKEY_MODE === "oursonly") {
+            next = pubkey;
+          } else if (PUBKEY_MODE === "flip") {
+            next = OFFICIAL_PUBKEY_LE;
+          } else if (given !== null && given.indexOf("RSAKeyValue") >= 0) {
+            // ab：奇数轮原样（大端），偶数轮反转（小端）
+            next = binVerifyCalls % 2 === 1 ? OFFICIAL_PUBKEY_BE : OFFICIAL_PUBKEY_LE;
+          }
+          if (next.length === 0) return;
+          try {
+            args[2] = Il2Cpp.string(next).handle;
+            stats.keysReplaced += 1;
             callKeyReplaced = true;
+          } catch (e) {
+            /* 写不进去就保持原样 */
+          }
+        },
+        onLeave(retval) {
           const threadId = Process.getCurrentThreadId();
           const anchored = anchorByThread.get(threadId) === true;
           anchorByThread.delete(threadId);
@@ -1469,6 +1257,218 @@ function initAnchor(): void {
               }
             }
           }
+          if (binLogs >= MAX_BIN_LOG) return;
+          binLogs += 1;
+          send({
+            t: "verify-bin",
+            call: binVerifyCalls,
+            ok: retval.toInt32() !== 0,
+            mode: PUBKEY_MODE,
             depth: callDepth,
             keyReplaced: callKeyReplaced,
+            form: PUBKEY_MODE === "ab" ? (binVerifyCalls % 2 === 1 ? "BE(as-is)" : "LE(flipped)") : PUBKEY_MODE,
+          });
+        },
+      });
+      installed.push("VerifySignMD5RSA(Byte[],Byte[],String)");
+    } catch (e) {
+      installed.push("VerifySignMD5RSA(Byte..)(fail:" + e + ")");
+    }
+  }
+  return installed;
+}
+
+/**
+ * 最小托管日志钩子（只挂 2 个入口，且钩子内不做任何托管调用）。
+ *
+ * 为什么不复用 il2cpp-unity-logs.ts 的全量钩子：Hook 数量越多、越热的方法，
+ * 在 Houdini 翻译层下踩到翻译缓存/蹦床的风险越高（实测同一进程反复装卸钩子后
+ * 出现过 pc=0 的 SIGSEGV）。这里只保留最能代表「Unity 日志」的两个入口，
+ * 且只读字符串、绝不从钩子里回调托管代码。
+ */
+function hookManagedLogsMinimal(find: (fullName: string) => Il2Cpp.Class | null): string[] {
+  const installed: string[] = [];
+  const hooks: { klass: string; method: string; params: string }[] = [
+    { klass: "UnityEngine.Debug", method: "Log", params: "System.Object" },
+    { klass: "UnityEngine.Logger", method: "Log", params: "UnityEngine.LogType,System.Object" },
+  ];
+  for (const spec of hooks) {
+    const klass = find(spec.klass);
+    if (klass === null) {
+      installed.push(spec.klass + ".<未找到>");
+      continue;
+    }
+    for (const method of klass.methods) {
+      if (method.name !== spec.method) continue;
+      let params = "";
+      try {
+        params = method.parameters.map((p) => p.type.name).join(",");
+      } catch (e) {
+        continue;
+      }
+      if (params !== spec.params) continue;
+      const skip = method.isStatic ? 0 : 1;
+      const argIndex = skip + method.parameters.length - 1;
+      try {
+        Interceptor.attach(method.virtualAddress, {
+          onEnter(args) {
+            const text = readString(args[argIndex]);
+            stats.logsSeen += 1;
+            if (text === null) {
+              if (stats.logsSeen <= MAX_LOG) send({ t: "log", src: spec.klass, text: "<非字符串>" });
+              return;
+            }
+            if (text.length === 0) return;
+            if (verbose && stats.logsSeen <= MAX_LOG) send({ t: "log", src: spec.klass, text: text });
+          },
+        });
+        installed.push(spec.klass + "." + spec.method + "(" + params + ")");
+      } catch (e) {
+        installed.push(spec.klass + "." + spec.method + "(fail:" + e + ")");
+      }
+    }
+  }
+  return installed;
+}
+
+/**
+ * 诊断：记录 Lua 脚本加载器 `Torappu.Lua.LuaManager._CustomLoader(string) → byte[]` 的调用。
+ *
+ * 用途：确认客户端是否真的从（被我们替换的）Lua bundle 里取脚本——客户端对每个 Lua 模块
+ * 会先探测 StreamingAssets 散装文件（`jar:file://…apk!/assets/<模块路径>.lua`），失败才回退 bundle，
+ * 而 bundle 路径走 `AssetBundle.LoadAsset`（不产生 URL，看不见）。这里直接看加载器的入参与返回：
+ *   返回数组长度 0 / 指针为空 ⇒ 该模块没被解析到。
+ * @param klass - LuaManager 类
+ * @returns 已挂钩子的方法名列表
+ */
+function hookLuaLoader(klass: Il2Cpp.Class): string[] {
+  const installed: string[] = [];
+  for (const method of klass.methods) {
+    if (method.name !== "_CustomLoader") continue;
+    let argIndex = -1;
+    let byRef = false;
+    let sig = "?";
+    try {
+      const ps = method.parameters;
+      sig = (method.isStatic ? "" : "this,") + ps.map((p) => p.type.name).join(",");
+      const skip = method.isStatic ? 0 : 1;
+      for (let i = 0; i < ps.length; i += 1) {
+        const tn = ps[i].type.name;
+        if (tn.indexOf("System.String") === 0) {
+          argIndex = i + skip;
+          byRef = tn.charAt(tn.length - 1) === "&"; // 形如 System.String& ⇒ 需解一层引用
+          break;
+        }
+      }
+    } catch (e) {
+      sig = "?" + e;
+    }
+    if (argIndex < 0) {
+      installed.push("_CustomLoader(无字符串参数: " + sig + ")");
+      continue;
+    }
+    const pathArg = argIndex;
+    const pathByRef = byRef;
+    try {
+      Interceptor.attach(method.virtualAddress, {
+        onEnter(args) {
+          luaManagerPtr = args[0]; // this（LuaManager 实例）——供后续经 m_env.DoString 注入插件
+          luaLoaderDepth += 1; // 标记「当前在 Lua 资产加载上下文」（验签换公钥要用它区分）
+          // 注意：这里**不**注入。`_CustomLoader` 是 xLua searcher 的回调，
+          // 此刻 Lua 调用栈是活的（正在 require），重入 Lua VM 会破坏状态；
+          // 注入统一放在 `_DoUpdate` 的 onEnter（见 hookLuaUpdate）。
+          try {
+            const slot = args[pathArg];
+            if (slot.isNull()) {
+              lastLuaPath = null;
+            } else {
+              lastLuaPath = readString(pathByRef ? slot.readPointer() : slot);
+            }
+          } catch (e) {
+            lastLuaPath = "<读路径失败:" + e + ">";
+          }
+        },
+        onLeave(retval) {
+          luaLoaderDepth = luaLoaderDepth > 0 ? luaLoaderDepth - 1 : 0;
+          stats.luaLoads += 1;
+          if (stats.luaLoads > MAX_LUA_LOG) return;
+          // 返回值是解密后的明文 byte[]：长度在 +0x18，数据在 +0x20
+          let len = -1;
+          let head = "";
+          try {
+            if (!retval.isNull()) {
+              len = retval.add(0x18).readS32();
+              if (len > 0) head = retval.add(0x20).readUtf8String(Math.min(len, 44)) ?? "";
+            }
+          } catch (e) {
+            head = "<读头部失败:" + e + ">";
+          }
+          send({ t: "lua-load", path: lastLuaPath, len: len, head: head });
+        },
+      });
+      installed.push("_CustomLoader(" + sig + ")");
+    } catch (e) {
+      installed.push("_CustomLoader(fail:" + e + ")");
+    }
+  }
+  return installed;
+}
+
+/** 按全名找类（跨 assembly）。 */
+function findClass(fullName: string): Il2Cpp.Class | null {
+  for (const asm of Il2Cpp.domain.assemblies) {
+    let found: Il2Cpp.Class | null = null;
+    try {
+      found = asm.image.tryClass(fullName);
+    } catch (e) {
+      found = null;
+    }
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+pubkey = loadPubkey();
 initAnchor();
+send({
+  t: "pubkey",
+  loaded: stats.pubkeyLoaded,
+  length: pubkey.length,
+  path: PUBKEY_PATH,
+  mode: PUBKEY_MODE,
+  officialInjected: OFFICIAL_PUBKEY_BE.length > 100 && OFFICIAL_PUBKEY_LE.length > 100,
+});
+
+Il2Cpp.perform(() => {
+  const webCls = findClass("UnityEngine.Networking.UnityWebRequest");
+  const cryptCls = findClass("Torappu.CryptUtils");
+  const luaMgrCls = findClass("Torappu.Lua.LuaManager");
+  send({
+    t: "hooks",
+    url: webCls === null ? [] : hookUrlEntries(webCls),
+    verify: cryptCls === null ? [] : hookVerifySign(cryptCls),
+    logs: hookManagedLogsMinimal(findClass),
+    luaLoader: luaMgrCls === null ? [] : hookLuaLoader(luaMgrCls),
+    luaEntryScript: luaMgrCls === null ? [] : hookEntryScriptDone(luaMgrCls),
+    luaUpdate: luaMgrCls === null ? [] : hookLuaUpdate(luaMgrCls),
+    globalUpdate: (() => {
+      const giCls = findClass("Torappu.GlobalInitializerAndUpdater");
+      return giCls === null ? [] : hookGlobalInitUpdate(giCls);
+    })(),
+    luaDispose: luaMgrCls === null ? [] : hookLuaDispose(luaMgrCls),
+    luaEnvDispose: (() => {
+      const envCls = findClass("XLua.LuaEnv");
+      return envCls === null ? [] : hookLuaEnvDispose(envCls);
+    })(),
+    exceptionDiag: (() => {
+      const envCls = findClass("XLua.LuaEnv");
+      if (envCls === null) return [];
+      return hookExceptionDiagnostics(envCls, findClass("UnityEngine.Debug"));
+    })(),
+    pluginModules: Object.keys(LUA_MODULES).length,
+  });
+}).catch((e: Error) => send({ t: "il2cpp-fail", err: String(e), stack: e.stack }));
+
+setInterval(() => {
+  send({ t: "stats", ...stats });
+}, 8000);

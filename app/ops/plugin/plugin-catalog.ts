@@ -35,7 +35,7 @@ export const FALLBACK_CATALOG: readonly PluginCatalogEntry[] = Object.freeze([
   { id: "battle_assist", name: "战斗辅助", desc: "战斗时间轴 / 倍速 / TAS 暂停帧", module: "Plugin/plugins/BattleAssistPlugin" },
   { id: "plugin_panel", name: "插件管理面板", desc: "现代化插件启停管理面板", module: "Plugin/plugins/PanelPlugin", uiEntry: true },
   { id: "options_panel", name: "插件选项面板", desc: "游戏内调节各插件参数（开关/数值/枚举）并同步服务端", module: "Plugin/plugins/OptionsPanelPlugin", uiEntry: true },
-  { id: "network_redirect", name: "网络重定向", desc: "把官服域名请求重定向到私服地址", module: "Plugin/plugins/NetworkRedirectPlugin" },
+  { id: "network_redirect", name: "服务器切换", desc: "在官服/私服预设之间切换网络路由（切换后重启客户端生效）", module: "Plugin/plugins/NetworkRedirectPlugin" },
 ]);
 
 /**

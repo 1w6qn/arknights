@@ -87,7 +87,7 @@ router.get("/official/:version/version", async (req, res) => {
 router.get("/official/network_config", async (req, res) => {
   const content = buildNetworkConfigContent();
   // 真实签名（RSA-MD5）：仅当 data/crypto/private.pem 存在时启用；否则退回历史占位 sign，
-  // 由 Lua 插件的 VerifySignMD5RSA hotfix 兜底（见 app/core/utils/rsa-sign.ts 注释）。
+  // 由 Lua 插件在 network_config 解析出口放行/接管（见 app/core/utils/rsa-sign.ts 注释）。
   res.send(signedEnvelope(content));
 });
 router.get("/official/refresh_config", async (req, res) => {

@@ -4,8 +4,12 @@
  * 客户端 `CryptUtils.VerifySignMD5RSA(content, sign, publicKey)` 对 `network_config` 与
  * BSON/加密响应做验签，公钥取自 `GlobalOptions.cryptoPubKey`（Unity 资产内 TextAsset，见
  * `scripts/sign-key.ts`）。私服无官方私钥，因此两条路二选一：
- *   1) Lua 插件把 `VerifySignMD5RSA` hotfix 成恒 true（`lua/plugin/NetworkRedirectPlugin.lua` 既有行为）；
+ *   1) Lua 插件在 network_config 的**唯一解析出口** `NetworkRouter._DeserializeRouterContent` 放行
+ *      （`lua/plugin/plugins/NetworkRedirectPlugin.lua`：换信任锚重放 → 未验签内容接管，见
+ *      `docs/lua-server-switch-2026-09-14.md` §4）；
  *   2) **换用自己的密钥对**：`scripts/sign-key.ts` 改写 asset 内公钥 + 本模块用配套私钥真实签名。
+ * 路径 (1) 的第 2 级放行同样依赖本模块的密钥对（插件内置公钥须与 private.pem 配对，
+ * 由 `pnpm run sign:key -- --sync-plugin` 同步）。
  *
  * 本模块只负责 (2) 的签名侧：私钥缺省读 `data/crypto/private.pem`（可用 `SIGN_KEY_PATH` 覆盖）。
  * 未生成密钥时返回 `null`，调用方保持历史行为（占位 sign），不影响既有私服流程。

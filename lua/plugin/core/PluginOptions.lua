@@ -174,6 +174,29 @@ PluginOptions.Defs = {
       },
     },
   },
+  {
+    id = "network_redirect",
+    options = {
+      {
+        key = "server",
+        label = "服务器",
+        type = "enum",
+        -- 默认与历史行为一致：本地私服（127.0.0.1:8443）
+        default = "local",
+        desc = "切换后重启客户端生效",
+        -- choices.value 必须与 NetworkRedirectPlugin 的 SERVER_PRESETS 一致（守卫固化）
+        choices = {
+          { value = "local", label = "本地私服" },
+          { value = "official_cn", label = "国服官服" },
+          { value = "official_tw", label = "台服官服" },
+          { value = "official_jp", label = "日服官服" },
+          { value = "official_kr", label = "韩服官服" },
+          { value = "official_en", label = "国际服官服" },
+          { value = "custom", label = "自定义" },
+        },
+      },
+    },
+  },
 }
 
 -- 取值缓存（options 字段的引用，惰性加载）

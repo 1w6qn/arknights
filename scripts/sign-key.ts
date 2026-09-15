@@ -42,6 +42,37 @@ const PUBKEY_XML_LEN = 243;
 const KEY_BITS = 1024;
 
 /**
+ * 定位 `NetworkRedirectPlugin.lua`（插件目录已模块化为 core/ + ui/ + plugins/）。
+ *
+ * 不做硬编码单一路径：先试 `plugins/`，再递归兜底——目录再调整时 `--sync-plugin`
+ * 也不会静默写错/漏写文件。
+ * @returns 插件文件绝对路径
+ */
+function resolveNetworkRedirectPlugin(): string {
+  const base = path.join(ROOT, "lua", "plugin");
+  const preferred = path.join(base, "plugins", "NetworkRedirectPlugin.lua");
+  if (fs.existsSync(preferred)) return preferred;
+  const walk = (cur: string): string | null => {
+    for (const entry of fs.readdirSync(cur, { withFileTypes: true })) {
+      const full = path.join(cur, entry.name);
+      if (entry.isDirectory()) {
+        const found = walk(full);
+        if (found !== null) return found;
+      } else if (entry.name === "NetworkRedirectPlugin.lua") {
+        return full;
+      }
+    }
+    return null;
+  };
+  const found = fs.existsSync(base) ? walk(base) : null;
+  if (found === null) {
+    console.error(`[sign-key] 未找到 NetworkRedirectPlugin.lua（已查 ${base}）`);
+    process.exit(1);
+  }
+  return found;
+}
+
+/**
  * 由公钥导出 .NET XML 形式（Modulus/Exponent 均按**大端**原样写出）。
  *
  * 端序是实测定的，别改回去：官方资产里的公钥（`assets/bin/Data/sharedassets0.assets.split5`）
@@ -285,7 +316,7 @@ async function main(): Promise<void> {
 
   if (args.syncPlugin) {
     const xml = readPublicXml();
-    const pluginPath = path.join(ROOT, "lua", "plugin", "NetworkRedirectPlugin.lua");
+    const pluginPath = resolveNetworkRedirectPlugin();
     const src = fs.readFileSync(pluginPath, "utf-8");
     const re = /local PUBLIC_KEY_XML = \[\[<RSAKeyValue>[\s\S]*?\]\]/;
     if (!re.test(src)) {
