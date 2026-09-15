@@ -16,6 +16,8 @@ PORT=9000 pnpm run start:quick   # 不同端口启动（环境变量 PORT 覆盖
 pnpm run start:quick -- --port 9001  # 或命令行 --port（优先级高于 PORT 环境变量）
 pnpm run start:capture -- --port 9002  # capture 模式同样支持端口覆盖（gs/as 地址同步使用新端口）
 start.cmd                # Windows one-click: quick start + auto-open admin dashboard
+start-mumu.cmd           # Windows one-click: MuMu + WSL 私服 + 4 条中继 + adb forward/reverse + hook 构建 + frida 注入（--dry-run/--no-frida/--duration N，见 docs/frida-mumu-lua-plugin-playbook-2026-09-14.md §8）
+pnpm run mumu             # 同上链路的 WSL 侧主体（scripts/mumu-start.sh；中继需已就绪）；mumu:boot = Windows 侧编排，mumu:relay = 中继组
 pnpm run build            # tsc (typecheck)
 pnpm run test             # vitest run
 pnpm exec vitest run tests/unit/manager/char.test.ts   # single test file

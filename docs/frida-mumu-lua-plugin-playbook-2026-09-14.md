@@ -117,8 +117,42 @@ timeout 3 curl -s -o /dev/null -w "server=%{http_code}\n" http://127.0.0.1:8443/
 | **插件浮窗**（构建/可见/可点/可拖 + 契约型 bug） | `docs/plugin-ui-verify-2026-09-14.md` |
 | 插件系统在官方包上跑起来（frida 注入 Lua VM） | `docs/lua-plugin-frida-injection-2026-09-14.md` |
 | TUI 崩溃排查与输出闸门 | `docs/dsh-tui-crash-2026-09-14.md` |
+| **一键启动**（模拟器+私服+中继+adb+hook+注入） | 本文 §8 |
 
-## 8. 技能（可被后续会话按名加载）
+## 8. 一键启动（2026-09-15 新增）
+
+「起模拟器 → 起私服 → 起中继 → adb 转发 → 构建 hook → 冷启动客户端 → 注入」的固定动作已收敛成脚本，
+**Windows 双击 `start-mumu.cmd`** 即可（日志：`tmp/mumu/server.log`、`tmp/mumu/frida.log`）：
+
+```cmd
+start-mumu.cmd                    :: 全链路（默认注入 600s，Ctrl+C 结束）
+start-mumu.cmd --dry-run          :: 只自检并打印计划，不起任何进程
+start-mumu.cmd --no-frida         :: 只起基础设施（模拟器+私服+中继+adb+hook 构建）
+start-mumu.cmd --duration 120 --pubkey-mode ours
+```
+
+| 文件 | 职责 |
+| --- | --- |
+| `start-mumu.cmd` | Windows 双击入口（**纯 ASCII**——cmd 按当前代码页解析，UTF-8 中文会让整份批处理被拆错） |
+| `scripts/mumu-boot.mjs` | Windows 侧编排：MuMu info/launch → adb start-server/connect → 中继 → `wsl.exe` 转交 |
+| `scripts/mumu-relay.mjs` | Windows 侧 4 条中继（27043→27042 / 27098→27099 / 8443、8543→WSL），带状态文件与 `--check`（0 可复用 / 1 需启动 / 2 目标已变需重启） |
+| `scripts/mumu-start.sh` | WSL 侧主体：adb forward/reverse → frida-server → 私服（`watchdog.mjs`，setsid 常驻）→ hook 增量构建 → python 双 agent 注入 |
+
+等价入口：WSL 里 `pnpm run mumu`（= `bash scripts/mumu-start.sh`）、`pnpm run mumu:boot`、`pnpm run mumu:relay`。
+
+三条内建健壮性判据（都是本会话踩过的坑）：
+
+1. **中继目标过期**：WSL 重启会换 IP，中继表现为"连上却没反应"式静默失效 ⇒ 状态文件比对 WSL IP，
+   变了就杀掉自管中继重起；WSL 侧还会自检 `WSL → <网关>:8443 → 私服` 这条链并明确告警。
+2. **detach 卡死**：`session.detach()` 偶发卡住会让"一键"永不返回 ⇒ 注入有硬超时（`--duration` + 60s 宽限，
+   `MUMU_FRIDA_GRACE` 可调），超时按"已结束"处理。
+3. **崩溃可见**：管线结束后自检 `pidof com.hypergryph.arknights`，客户端没了就提示去看
+   `grep -n CRASH tmp/mumu/frida.log` 与设备 `Android/data/<pkg>/files/tombstone_*`
+   （abort 现场只埋在 tombstone，stdout 里通常只有 `terminating with uncaught exception of type Il2CppExceptionWrapper`）。
+
+---
+
+## 9. 技能（可被后续会话按名加载）
 
 - `arknights-mumu-frida-debug` —— 环境/管线/探针/诊断钩子/操作纪律（本文件 §1、§4、§5）
 - `arknights-lua-plugin-contracts` —— 游戏 Lua 侧的契约与 UI 自绘点击（§3）

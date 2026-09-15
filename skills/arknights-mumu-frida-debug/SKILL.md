@@ -1,6 +1,6 @@
 ---
 name: arknights-mumu-frida-debug
-description: 在 MuMu 上用 Frida 调试明日方舟（x86_64 ART + ARM64 Houdini 游戏、官方包不改 APK）的完整环境、管线、探针与诊断钩子；含中继/hosts/reverse 自检、换公钥模式、无眼 UI 验证与长会话操作纪律。
+description: 在 MuMu 上用 Frida 调试明日方舟（x86_64 ART + ARM64 Houdini 游戏、官方包不改 APK）的完整环境、管线、探针与诊断钩子；含一键启动 start-mumu.cmd（模拟器+私服+中继+adb+hook+注入）、中继/hosts/reverse 自检、换公钥模式、无眼 UI 验证与长会话操作纪律。
 ---
 
 # MuMu + Frida 调试明日方舟（环境与管线）
@@ -17,6 +17,22 @@ description: 在 MuMu 上用 Frida 调试明日方舟（x86_64 ART + ARM64 Houdi
 - 卸载重装会换 uid（`u0_a36`→`u0_a39`）；恢复 `Android/data/<pkg>/files` 前必须
   `chown -R u0_a<N>:ext_data_rw`，否则应用写不了自己的目录（会报"存储空间不足"之类假错）。
 
+## 一键启动（首选，2026-09-15 起）
+Windows 双击 `start-mumu.cmd`（等价：WSL 里 `pnpm run mumu`），一次做完
+「起 MuMu → 起私服 → 起 4 条中继 → adb forward/reverse → 增量构建 hook → 冷启动客户端 → 双 agent 注入」：
+```cmd
+start-mumu.cmd                 :: 全链路（默认注入 600s，Ctrl+C 结束）
+start-mumu.cmd --dry-run       :: 只自检打印计划，不起任何进程
+start-mumu.cmd --no-frida      :: 只起基础设施（模拟器+私服+中继+adb+hook 构建）
+start-mumu.cmd --duration 120 --pubkey-mode ours
+```
+- 文件：`scripts/mumu-boot.mjs`（Windows 编排）/ `scripts/mumu-relay.mjs`（4 条中继，状态文件 + `--check`）/
+  `scripts/mumu-start.sh`（WSL 主体）。日志：`tmp/mumu/server.log`、`tmp/mumu/frida.log`。
+- 中继自己起：**别再用 `tmp/port-relay.mjs` 起 4 个进程**（脚本会认领端口；WSL 换 IP 时它会自动重启中继）。
+- 上方"开工自检/中继/启动管线"三段仍可用于手工排查；只做观测时用 `--no-frida` 后手动跑 python 管线。
+- 客户端 abort 时脚本会在结尾提示 `grep -n CRASH tmp/mumu/frida.log` 与设备
+  `Android/data/com.hypergryph.arknights/files/tombstone_*`（abort 现场只埋在 tombstone）。
+
 ## 开工自检
 ```bash
 ADB="/mnt/d/Program Files/YXArkNights-12.0/shell/adb.exe"
@@ -24,15 +40,13 @@ for p in 27043 27098 8443; do timeout 3 bash -c "</dev/tcp/172.30.32.1/$p" 2>/de
 timeout 3 curl -s -o /dev/null -w "server=%{http_code}\n" http://127.0.0.1:8443/gm/
 "$ADB" reverse --list; "$ADB" shell "ps -A | grep -c frida-server"
 ```
-中继（Windows 侧，由 WSL 启动）：
+中继（Windows 侧，由 WSL 启动；**仅在没有一键脚本时的兜底**）：
 ```bash
 WSL_IP=$(hostname -I | awk '{print $1}')
-{ "/mnt/c/Program Files/nodejs/node.exe" tmp/port-relay.mjs 27043 27042 127.0.0.1 & \
-  "/mnt/c/Program Files/nodejs/node.exe" tmp/port-relay.mjs 27098 27099 127.0.0.1 & \
-  "/mnt/c/Program Files/nodejs/node.exe" tmp/port-relay.mjs 8443 8443 "$WSL_IP" & \
-  "/mnt/c/Program Files/nodejs/node.exe" tmp/port-relay.mjs 8543 8543 "$WSL_IP" & wait; }
+"/mnt/c/Program Files/nodejs/node.exe" scripts/mumu-relay.mjs "$WSL_IP"   # 一条进程起全 4 条
 ```
-（用 `run_in_background` 跑这一整段，让作业托住中继；工具调用之间后台作业会被清掉。）
+（用 `run_in_background` 跑，让作业托住中继；工具调用之间后台作业会被清掉。`tmp/port-relay.mjs` 是单口老脚本，
+一键链路里已被 `scripts/mumu-relay.mjs` 取代。）
 
 ## 启动管线
 ```bash
