@@ -69,10 +69,13 @@ obs 用 `post({type:"conf", k, v})` 逐条下发配置。本仓 `hook/main.ts:22
 
 以下 obs 做法**不引入本仓**，理由与对应安全审计见 `docs/apk-security-audit.md`：
 
-1. `G misc.patch`：阉割 MTP 反外挂。
+1. ~~`G misc.patch`：阉割 MTP 反外挂。~~ **已解除（2026-09-14，用户决定）**：改为本仓自研的
+   **dex 等长补丁**（`scripts/apk-dex-mtp.ts` / `pnpm run apk:dex-mtp`：zip 级重写、不反编译不回编译、
+   native 层不动），仅用于自建私服客户端；记录见 `docs/apk-dex-mtp-2026-09-14.md` §7。
 2. `G java.js` / `native.js`：证书链绕过（`TrustManagerImpl.checkTrusted`、`BouncyCastleCertVerifyer`）、
    签名校验绕过（`VerifySignMD5RSA`）、`android_dlopen_ext` 屏蔽 `msaoaidsec`/`anogs` 反作弊 so。
-3. 任何以「绕过官方反作弊/校验」为目的的注入，都不进入本仓代码与发布产物。
+3. 任何以「绕过官方反作弊/校验」为目的的**注入**，都不进入本仓代码与发布产物
+   （2026-09-14 起 dex 层的 MTP 入口置空是唯一例外，见第 1 条）。
 
 本仓安全路线（`scripts/apk-audit.ts` + `docs/apk-security-audit.md`）是**审计**官方 APK，不是绕过它。
 

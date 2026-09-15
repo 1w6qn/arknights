@@ -79,6 +79,8 @@ data/user/gallery/
 data/player_data.json.root-backup
 # 私服验签密钥（sign:key 生成；私钥绝不入库）
 data/crypto/
+# 插件运行时状态与客户端日志回传（config.json 为本地启停/选项状态，logs 为 Unity 日志落盘）
+data/plugin/
 
 # Python 字节码缓存（调试脚本用）
 __pycache__/

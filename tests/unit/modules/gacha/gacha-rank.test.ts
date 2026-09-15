@@ -23,8 +23,17 @@ describe("resolveGachaRank", () => {
   it("未超 50 抽阈值时六星权重不做修正", () => {
     const r = resolveGachaRank({ ...base, beforeNonHitCnt: 49, rand: () => 0.019 });
     expect(r).toBe(5); // per6=0.02，rand=0.019 < 0.02 → 六星
-    const r2 = resolveGachaRank({ ...base, beforeNonHitCnt: 49, rand: () => 0.021 });
-    expect(r2).not.toBe(5); // rand=0.021 > 0.02 → 非六星
+    // 未中六星后会走权重抽取，而权重抽取用的是全局 random（不受注入 rand 控制）——
+    // 若沿用 base 的 [3,4,5]/[0.5,0.48,0.02]，有 2% 概率抽到 5（六星）令断言偶发失败。
+    // 故与下方用例一致：改用单权重让「非六星」这一分支确定性可断言。
+    const r2 = resolveGachaRank({
+      ...base,
+      beforeNonHitCnt: 49,
+      rand: () => 0.021, // 0.021 > 0.02 → 不中六星
+      ranks: [3],
+      weights: [1],
+    });
+    expect(r2).toBe(3);
   });
 
   it("超过 50 抽后每抽 +2% 修正六星权重", () => {

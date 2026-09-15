@@ -71,8 +71,15 @@ function clientIp(req: Request): string {
   return String(req.ip || req.socket?.remoteAddress || "unknown");
 }
 
-/** 审计用账号脱敏（保留前 3 位与后 2 位，避免审计日志留全量手机号） */
-function maskAccount(value: unknown): string {
+/**
+ * 审计用账号脱敏（保留前 3 位与后 2 位，避免审计日志留全量手机号）
+ *
+ * 入参收窄为「可能为空的标量」而非 `unknown`：调用点只传手机号/账号（string 或 number
+ * 的缺省形态），收窄后既保住类型债棘轮（unknown 计数不上升），也保留对缺参的兜底。
+ * @param value - 手机号/账号等标量凭据字段
+ * @returns 脱敏串（空值返回空串，长度 ≤5 返回 "***"）
+ */
+function maskAccount(value: string | number | null | undefined): string {
   const s = String(value ?? "");
   if (!s) return "";
   if (s.length <= 5) return "***";

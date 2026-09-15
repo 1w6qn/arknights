@@ -97,6 +97,12 @@ invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
 即把 `com.hg.sdk` 的 **MTP（腾讯移动安全/反作弊上报）** 入口改成空函数。这属于「绕过官方反作弊」，
 按本仓红线（`docs/no-root-injection-chain-2026-09-13.md` §7）**不进入本仓代码与发布产物**。
 
+> **更新（2026-09-14，用户决定解除红线）**：本仓实现与 G 不同——**不反编译、不回编译 smali**，
+> 而是 `scripts/apk-dex-mtp.ts`（`pnpm run apk:dex-mtp`）在 `classes4.dex` 里把这两个方法体
+> **等长原地**换成 `return-void` + `nop`（dex 长度与结构零位移，只重算头部 SHA-1/Adler-32），
+> 再由 `apk:patch` 走 zip 级重写。实测目标、三层自检与用法见 `docs/apk-dex-mtp-2026-09-14.md`。
+> 仅用于自建私服客户端；native 层（`libtersafe2.so`/`libmsaoaidsec.so`）仍不碰。
+
 ## 7. MuMu 专属处理
 
 ```python
