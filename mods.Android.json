@@ -1,0 +1,28 @@
+{
+    "file": {
+        "D:\\develop\\DoctorateTs\\mods\\android\\anon_63bbacd2fab677125a1516d4396114ab.dat": {
+            "size": 1122137,
+            "crc32": 3588592532
+        }
+    },
+    "mod": {
+        "mods": [
+            {
+                "name": "anon/63bbacd2fab677125a1516d4396114ab.bin",
+                "hash": "3892e53254aada05e48be40ce9de7a5a",
+                "md5": "3892e53254aada05e48be40ce9de7a5a",
+                "totalSize": 1122137,
+                "abSize": 1125011
+            }
+        ],
+        "name": [
+            "anon/63bbacd2fab677125a1516d4396114ab.bin"
+        ],
+        "path": [
+            "android\\anon_63bbacd2fab677125a1516d4396114ab.dat"
+        ],
+        "download": [
+            "anon_63bbacd2fab677125a1516d4396114ab.dat"
+        ]
+    }
+}

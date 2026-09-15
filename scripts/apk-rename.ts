@@ -20,10 +20,10 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import * as crypto from "crypto";
 import yauzl from "yauzl";
 import { patchApk, verifyPatchedApk, inspectApk, type ApkReplacement } from "./apk-patch";
 import { signApk } from "./apk-sign";
+import { fixDexHeader } from "./lib/dex";
 
 /** 默认原包名 */
 const DEFAULT_FROM = "com.hypergryph.arknights";
@@ -52,31 +52,6 @@ export interface RenameOptions {
   to: string;
   /** 是否连 `lib/*.so` 一起替换 */
   includeNative: boolean;
-}
-
-/**
- * 计算 Adler-32（DEX 头部校验用；zlib 只提供 CRC32，故自带实现）。
- * @param buf - 输入数据
- * @returns Adler-32 值（无符号 32 位）
- */
-function adler32(buf: Buffer): number {
-  let a = 1;
-  let b = 0;
-  for (let i = 0; i < buf.length; i++) {
-    a = (a + buf[i]) % 65521;
-    b = (b + a) % 65521;
-  }
-  return ((b << 16) | a) >>> 0;
-}
-
-/**
- * 按 DEX 规范重算头部：signature = SHA-1(bytes[32..]) 写入 [12,32)，checksum = Adler-32(bytes[12..]) 写入 [8,12)。
- * @param dex - DEX 字节（就地修改）
- */
-function fixDexHeader(dex: Buffer): void {
-  if (dex.length < 32 || dex.subarray(0, 4).toString("latin1") !== "dex\n") return;
-  crypto.createHash("sha1").update(dex.subarray(32)).digest().copy(dex, 12);
-  dex.writeUInt32LE(adler32(dex.subarray(12)), 8);
 }
 
 /**

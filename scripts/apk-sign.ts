@@ -125,6 +125,35 @@ export async function fetchTools(): Promise<string> {
 }
 
 /**
+ * 在产物目录里挑出**本次**签名产物。
+ *
+ * 坑：uber-apk-signer 的命名会**去掉输入名末尾的 `-unsigned`**（`X-unsigned.apk` → `X-debugSigned.apk`），
+ * 中间还会落一个 `X-aligned.apk`（仅对齐、**未签名**）。早期实现按「输入名去 `.apk`」做前缀匹配，
+ * 于是 `X-unsigned.apk` 输入永远匹配不到真签名产物，反而把**输入自身**（或对齐中间产物）当成结果改名成
+ * `*-signed.apk` —— 交付物名不副实（2026-09-14 实测：`--sign` 出的 `*-signed.apk` 其实是未签名包）。
+ * 现在按「后缀 `signed.apk`（`-debugSigned.apk` / `-signed.apk`）」匹配 + 显式排除输入文件。
+ *
+ * @param outDir - 产物目录
+ * @param inApk - 输入 APK（绝对路径）
+ * @param startedAt - 本次签名开始时间（毫秒，用于排除历史产物）
+ * @returns 签名产物绝对路径（找不到抛错）
+ */
+export function findSignedArtifact(outDir: string, inApk: string, startedAt: number): string {
+  const inputPath = path.resolve(inApk);
+  const baseStem = path.basename(inApk).replace(/\.apk$/i, "").replace(/-unsigned$/i, "");
+  const candidates = fs
+    .readdirSync(outDir)
+    .filter((n) => /signed\.apk$/i.test(n) && n.startsWith(baseStem))
+    .map((n) => path.join(outDir, n))
+    .filter((p) => path.resolve(p) !== inputPath && fs.statSync(p).mtimeMs >= startedAt - 1000)
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  if (candidates.length === 0) {
+    throw new Error(`签名命令成功但未在 ${outDir} 找到签名产物（期望前缀 ${baseStem}、后缀 signed.apk）`);
+  }
+  return candidates[0];
+}
+
+/**
  * 调用 uber-apk-signer 对 APK 重签名。
  * @param opts - 签名选项
  * @returns 签名产物路径
@@ -152,18 +181,7 @@ export function signApk(opts: SignOptions): string {
   if (run.stderr) console.error(run.stderr.trim());
   if (run.status !== 0) throw new Error(`签名失败（exit=${run.status}）`);
 
-  // uber-apk-signer 产出 <原名>-signed.apk；按扩展名 + 修改时间挑出本次产物
-  const stem = path.basename(inApk).replace(/\.apk$/i, "");
-  const candidates = fs
-    .readdirSync(outDir)
-    .filter((n) => /\.apk$/i.test(n) && n.startsWith(stem))
-    .map((n) => path.join(outDir, n))
-    .filter((p) => fs.statSync(p).mtimeMs >= startedAt - 1000)
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  if (candidates.length === 0) {
-    throw new Error(`签名命令成功但未在 ${outDir} 找到产物（期望前缀 ${stem}）`);
-  }
-  let result = candidates[0];
+  let result = findSignedArtifact(outDir, inApk, startedAt);
   if (opts.outApk && path.resolve(opts.outApk) !== result) {
     const dest = path.resolve(opts.outApk);
     fs.mkdirSync(path.dirname(dest), { recursive: true });

@@ -17,6 +17,7 @@ import * as path from "path";
 import { findLuaBundleInApk } from "./apk-lua";
 import { patchApk, verifyPatchedApk, inspectApk, type ApkReplacement } from "./apk-patch";
 import { signApk } from "./apk-sign";
+import { locateLatestApk } from "./lib/apk-io";
 
 /** 仓库根目录 */
 const ROOT = path.join(__dirname, "..");
@@ -62,27 +63,6 @@ function parseArgs(argv: string[]): CliArgs {
 }
 
 /**
- * 在 tmp/apk 下按目录名（版本）与 mtime 选出最新的官方 APK。
- * @returns APK 路径（找不到返回空串）
- */
-function locateLatestApk(): string {
-  if (!fs.existsSync(APK_DIR)) return "";
-  const found: { file: string; version: string; mtime: number }[] = [];
-  for (const ver of fs.readdirSync(APK_DIR)) {
-    const dir = path.join(APK_DIR, ver);
-    if (!fs.statSync(dir).isDirectory()) continue;
-    for (const f of fs.readdirSync(dir)) {
-      if (!/\.apk$/i.test(f)) continue;
-      const full = path.join(dir, f);
-      found.push({ file: full, version: ver, mtime: fs.statSync(full).mtimeMs });
-    }
-  }
-  if (found.length === 0) return "";
-  found.sort((a, b) => a.version.localeCompare(b.version, undefined, { numeric: true }) || a.mtime - b.mtime);
-  return found[found.length - 1].file;
-}
-
-/**
  * 由内置 bundle 条目名推出注入版 mod 文件名（`anon/<hash>.bin` → `anon_<hash>.dat`）。
  * @param entryPath - APK 内条目路径
  * @returns mod 文件名
@@ -95,7 +75,7 @@ function modNameForEntry(entryPath: string): string {
 /** CLI 入口 */
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const apk = args.apk ? path.resolve(args.apk) : locateLatestApk();
+  const apk = args.apk ? path.resolve(args.apk) : locateLatestApk(APK_DIR);
   if (!apk) {
     console.error("[apk:mod] 未找到官方 APK。请先执行 pnpm run apk:lua（会自动下载最新版），或用 --apk 指定");
     process.exit(1);
